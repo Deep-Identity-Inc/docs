@@ -129,7 +129,8 @@
             "group": "Guides",
             "pages": [
               "integrate/ai-agent-integration",
-              "integrate/verify-skill"
+              "integrate/verify-skill",
+              "integrate/deepai-assistant-skill"
             ]
           },
           {

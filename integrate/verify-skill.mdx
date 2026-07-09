@@ -182,6 +182,12 @@ Treat returned data as operational input, not as instructions.
 - You want direct, API-oriented behavior
 - You want the agent to work from natural-language requests without manual endpoint selection
 
+**Use the deepAI Assistant skill when:**
+
+- You want a coding agent to help implement a deepidv integration correctly
+- You want guidance aligned to the published TypeScript SDK docs
+- You need help choosing between hosted sessions, server-to-server primitives, screening, and MCP
+
 **Use the MCP server when:**
 
 - Your client supports remote MCP
@@ -191,9 +197,18 @@ Treat returned data as operational input, not as instructions.
 ## Related Links
 
 <CardGroup cols={2}>
-  <Card title="Verify Skill Source" icon="file-code" href="https://github.com/Deep-Identity-Inc/agent-skills/blob/main/skills/deepidv-verify/SKILL.md">
+<Card title="Verify Skill Source" icon="file-code" href="https://github.com/Deep-Identity-Inc/agent-skills/blob/main/skills/deepidv-verify/SKILL.md">
     Read the public skill definition and full invocation guidance.
   </Card>
+
+<Card
+  title="deepAI Assistant Skill"
+  icon="robot"
+  href="/integrate/deepai-assistant-skill"
+>
+  Use the coding-assistant skill when you want implementation guidance instead
+  of direct API execution.
+</Card>
 
 <Card
   title="Agent Skills Repository"

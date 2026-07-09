@@ -1,0 +1,254 @@
+---
+title: deepAI Assistant Skill
+description: Use the deepAI Assistant skill to help coding agents build deepidv integrations correctly with the TypeScript server SDK, REST API, and hosted MCP guidance.
+---
+
+> Use the deepAI Assistant skill when you want an AI coding agent to help you
+> implement a deepidv integration correctly. Unlike the Verify skill, this
+> skill is not for running live verification actions on your behalf. It helps
+> the agent choose the right package, auth model, method namespace, and error
+> handling pattern while you build.
+
+## Overview
+
+This guide is for teams using coding agents to write or debug deepidv
+integration code.
+
+The deepAI Assistant skill is designed to keep an agent aligned with deepidv's
+published integration docs, especially the backend TypeScript SDK:
+
+- `@deepidv/server` as the canonical TypeScript package
+- `DeepIDV` as the single SDK client entry point
+- `client.sessions`, `client.document`, `client.face`, `client.identity`,
+  `client.screening`, and `client.asyncJobs` as the documented method surfaces
+- `x-api-key` auth for SDK and REST usage
+- hosted OAuth with PKCE for MCP usage
+
+Compatible agent environments currently include:
+
+- Claude Code
+- Codex
+- Cursor
+- Windsurf
+- OpenCode
+
+## What Success Looks Like
+
+Once the skill is set up, your agent should help you:
+
+- install and initialize `@deepidv/server` correctly
+- keep the SDK on a trusted backend instead of suggesting browser-side usage
+- choose between hosted sessions, server-to-server primitives, screening, and
+  MCP based on the integration goal
+- handle async adverse-media screening and typed SDK errors correctly
+- avoid inventing undocumented SDK namespaces or stale package names
+
+## Before You Start
+
+Make sure you have:
+
+- a deepidv account with an active API key
+- an agent that supports repository-based skills
+- a backend TypeScript runtime if you're following the SDK path
+- a secure place to store the API key in your environment
+
+<Tip>
+  If you need a ready-made deepidv action skill that can call the verification
+  API directly, use [Identity Verification Skill](/integrate/verify-skill)
+  instead.
+</Tip>
+
+## Install the Skill
+
+If your agent uses the open agent skills ecosystem, install the deepAI
+Assistant skill with the Skills CLI:
+
+```bash
+npx skills add Deep-Identity-Inc/agent-skills@deepai-assistant -g -y
+```
+
+This command:
+
+- pulls the `deepai-assistant` skill from the public deepidv agent-skills
+  repository
+- installs it at the user level with `-g`
+- skips the interactive confirmation prompt with `-y`
+
+After installation:
+
+1. Restart your agent or editor if it does not reload automatically.
+2. Confirm the skill is active by asking your agent to help with a deepidv
+   TypeScript integration, or run `npx skills check` to verify the install.
+
+## Use It With the TypeScript SDK
+
+The canonical TypeScript path uses `@deepidv/server`.
+
+### Install the package
+
+```bash
+npm install @deepidv/server
+```
+
+### Initialize the client
+
+```typescript
+import { DeepIDV } from '@deepidv/server';
+
+const client = new DeepIDV({
+  apiKey: process.env.DEEPIDV_API_KEY!,
+});
+```
+
+<Info>
+  `@deepidv/server` is a backend-first SDK. Keep it in a trusted server, edge,
+  or worker runtime. Do not ship it to a browser or mobile client.
+</Info>
+
+### Use the documented namespaces
+
+| Namespace | Use it for |
+| --------- | ---------- |
+| `client.sessions` | Hosted verification sessions |
+| `client.document` | Document OCR and extraction |
+| `client.face` | Face detection, matching, and age estimate |
+| `client.identity` | One-call identity verification |
+| `client.screening` | PEP/sanctions, title check, adverse media |
+| `client.asyncJobs` | Polling long-running async jobs |
+
+## Start With the Right Flow
+
+The assistant should help you choose the integration path first, then write
+code against the matching docs.
+
+### Hosted session flow
+
+Use this when you want deepidv's hosted verification UI.
+
+1. Create a session with `client.sessions.create(...)`.
+2. Send the user to `session.sessionUrl`.
+3. Retrieve results with `client.sessions.retrieve(session.id)`.
+4. Update the final status with `client.sessions.updateStatus(...)` if your
+   review process requires it.
+
+### Server-to-server flow
+
+Use this when you control the user experience and want to call primitives
+directly.
+
+- `client.document.scan(...)`
+- `client.face.detect(...)`
+- `client.face.compare(...)`
+- `client.face.estimateAge(...)`
+- `client.identity.verify(...)`
+
+### Screening flow
+
+Use this routing:
+
+- `client.screening.pepSanctions(...)` for synchronous watchlist screening
+- `client.screening.titleCheck(...)` for synchronous title or ownership search
+- `client.screening.adverseMedia(...)` for async adverse-media screening
+- `client.asyncJobs.get(jobId)` or the returned handle for polling
+
+<Note>
+  `pepSanctions` and `titleCheck` are synchronous. `adverseMedia` is async and
+  returns a job handle rather than an immediate final result.
+</Note>
+
+## Keep the Auth Models Separate
+
+### TypeScript SDK and REST API
+
+Use `x-api-key` authentication.
+
+- REST base URL: `https://api.deepidv.com/v1`
+- SDK default `baseUrl`: `https://api.deepidv.com`
+
+### Hosted MCP
+
+Use the hosted MCP endpoint:
+
+- server URL: `https://mcp.deepidv.com/v1/mcp`
+- `client_id`: `deepidv` only if the client explicitly asks for it
+- `client_secret`: not used
+- sign-in: deepidv email and password, with MFA when required
+
+Do not tell developers to reuse an API key as a hosted MCP `client_secret`.
+
+## Avoid the Most Common Mistakes
+
+The assistant skill is useful when you want the agent to avoid stale or
+invented guidance.
+
+Watch for these mistakes:
+
+- suggesting `@deepidv/sdk` instead of `@deepidv/server`
+- treating the server SDK as a browser package
+- inventing undocumented SDK namespaces such as `client.workflows.*`
+- forgetting that adverse-media screening is async
+- retrying `pepSanctions` or `titleCheck` aggressively after a `503`
+- mixing REST API key auth with hosted MCP OAuth instructions
+
+## Prompt Patterns That Work Well
+
+Good examples:
+
+- "Help me initialize `@deepidv/server` in a Node.js backend."
+- "Show me how to create a hosted verification session and read the result."
+- "Help me wire `client.identity.verify()` into our onboarding flow."
+- "How should I handle `RateLimitError` and `TimeoutError` from the SDK?"
+- "Show me the correct pattern for async adverse-media screening."
+- "Help me connect deepidv MCP in a client that supports remote OAuth."
+
+## Choose the Right Integration Path
+
+**Use the deepAI Assistant skill when:**
+
+- you want a coding agent to help you implement or debug deepidv integration code
+- you want the agent to stay aligned with the published TypeScript SDK docs
+- you need help picking between SDK, REST, and MCP integration patterns
+
+**Use the Verify skill when:**
+
+- you want a compatible AI agent to call deepidv verification and screening
+  APIs directly
+- you want skill-driven API execution rather than coding assistance
+
+**Use the MCP server when:**
+
+- your client supports remote MCP
+- you want hosted tools with OAuth-based access
+- you prefer structured remote tools over direct API integration code
+
+## Related Links
+
+<CardGroup cols={2}>
+  <Card
+    title="Assistant Skill Source"
+    icon="file-code"
+    href="https://github.com/Deep-Identity-Inc/agent-skills/blob/main/skills/deepai-assistant/SKILL.md"
+  >
+    Read the public assistant skill definition and guidance.
+  </Card>
+
+  <Card
+    title="TypeScript Server SDK"
+    icon="code"
+    href="/integrate/sdks/typescript/server/overview"
+  >
+    Use the canonical @deepidv/server docs as the source of truth for TypeScript.
+  </Card>
+
+  <Card
+    title="Identity Verification Skill"
+    icon="badge-check"
+    href="/integrate/verify-skill"
+  >
+    Use the Verify skill when you want direct AI-driven API actions.
+  </Card>
+
+  <Card title="MCP Server Guide" icon="server" href="/integrate/ai-agent-integration">
+    Use the hosted MCP server if your client supports remote MCP.
+  </Card>
+</CardGroup>

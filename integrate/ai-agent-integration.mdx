@@ -5,170 +5,161 @@ description: deepidv's hosted MCP server brings identity verification and anti-f
 
 ## Overview
 
-deepidv's hosted MCP server lets you connect any compatible AI client to your deepidv account. Once you add the server and complete OAuth, the client can call deepidv tools on behalf of the authenticated user in your organization.
+Connect the power of deepidv to your AI workflows.
+
+The deepidv hosted MCP server lets your organization securely use deepidv from compatible AI clients. Once an account member authorizes access through OAuth, the client can interact with deepidv tools and perform supported actions with that member’s permissions.
 
 With this integration, you can:
 
-- List and inspect verification sessions
-- Retrieve verification artifacts and supporting links
-- Create and manage workflows with deepidv verification steps
+- Search applicants and inspect invitation status
+- List, inspect, create, and manage verification sessions
+- Create and reuse workflows with deepidv verification steps
 - List bank statement records and send bank statement requests
+- Run PEP/sanctions, title-check, and adverse-media screening tools
 
 ## Requirements
 
-Before you connect a client, make sure you have:
+You'll need the following before connecting a client:
 
-- A deepidv account with an active user
-- An API key owned by that user
-- An MCP client that supports remote HTTP servers with OAuth
+- An active deepidv account
+- Your deepidv login credentials
+- Your MFA device or authentication method, if enabled
+- An MCP client that supports remote HTTP servers with OAuth 2.0 Authorization Code + PKCE
+
+
+<Note>
+  The hosted MCP flow now uses a shared public OAuth client. You do not create or
+  manage a per-user OAuth client, and you do not need a `client_secret` for the
+  standard connector flow.
+</Note>
 
 ## Server details
 
-| Setting                | Value                                  |
-| ---------------------- | -------------------------------------- |
-| Transport              | Streamable HTTP                        |
-| Server URL             | `https://mcp.deepidv.com/v1/mcp`       |
-| Auth                   | OAuth 2.0 authorization code with PKCE |
-| Local runtime required | No                                     |
+| Setting                     | Value                                                                 |
+| --------------------------- | --------------------------------------------------------------------- |
+| Transport                   | Streamable HTTP                                                       |
+| Server URL                  | `https://mcp.deepidv.com/v1/mcp`                                      |
+| Server manifest             | `https://mcp.deepidv.com/mcp.json`                                    |
+| Protected resource metadata | `https://mcp.deepidv.com/.well-known/oauth-protected-resource`        |
+| OAuth client ID             | `deepidv`                                                             |
+| Auth                        | OAuth 2.0 authorization code with PKCE (`S256`)                       |
+| Hosted login                | deepidv email + password, with MFA when required                      |
+| Client secret               | Not used for the shared public-client flow                            |
+| Local runtime required      | No                                                                    |
+
+## Connection model
+
+Most clients only need the MCP server URL. deepidv exposes:
+
+- `mcp.json` discovery metadata
+- OAuth protected-resource metadata
+- a fixed shared OAuth client ID: `deepidv`
+
+In practice, the happy path is:
+
+1. Add `https://mcp.deepidv.com/v1/mcp` as a remote MCP server.
+2. Let the client discover the OAuth metadata automatically.
+3. If the client explicitly asks for `client_id`, enter `deepidv`.
+4. Do not provide a `client_secret`.
+5. Complete the browser-based deepidv sign-in flow.
+
+<Warning>
+  If a client requires a static `client_secret` to connect a remote MCP server,
+  that client is not compatible with deepidv's current hosted OAuth model.
+</Warning>
 
 ## Setup by Client
 
-### Claude Web
+### Any compatible remote MCP client
 
-Use Claude's connectors UI to add deepidv as a remote MCP server.
+Use these steps for clients that support remote MCP servers with OAuth discovery.
 
 <Steps>
-  <Step title="Open Connectors">
-    In Claude on the web, open **Settings** and then **Connectors**.
-  </Step>
-
-  <Step title="Add a custom remote MCP server">
-    Create a new custom MCP connector and use `https://mcp.deepidv.com/v1/mcp` as the server URL.
+  <Step title="Add deepidv as a remote MCP server">
+    Use `https://mcp.deepidv.com/v1/mcp` as the server URL.
 
     <Warning>
-      Use the full `/v1/mcp` path exactly as shown. Do not append any additional path after it.
+      Use the full `/v1/mcp` path exactly as shown. Do not append any extra
+      path after it.
     </Warning>
-
   </Step>
 
-  <Step title="Enter your deepidv credentials">
-    If Claude requests static OAuth credentials, use:
-
-    - `client_id`: your deepidv user ID
-    - `client_secret`: any active deepidv API key owned by that same user
-
-    You can retrieve your API key from [API Authentication](/authentication).
-
+  <Step title="Allow the client to discover OAuth metadata">
+    Most compatible clients can discover deepidv's OAuth and protected-resource
+    metadata from the server automatically. If a client asks for a manifest URL,
+    use `https://mcp.deepidv.com/mcp.json`.
   </Step>
 
-<Step title="Complete OAuth in the browser">
-  Claude can discover deepidv's OAuth metadata from the MCP server URL. Complete
-  the browser-based approval flow when prompted.
-</Step>
+  <Step title="Enter the fixed client ID if prompted">
+    If the client asks for `client_id`, use `deepidv`.
+
+    <Note>
+      Do not enter a `client_secret`. deepidv's hosted MCP flow uses a shared
+      public client with PKCE.
+    </Note>
+  </Step>
+
+  <Step title="Complete deepidv sign-in">
+    Finish the browser-based OAuth flow by signing in with your deepidv email
+    and password, then complete MFA if your account requires it.
+  </Step>
 
   <Step title="Verify the installation">
-    Ask Claude to list tools, list workflows, or list verification sessions.
+    Ask your AI client to list tools, list workflows, or list verification
+    sessions.
   </Step>
 </Steps>
 
-### Claude Code
+### Redirect URIs currently supported by the hosted OAuth server
 
-Claude Code can connect directly to deepidv over remote MCP using HTTP.
+deepidv currently allows connector-native redirect URIs for these client families:
 
-```bash
-claude mcp add --transport http \
-  --client-id YOUR_deepidv_USER_ID --client-secret --callback-port 8787 \
-  deepidv https://mcp.deepidv.com/v1/mcp
-```
+- Claude web/desktop callbacks
+- Cursor
+- VS Code
+- ChatGPT connectors
 
-After adding the server:
-
-1. Enter your active deepidv API key when Claude Code prompts for the client secret.
-2. Run `/mcp` inside Claude Code.
-3. Complete the browser-based OAuth flow.
-
-Use callback port `8787` so the OAuth redirect matches deepidv's hosted OAuth configuration.
-
-### Cursor
-
-Cursor supports remote MCP servers through `.cursor/mcp.json`.
-
-```json
-{
-  "mcpServers": {
-    "deepidv": {
-      "url": "https://mcp.deepidv.com/v1/mcp",
-      "auth": {
-        "CLIENT_ID": "your-deepidv-user-id",
-        "CLIENT_SECRET": "your-active-api-key"
-      }
-    }
-  }
-}
-```
-
-After saving the file, let Cursor open the OAuth flow and complete approval.
-
-### Claude Desktop
-
-Claude Desktop can use the same connectors flow as Claude Web for a smoother setup experience.
-
-<Steps>
-  <Step title="Open Connectors">
-    In Claude Desktop, open **Settings** and then **Connectors**.
-  </Step>
-
-  <Step title="Add a custom remote MCP server">
-    Create a new custom MCP connector and use `https://mcp.deepidv.com/v1/mcp` as the server URL.
-
-    <Warning>
-      Use the full `/v1/mcp` path exactly as shown. Do not append any additional path after it.
-    </Warning>
-
-  </Step>
-
-  <Step title="Enter your deepidv credentials">
-    If Claude Desktop requests static OAuth credentials, use:
-
-    - `client_id`: your deepidv user ID
-    - `client_secret`: any active deepidv API key owned by that same user
-
-    You can retrieve your API key from [API Authentication](/authentication).
-
-  </Step>
-
-<Step title="Complete OAuth in the browser">
-  Claude Desktop can discover deepidv's OAuth metadata from the MCP server URL.
-  Complete the browser-based approval flow when prompted.
-</Step>
-
-  <Step title="Verify the installation">
-    Ask Claude to list tools, list workflows, or list verification sessions.
-  </Step>
-</Steps>
+If your client uses a different fixed redirect URI, contact [deepidv support](https://www.deepidv.com/support) before rollout.
 
 ## Authentication Model
 
 deepidv uses hosted OAuth 2.0 with PKCE for MCP access.
 
-The browser approval flow does not replace your credentials. `client_id` and `client_secret` are still required for MCP access:
+The browser approval flow authenticates the end user directly against deepidv's hosted login screens:
 
-- `client_id` is your deepidv user ID
-- `client_secret` is an active deepidv API key owned by that same user
+- `client_id` is the fixed shared public client ID: `deepidv`
+- `client_secret` is not used
+- token exchange uses PKCE with `S256`
+- the user signs in with their deepidv email and password
+- MFA is enforced when required by the account
 
 Access is scoped to the authenticated deepidv user and organization. Each tool call is validated against active account state before it runs.
 
 ## Available Tools
 
+deepidv currently exposes the following MCP tools.
+
+### Applicants
+
+| Tool                    | What it does                                                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------------------- |
+| `search_applicants`     | Find matching applicants across verification sessions and bank statement requests.             |
+| `get_applicant`         | Retrieve a consolidated applicant profile and history.                                         |
+| `get_invitation_status` | Check invite delivery/open status for a session or bank statement request.                     |
+| `resend_invitation`     | Resend a verification-session or bank-statement invitation.                                    |
+
 ### Verification
 
 | Tool                                 | What it does                                                                                   |
 | ------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| `list_verification_sessions`         | List verification sessions with optional filters such as date range, workflow, or external ID. |
-| `get_verification_session`           | Retrieve the full details for a verification session.                                          |
-| `get_verification_session_artifacts` | Retrieve analysis data and resource links for a verification session.                          |
-| `create_verification_session`        | Create and send a new verification invitation.                                                 |
-| `update_verification_session_status` | Manually mark a session as `VERIFIED` or `REJECTED`.                                           |
+| `list_verification_sessions`         | List verification sessions with filters and pagination.                                        |
+| `get_session_stats`                  | Retrieve aggregated verification metrics and trends.                                            |
+| `get_verification_session`           | Retrieve full details for one verification session.                                             |
+| `get_verification_session_artifacts` | Retrieve analysis outputs and resource links for a verification session.                        |
+| `get_session_timeline`               | Retrieve a chronological session timeline and audit trail.                                      |
+| `create_verification_session`        | Create and send a new verification invitation.                                                  |
+| `update_verification_session_status` | Manually set a session outcome to `VERIFIED` or `REJECTED`.                                     |
+| `expire_session`                     | Expire an active verification session and invalidate the applicant link.                        |
 
 ### Workflows
 
@@ -191,33 +182,64 @@ Current workflow step IDs exposed through MCP:
 | Tool                                  | What it does                                                           |
 | ------------------------------------- | ---------------------------------------------------------------------- |
 | `list_bank_statements`                | List bank statement records for the authenticated organization.        |
+| `get_bank_statement_stats`            | Retrieve aggregated bank statement metrics and trends.                 |
 | `get_bank_statement`                  | Retrieve a bank statement record and statement details when available. |
 | `list_bank_statements_by_external_id` | Retrieve bank statement records that match your external reference ID. |
 | `create_bank_statement_request`       | Create and send a new bank statement request invitation.               |
+
+### Silent Screening
+
+| Tool                       | What it does                                                                 |
+| -------------------------- | ---------------------------------------------------------------------------- |
+| `run_pep_sanctions_check`  | Run a synchronous PEP and sanctions screening.                               |
+| `run_title_check`          | Run a synchronous property title / ownership search.                         |
+| `run_adverse_media_check`  | Queue an asynchronous adverse-media screening and return a `job_id`.         |
+| `get_async_job`            | Poll an async adverse-media job until it reaches `ready` or `failed`.        |
+
+<Note>
+  Some tools are read-only, while others are state-changing and may consume
+  credits or trigger applicant delivery flows. Your client may ask for
+  confirmation before running those actions.
+</Note>
 
 ## Example Prompts
 
 Once the server is connected, prompts like these should work:
 
 - "List my latest verification sessions."
+- "Find the applicant with email `jane@example.com`."
 - "Show the artifacts for verification session `SESSION_ID`."
 - "Create a workflow named Standard KYC with ID verification and face liveness."
 - "List my bank statement requests from the last 30 days."
+- "Run a PEP and sanctions check for Jane Doe born 1980-05-12."
+- "Queue an adverse media check for Jane Doe in the US, then poll the job."
 
 ## Troubleshooting
 
 ### `401 Unauthorized` or `invalid_token`
 
 - Re-run the OAuth flow
-- Confirm the `client_id` is your deepidv user ID
-- Confirm the API key used as `client_secret` belongs to that same user
+- Confirm the client is pointing at `https://mcp.deepidv.com/v1/mcp`
+- If the client asks for `client_id`, confirm you entered `deepidv`
 - Confirm the deepidv user and organization are active
 
-### Redirect URI not registered
+### The client asks for a `client_secret`
+
+deepidv's hosted MCP flow does not use a `client_secret`. If the client refuses
+to proceed without one, use a client that supports public OAuth + PKCE for
+remote MCP servers.
+
+### Redirect URI not registered or not allowed
 
 Your MCP client may be using a redirect URI that is not currently allowed by the deepidv hosted OAuth server. Use a client with standard remote MCP OAuth support, or contact [deepidv support](https://www.deepidv.com/support).
 
-### The client tries to install a local package
+### Opening the server URL shows an auth error
+
+That is expected. `POST /v1/mcp` is protected and requires a bearer token issued
+through OAuth. Use the docs page, `mcp.json`, or your client's connector flow
+for discovery.
+
+### The client tries to install a local package or run a local server
 
 deepidv should connect as a hosted remote MCP server and should not require a local deepidv server package for Claude Web, Claude Desktop, Claude Code, or Cursor.
 
@@ -226,6 +248,7 @@ deepidv should connect as a hosted remote MCP server and should not require a lo
 - All MCP requests use bearer-token authentication
 - Access is limited to the authenticated deepidv organization and user
 - Tool calls are rate-limited
+- State-changing tools may create records, resend applicant invites, or consume credits
 - Verification artifacts and returned links should be treated as sensitive customer data
 
 ## Related Links
@@ -244,7 +267,7 @@ deepidv should connect as a hosted remote MCP server and should not require a lo
 </Card>
 
 <Card title="API Authentication" icon="key" href="/authentication">
-  Find your API key and review how deepidv authentication works.
+  Review REST API key authentication. This is separate from the hosted MCP OAuth flow.
 </Card>
 
   <Card title="Support" icon="life-ring" href="https://www.deepidv.com/support">
