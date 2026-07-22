@@ -77,8 +77,10 @@ Included when the session has been processed. Contains the full verification ana
 | `id_analysis_data` | object | Primary ID document analysis (face detection, extracted text, expiry/age/state checks) |
 | `secondary_id_analysis_data` | object | Secondary ID document analysis (same structure) |
 | `tertiary_id_analysis_data` | object | Tertiary ID document analysis (same structure) |
-| `id_matches_selfie` | boolean | Whether the ID photo matches the selfie |
+| `id_matches_selfie` | boolean | Rollup identity result — logical AND of `id_matches_face_capture` and `id_matches_liveness` (whichever ran). `false` if either present check failed |
 | `faceliveness_score` | number | Liveness confidence score (0–100) |
+| `id_matches_face_capture` | boolean | Whether the face/selfie capture matched the ID portrait. `null` if not evaluated |
+| `id_matches_liveness` | boolean | Whether the Face Liveness capture matched the ID portrait (Face Liveness workflows only). `null` if not evaluated |
 | `compare_faces_data` | object | Face comparison results with `face_match_confidence` score |
 | `pep_sanctions_data` | object | PEP & sanctions screening results |
 | `adverse_media_data` | object | Adverse media screening results |
@@ -142,7 +144,7 @@ Sent when an applicant completes and submits their verification session. The `an
       "selfie_front": true,
       "selfie_right": true,
       "selfie_left": true,
-      "faceliveness": false
+      "faceliveness": true
     },
     "meta_data": {
       "applicantSubmissionIp": "192.168.1.1",
@@ -165,6 +167,8 @@ Sent when an applicant completes and submits their verification session. The `an
       "created_at": "2026-03-23T14:35:00.000Z",
       "id_matches_selfie": true,
       "faceliveness_score": 95.42,
+      "id_matches_face_capture": true,
+      "id_matches_liveness": true,
       "id_analysis_data": {
         "id_extracted_text": [
           { "type": "FIRST_NAME", "value": "JOHN", "confidence": 97.69 },

@@ -136,7 +136,7 @@ Each entry in `attempts` has the following shape:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `reason` | string | The check that failed. One of `NO_FACE_DETECTED`, `OCR_NAME_MISSING`, `DOC_TYPE_NOT_ALLOWED`, `ID_TYPE_UNRECOGNIZED`, or `ID_TYPE_LOW_CONFIDENCE`. The two `ID_TYPE_*` values are emitted only when the workflow's ID confidence threshold is enabled (driver's licence / passport): `ID_TYPE_UNRECOGNIZED` when the document type could not be read, and `ID_TYPE_LOW_CONFIDENCE` when it was read below the configured confidence. New values may be added over time — consumers should treat this as an open string. |
+| `reason` | string | The check that failed. One of `NO_FACE_DETECTED`, `OCR_NAME_MISSING`, `DOC_TYPE_NOT_ALLOWED`, `ID_TYPE_UNRECOGNIZED`, `ID_TYPE_LOW_CONFIDENCE`, `FACE_MISMATCH`, or `LIVENESS_ID_MISMATCH`. The two `ID_TYPE_*` values are emitted only when the workflow's ID confidence threshold is enabled (driver's licence / passport): `ID_TYPE_UNRECOGNIZED` when the document type could not be read, and `ID_TYPE_LOW_CONFIDENCE` when it was read below the configured confidence. `FACE_MISMATCH` is the selfie↔ID face-match failure; `LIVENESS_ID_MISMATCH` is the Face Liveness↔ID identity-binding failure. New values may be added over time — consumers should treat this as an open string. |
 | `slot` | string \| null | Which ID slot the failure applies to: `PRIMARY`, `SECONDARY`, `TERTIARY`, or `null` when the failure is not slot-specific. |
 | `failedAt` | string | ISO 8601 timestamp of when the attempt was recorded |
 
@@ -204,8 +204,10 @@ Reason codes:
 |-------|------|-------------|
 | `created_at` | string | When analysis was performed |
 | `id_analysis_data` | object | Primary ID document analysis |
-| `id_matches_selfie` | boolean | Whether the ID photo matches the selfie |
+| `id_matches_selfie` | boolean | Rollup identity result — logical AND of `id_matches_face_capture` and `id_matches_liveness` (whichever ran). `false` if either present check failed |
 | `faceliveness_score` | number | Liveness confidence score (0–100) |
+| `id_matches_face_capture` | boolean | Whether the face/selfie capture matched the ID portrait. `null` if not evaluated |
+| `id_matches_liveness` | boolean | Whether the Face Liveness capture matched the ID portrait (Face Liveness workflows only). `null` if not evaluated |
 | `compare_faces_data` | object | Face comparison results |
 | `pep_sanctions_data` | object | PEP & sanctions screening results |
 | `adverse_media_data` | object | Adverse media screening results |
@@ -350,6 +352,7 @@ Both `user` (the applicant) and `sender_user` (the session creator) share the sa
       "selfie_front": true,
       "selfie_right": true,
       "selfie_left": true,
+      "faceliveness": true,
       "hold_up_3_fingers": true,
       "pdf_summary": true
     },
@@ -357,6 +360,8 @@ Both `user` (the applicant) and `sender_user` (the session creator) share the sa
       "created_at": "2025-01-15T10:43:00.000Z",
       "id_matches_selfie": true,
       "faceliveness_score": 99.49,
+      "id_matches_face_capture": true,
+      "id_matches_liveness": true,
       "id_analysis_data": {
         "detect_face_data": [
           {
@@ -730,6 +735,7 @@ Both `user` (the applicant) and `sender_user` (the session creator) share the sa
     "secondary_id_back": "https://s3.amazonaws.com/...",
     "pdf_summary": "https://s3.amazonaws.com/...",
     "selfie_front": "https://s3.amazonaws.com/...",
+    "faceliveness": "https://s3.amazonaws.com/...",
     "tertiary_id_front": "https://s3.amazonaws.com/...",
     "tertiary_id_back": "https://s3.amazonaws.com/...",
     "selfie_right": "https://s3.amazonaws.com/...",
