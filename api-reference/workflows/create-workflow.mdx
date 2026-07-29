@@ -10,7 +10,7 @@ POST /v1/workflows
 
 Creates a new workflow for your organization. Workflows define the ordered sequence of verification steps that applicants must complete.
 
-Currently supported steps: `ID_VERIFICATION`, `FACE_LIVENESS`, `AGE_ESTIMATION`, `PEP_SANCTIONS`, `ADVERSE_MEDIA`.
+Currently supported steps: `ID_VERIFICATION`, `FACE_LIVENESS`, `AGE_ESTIMATION`, `PEP_SANCTIONS`, `ADVERSE_MEDIA`, `IP_JURISDICTION`, `VPN_DETECTION`, `INJECTION_DETECTION`, `ANTI_CHEAT`.
 
 ## Request
 
@@ -38,6 +38,10 @@ Currently supported steps: `ID_VERIFICATION`, `FACE_LIVENESS`, `AGE_ESTIMATION`,
 | `AGE_ESTIMATION` | Biometric age estimation |
 | `PEP_SANCTIONS` | Politically exposed persons & sanctions screening |
 | `ADVERSE_MEDIA` | Negative press and media mention detection |
+| `IP_JURISDICTION` | iGaming: block/allow by the applicant's resolved country + datacenter-IP handling |
+| `VPN_DETECTION` | iGaming: detect VPN / Tor / datacenter (anonymizer) connections |
+| `INJECTION_DETECTION` | iGaming: detect injected media, virtual cameras, and emulators |
+| `ANTI_CHEAT` | iGaming: biometric duplicate detection, multi-accounting linkage, and self-exclusion |
 
 ### Step Configuration
 
@@ -73,6 +77,83 @@ Each step accepts optional configuration. If omitted, sensible defaults are appl
 #### PEP_SANCTIONS / ADVERSE_MEDIA
 
 No configuration options. These steps use default settings.
+
+#### IP_JURISDICTION config
+
+Config keys are snake_case. Enforcement actions are one of `block`, `flag`, `step-up`, `allow`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `allowed_jurisdictions` | string[] | `[]` | ISO 3166 country codes that are always allowed (allowlist). When set, countries outside the list are treated as out-of-jurisdiction |
+| `blocked_jurisdictions` | string[] | `[]` | ISO 3166 country codes to block |
+| `out_of_jurisdiction_action` | string | `"block"` | Action when the resolved country is blocked (or not in the allowlist) |
+| `datacenter_ip_action` | string | `"flag"` | Action when the IP resolves to a datacenter / hosting network |
+| `trusted_ip_list` | string[] | `[]` | IPs or CIDR ranges that bypass the check |
+| `escalation_type` | string | `"none"` | Escalation type to run when the action is `step-up` |
+
+#### VPN_DETECTION config
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `vpn_enabled` | boolean | `true` | Detect commercial VPN ranges |
+| `vpn_action` | string | `"step-up"` | Action when a VPN is detected |
+| `datacenter_enabled` | boolean | `true` | Detect datacenter / hosting ranges |
+| `datacenter_action` | string | `"block"` | Action when a datacenter IP is detected |
+| `tor_enabled` | boolean | `true` | Detect Tor exit nodes |
+| `tor_action` | string | `"block"` | Action when a Tor exit node is detected |
+| `trusted_ip_list` | string[] | `[]` | IPs or CIDR ranges that bypass the check |
+| `trusted_asn_list` | string[] | `[]` | ASNs that bypass the check |
+| `confidence_threshold` | integer | `70` | Minimum confidence (1–100) to treat a hit as positive |
+| `escalation_type` | string | `"none"` | Escalation type to run when the action is `step-up` |
+
+#### INJECTION_DETECTION config
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `action_on_detection` | string | `"block"` | Action when injection/spoofing is detected. One of `block`, `flag`, `step-up`, `rechallenge`, `allow` |
+| `automation_handling` | string | `"block"` | Action when automation/emulator signals fire. One of `block`, `flag`, `step-up`, `ignore` |
+| `confidence_threshold` | integer | `70` | Minimum confidence (1–100) to treat signals as a detection |
+| `escalation_type` | string | `"none"` | Escalation type to run when the action is `step-up` |
+
+#### ANTI_CHEAT config
+
+Enforcement actions are one of `flag`, `manual-review`, `block`, `allow`. The step has three groups: biometric **duplicate** detection, **multi-accounting** linkage, and **self-exclusion**.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `duplicate_enabled` | boolean | `true` | Enable biometric face-dedup |
+| `match_threshold` | integer | `85` | Face-match similarity (1–100) at or above which two faces are a duplicate |
+| `action_on_duplicate` | string | `"flag"` | Action when the face matches an existing enrollment |
+| `multi_account_enabled` | boolean | `true` | Enable multi-accounting linkage |
+| `signal_ip_enabled` | boolean | `true` | Use a shared submission IP as a linkage signal |
+| `signal_ip_weight` | number | `0.2` | Weight of the IP signal (contributes to the score only — see note) |
+| `signal_biometric_enabled` | boolean | `true` | Use a biometric face match as a linkage signal |
+| `signal_biometric_weight` | number | `1.0` | Weight of the biometric signal |
+| `signal_document_enabled` | boolean | `true` | Use a shared document number as a linkage signal |
+| `signal_document_weight` | number | `0.9` | Weight of the document signal |
+| `signal_namedob_enabled` | boolean | `true` | Use a shared name + date of birth as a linkage signal |
+| `signal_namedob_weight` | number | `0.1` | Weight of the name/DOB signal |
+| `signal_device_enabled` | boolean | `true` | Use a shared device fingerprint as a linkage signal |
+| `signal_device_weight` | number | `0.5` | Weight of the device signal |
+| `link_sensitivity` | integer | `2` | How many **distinct signal types** must match another account before they are linked (1–5) |
+| `action_on_multi_account` | string | `"flag"` | Action when accounts are linked |
+| `self_exclusion_enabled` | boolean | `true` | Enforce the self-exclusion registry — block applicants whose document number or matched face is excluded |
+
+<Note>
+  Multi-accounting **fires on the count of distinct matched signal types**, not on the
+  weighted score: two accounts link when they share at least `link_sensitivity`
+  signal types (IP, biometric, document, name/DOB, device). The `*_weight` values
+  only affect the reported link score — raising a weight does **not** make a single
+  signal trigger a link on its own. To make linkage stricter or looser, change
+  `link_sensitivity`, not the weights.
+</Note>
+
+<Info>
+  The IP multi-accounting signal reads the applicant's submission IP from the
+  session. In deepidv's hosted verification flow this is captured automatically;
+  in a pure server-to-server integration it may not be set, in which case the IP
+  signal simply doesn't contribute (the other signals still apply).
+</Info>
 
 ### Fraud Analysis & Escalation
 

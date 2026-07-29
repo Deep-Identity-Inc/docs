@@ -115,7 +115,19 @@ Drag and drop any of these into your workflow:
 
   <FeatureCard icon="clipboard-list" title="Custom Forms" description="Add custom questions, fields, and file uploads." />
 
+  <FeatureCard icon="map-location-dot" title="IP Jurisdiction" description="iGaming: block or allow by the applicant's country and datacenter IPs." />
+
+  <FeatureCard icon="user-secret" title="VPN Detection" description="iGaming: detect VPN, Tor, and datacenter (anonymizer) connections." />
+
+  <FeatureCard icon="shield-virus" title="Injection Detection" description="iGaming: catch injected media, virtual cameras, and emulators." />
+
+  <FeatureCard icon="fingerprint" title="Anti-Cheat" description="iGaming: biometric duplicate detection, multi-accounting, and self-exclusion." />
+
 </FeatureGrid>
+
+<Note>
+  The four iGaming steps (`IP_JURISDICTION`, `VPN_DETECTION`, `INJECTION_DETECTION`, `ANTI_CHEAT`) are anti-fraud checks for gaming onboarding. See the [iGaming guide](/igaming/overview) for how they work and [Create workflow → Step configuration](/api-reference/workflows/create-workflow#step-configuration) for every config field and default.
+</Note>
 
 <Tip>
   The total cost of a workflow session is the sum of each enabled service. Only add what you actually need — see [Pricing](/pricing) for per-service rates.

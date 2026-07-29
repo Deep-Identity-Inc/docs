@@ -11,15 +11,15 @@ deepidv's iGaming module adds four fraud and compliance checks on top of your ex
 
 <CardGroup cols={2}>
   <Card title="Workflow steps" icon="diagram-project">
-    Add `ip-jurisdiction`, `vpn-detection`, `injection-detection`, or `anti-cheat` to a [workflow](/workflows/workflows). The check runs automatically inside the hosted verification flow alongside your other services.
+    Add `IP_JURISDICTION`, `VPN_DETECTION`, `INJECTION_DETECTION`, or `ANTI_CHEAT` to a [workflow](/api-reference/workflows/create-workflow) with its config. The check runs automatically inside the hosted verification flow alongside your other services.
   </Card>
 
   <Card title="Standalone calls" icon="plug">
-    Call `POST /v1/igaming/{injection,vpn-detection,ip-jurisdiction,anti-cheat}` directly with a `session_id` and supply the inputs yourself — no workflow step required.
+    Call `POST /v1/igaming/{injection,vpn-detection,ip-jurisdiction,anti-cheat}` directly with a `session_id`, supplying each check's inputs in the request body. You still configure the check's thresholds and actions on the session's workflow step.
   </Card>
 </CardGroup>
 
-Both paths write to the same session and produce the same verdict and action model, so you can start with standalone calls and move to workflow steps later without changing how you read results.
+Both paths write to the same session and produce the same verdict and action model. Either way, a check's **thresholds and enforcement actions come from its workflow step config** — the standalone request body carries only the check's inputs. Configure the step first ([Create workflow → Step configuration](/api-reference/workflows/create-workflow#step-configuration)); a session whose workflow omits a step gets no enforcement from it (VPN, IP jurisdiction, and anti-cheat return `UNAVAILABLE`/`allow`; injection falls back to default thresholds).
 
 ## The check catalog
 
@@ -48,7 +48,7 @@ Every check resolves a `verdict` and an `action` from your workflow step configu
 
 ## Fail-soft vs. fail-hard
 
-The four analyze checks (injection, VPN, IP jurisdiction, anti-cheat) **fail soft**: when a check isn't configured on the workflow, or an input is unresolvable (for example, a non-IPv4 address or no detectable face), they return `200` with `UNAVAILABLE`/`allow` rather than blocking spuriously. A request that fails schema validation (a missing required field) still returns `400`. Self-exclusion and purge **management** endpoints **fail hard**: a real error returns `500`, because these calls change registry state and shouldn't fail silently. See [iGaming checks](/igaming/checks) for fail-soft details per check.
+The four analyze checks (injection, VPN, IP jurisdiction, anti-cheat) **fail soft**: when a check isn't configured on the workflow, or an input is unresolvable (for example, a non-IPv4 address or no detectable face), they return `200` with `UNAVAILABLE`/`allow` rather than blocking spuriously. A request that fails schema validation (a missing required field) returns `400` for injection, VPN detection, and IP jurisdiction — **anti-cheat is the exception**: it fails soft to `200`/`UNAVAILABLE` even on a malformed or missing body. Self-exclusion and purge **management** endpoints **fail hard**: a real error returns `500`, because these calls change registry state and shouldn't fail silently. See [iGaming checks](/igaming/checks) for fail-soft details per check.
 
 ## The self-exclusion registry
 

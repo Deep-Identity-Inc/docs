@@ -5,7 +5,7 @@ description: What each iGaming check detects, the inputs it needs, and how it fa
 
 > Four checks, one shared model: each reads its workflow step config, resolves a `verdict` and `action`, and persists its result to the session's AnalysisData.
 
-Every check below can run as a [workflow step](/workflows/workflows) or as a [standalone call](/igaming/overview#two-ways-to-run-a-check) against `POST /v1/igaming/{check}` with a `session_id`. Either way, the check reads its configuration from the workflow step (or from your request body for standalone calls) and writes its result onto the session's AnalysisData, where it's available alongside every other check that ran on that session.
+Every check below can run as a [workflow step](/workflows/workflows) or as a [standalone call](/igaming/overview#two-ways-to-run-a-check) against `POST /v1/igaming/{check}` with a `session_id`. Either way, the check's **thresholds and enforcement actions come from its workflow step config** — a standalone request body carries only the check's *inputs* (`ip_address`, `image`, or injection signals), never its config. So configure the step on the session's workflow first (see [Create workflow → Step configuration](/api-reference/workflows/create-workflow#step-configuration)); a session whose workflow omits the step gets no enforcement (VPN, IP jurisdiction, and anti-cheat return `UNAVAILABLE`/`allow`; injection falls back to default thresholds). Each check writes its result onto the session's AnalysisData, alongside every other check that ran on that session.
 
 <Note>
   All request and response bodies for iGaming endpoints use `snake_case` field names.
@@ -59,7 +59,7 @@ Detects duplicate accounts (the same face enrolling under a new identity) and ap
 - **Runs as:** workflow step `anti-cheat`, or `POST /v1/igaming/anti-cheat`
 - **Reads:** its workflow step config for enforcement, and the session's existing AnalysisData for identity and document signals
 - **Persists to:** the session's AnalysisData; on a first-time match it also enrolls the face
-- **Fails soft:** when not configured on the workflow, or an input is unresolvable, returns `200` with `UNAVAILABLE` / `allow`. A request that fails schema validation still returns `400`.
+- **Fails soft (fully):** unlike the other three checks, anti-cheat *never* returns `400` — a malformed or missing body (bad or absent `image`, missing `session_id`) also returns `200` with `UNAVAILABLE` / `allow`, as does an unconfigured step or an unusable face. It only ever returns `401`/`404` for auth/session errors.
 
 <Info>
   Identity self-exclusion and document/name multi-accounting signals read OCR'd data that's already on the session. Run a document scan step before anti-cheat for full coverage — without it, anti-cheat can still dedup faces, but it can't match on document number or name.

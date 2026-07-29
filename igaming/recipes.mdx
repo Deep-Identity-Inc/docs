@@ -3,11 +3,60 @@ title: iGaming recipes
 description: Copy-paste flows for onboarding gates, exclusions, and data deletion
 ---
 
-> Three common flows, end to end — gate onboarding on iGaming checks, exclude an applicant, and purge a face for data deletion.
+> Four common flows, end to end — configure an iGaming workflow, gate onboarding on its checks, exclude an applicant, and purge a face for data deletion.
+
+## Configure an iGaming workflow
+
+Create a workflow with the iGaming steps and the thresholds and actions you want. The workflow's step config is what every check reads for its enforcement — so this is where you customize behavior (which jurisdictions to block, VPN vs Tor handling, dedup sensitivity, self-exclusion). See [Create workflow → Step configuration](/api-reference/workflows/create-workflow#step-configuration) for every field and default.
+
+<Steps>
+  <Step title="Create the workflow">
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://api.deepidv.com/v1/workflows \
+      -H "Content-Type: application/json" \
+      -H "x-api-key: YOUR_API_KEY" \
+      -d '{
+        "name": "iGaming onboarding",
+        "steps": [
+          { "id": "IP_JURISDICTION", "config": { "blocked_jurisdictions": ["US-WA", "FR"], "out_of_jurisdiction_action": "block", "datacenter_ip_action": "flag" } },
+          { "id": "VPN_DETECTION", "config": { "vpn_action": "step-up", "tor_action": "block", "datacenter_action": "block" } },
+          { "id": "ANTI_CHEAT", "config": { "action_on_duplicate": "block", "action_on_multi_account": "manual-review", "link_sensitivity": 2, "self_exclusion_enabled": true } }
+        ]
+      }'
+    ```
+
+    ```javascript Node.js
+    const response = await fetch("https://api.deepidv.com/v1/workflows", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": "YOUR_API_KEY",
+      },
+      body: JSON.stringify({
+        name: "iGaming onboarding",
+        steps: [
+          { id: "IP_JURISDICTION", config: { blocked_jurisdictions: ["US-WA", "FR"], out_of_jurisdiction_action: "block", datacenter_ip_action: "flag" } },
+          { id: "VPN_DETECTION", config: { vpn_action: "step-up", tor_action: "block", datacenter_action: "block" } },
+          { id: "ANTI_CHEAT", config: { action_on_duplicate: "block", action_on_multi_account: "manual-review", link_sensitivity: 2, self_exclusion_enabled: true } },
+        ],
+      }),
+    });
+
+    const { workflow } = await response.json();
+    // reuse workflow.id as workflow_id when you create sessions
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+<Info>
+  Omit a step's `config` to accept its defaults, or omit a step entirely to skip that check. Every check reads its thresholds and actions from this step config — a session whose workflow doesn't include a given step gets no enforcement from it (VPN, IP jurisdiction, and anti-cheat return `UNAVAILABLE`/`allow`; injection falls back to default thresholds).
+</Info>
 
 ## Onboarding gate
 
-Create a session, run the three standalone checks against it, then aggregate the results into a single decision.
+Create a session **against the workflow above**, run the three standalone checks against it, then aggregate the results into a single decision.
 
 <Steps>
   <Step title="Create a session">
