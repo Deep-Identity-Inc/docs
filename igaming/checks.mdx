@@ -1,0 +1,86 @@
+---
+title: iGaming checks
+description: What each iGaming check detects, the inputs it needs, and how it fails
+---
+
+> Four checks, one shared model: each reads its workflow step config, resolves a `verdict` and `action`, and persists its result to the session's AnalysisData.
+
+Every check below can run as a [workflow step](/workflows/workflows) or as a [standalone call](/igaming/overview#two-ways-to-run-a-check) against `POST /v1/igaming/{check}` with a `session_id`. Either way, the check reads its configuration from the workflow step (or from your request body for standalone calls) and writes its result onto the session's AnalysisData, where it's available alongside every other check that ran on that session.
+
+<Note>
+  All request and response bodies for iGaming endpoints use `snake_case` field names.
+</Note>
+
+## Injection detection
+
+Detects virtual cameras, emulators, and injected media during liveness capture — signs the applicant is feeding in fabricated video instead of a live camera feed.
+
+- **Runs as:** workflow step `injection-detection`, or `POST /v1/igaming/injection`
+- **Reads:** its workflow step config for thresholds and enforcement
+- **Persists to:** the session's AnalysisData
+- **Fails soft:** when not configured on the workflow, or an input is unresolvable, returns `200` with `UNAVAILABLE` / `allow` rather than blocking the applicant. A request that fails schema validation still returns `400`.
+
+See the [Injection detection reference](/api-reference/igaming/injection) for the full request and response schema.
+
+## VPN detection
+
+Detects applicants connecting through a VPN, proxy, or other relay that masks their real network location.
+
+- **Runs as:** workflow step `vpn-detection`, or `POST /v1/igaming/vpn-detection`
+- **Reads:** its workflow step config for thresholds and enforcement
+- **Persists to:** the session's AnalysisData
+- **Fails soft:** when not configured on the workflow, or an input is unresolvable, returns `200` with `UNAVAILABLE` / `allow`. A request that fails schema validation still returns `400`.
+
+<Warning>
+  VPN detection is **IPv4-only**. A non-IPv4 address (for example, IPv6) returns `UNAVAILABLE` and fails soft to allow.
+</Warning>
+
+See the [VPN detection reference](/api-reference/igaming/vpn-detection) for the full request and response schema.
+
+## IP jurisdiction
+
+Checks whether the applicant's IP address resolves to a jurisdiction you're licensed to serve.
+
+- **Runs as:** workflow step `ip-jurisdiction`, or `POST /v1/igaming/ip-jurisdiction`
+- **Reads:** its workflow step config for the allowed/blocked jurisdiction list
+- **Persists to:** the session's AnalysisData
+- **Fails soft:** when not configured on the workflow, or an input is unresolvable, returns `200` with `UNAVAILABLE` / `allow`. A request that fails schema validation still returns `400`.
+
+<Warning>
+  IP jurisdiction is **IPv4-only**. A non-IPv4 address (for example, IPv6) returns `UNAVAILABLE` rather than attempting a lookup.
+</Warning>
+
+See the [IP jurisdiction reference](/api-reference/igaming/ip-jurisdiction) for the full request and response schema.
+
+## Anti-cheat
+
+Detects duplicate accounts (the same face enrolling under a new identity) and applicants who match an entry on your [self-exclusion registry](/igaming/self-exclusion).
+
+- **Runs as:** workflow step `anti-cheat`, or `POST /v1/igaming/anti-cheat`
+- **Reads:** its workflow step config for enforcement, and the session's existing AnalysisData for identity and document signals
+- **Persists to:** the session's AnalysisData; on a first-time match it also enrolls the face
+- **Fails soft:** when not configured on the workflow, or an input is unresolvable, returns `200` with `UNAVAILABLE` / `allow`. A request that fails schema validation still returns `400`.
+
+<Info>
+  Identity self-exclusion and document/name multi-accounting signals read OCR'd data that's already on the session. Run a document scan step before anti-cheat for full coverage — without it, anti-cheat can still dedup faces, but it can't match on document number or name.
+</Info>
+
+See the [Anti-cheat reference](/api-reference/igaming/anti-cheat) for the full request and response schema, and [Self-exclusion](/igaming/self-exclusion) for how enrollment, dedup, and exclusion fit together.
+
+## Verdicts and actions
+
+Each check resolves an `action` from its verdict and your workflow step config. The actions are shared across all four checks:
+
+| Action | Meaning |
+| --- | --- |
+| `allow` | No issue found; applicant continues |
+| `flag` | Noted on the session; applicant continues |
+| `step-up` | Additional verification requested |
+| `manual-review` | Anti-cheat only; routed to a human reviewer |
+| `block` | Flow stops; **the session is marked failed** |
+
+The specific verdict values for each check (for example, anti-cheat's `UNIQUE`, `DUPLICATE`, and `SELF_EXCLUSION`) are documented on each check's reference page, linked above. Every check shares one fail-soft verdict:
+
+| Verdict | When it's returned | Resulting action |
+| --- | --- | --- |
+| `UNAVAILABLE` | Not configured on the workflow, an unresolvable input, or an internal error while running the check | `allow` |

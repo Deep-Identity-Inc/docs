@@ -33,6 +33,15 @@
             "pages": ["workflows/workflows", "workflows/verification-links"]
           },
           {
+            "group": "iGaming",
+            "pages": [
+              "igaming/overview",
+              "igaming/checks",
+              "igaming/self-exclusion",
+              "igaming/recipes"
+            ]
+          },
+          {
             "group": "Webhooks",
             "pages": ["webhooks/overview", "webhooks/event-object"]
           },
@@ -114,6 +123,29 @@
               "api-reference/server-to-server/face-compare",
               "api-reference/server-to-server/face-estimate-age",
               "api-reference/server-to-server/identity-verify"
+            ]
+          },
+          {
+            "group": "iGaming Checks",
+            "pages": [
+              "api-reference/igaming/overview",
+              "api-reference/igaming/injection",
+              "api-reference/igaming/vpn-detection",
+              "api-reference/igaming/ip-jurisdiction",
+              "api-reference/igaming/anti-cheat"
+            ]
+          },
+          {
+            "group": "iGaming Self-Exclusion & Management",
+            "pages": [
+              "api-reference/igaming/self-exclusion-overview",
+              "api-reference/igaming/add-identity",
+              "api-reference/igaming/remove-identity",
+              "api-reference/igaming/exclude-face",
+              "api-reference/igaming/clear-face",
+              "api-reference/igaming/list-registry",
+              "api-reference/igaming/exclude-applicant",
+              "api-reference/igaming/purge-enrollment"
             ]
           },
           {

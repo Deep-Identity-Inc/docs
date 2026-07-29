@@ -1,0 +1,121 @@
+---
+title: VPN Detection
+description: Detect VPNs, proxies, Tor exit nodes, and datacenter IPs
+api: POST /v1/igaming/vpn-detection
+---
+
+```
+POST /v1/igaming/vpn-detection
+```
+
+Checks the applicant's IP address against the anonymizer feed — Tor exit nodes, VPN ranges, and datacenter ranges — using the session's `vpn-detection` step configuration. Persists its result to the session.
+
+<Note>
+  This check fails **soft**. If an internal error occurs, or the supplied
+  `ip_address` isn't a valid IPv4 address, it returns `200` with
+  `verdict: "UNAVAILABLE"` and `action: "allow"` rather than blocking or
+  erroring.
+</Note>
+
+## Request
+
+### Headers
+
+| Header         | Required | Description        |
+| -------------- | -------- | ------------------ |
+| `x-api-key`    | Yes      | Your API key       |
+| `Content-Type` | Yes      | `application/json` |
+
+### Body parameters
+
+Bodies use **snake_case** field names — there are no camelCase aliases.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `session_id` | string | Yes | The session to score |
+| `ip_address` | string | Yes | The applicant's public **IPv4** address. A non-IPv4 value returns `UNAVAILABLE` (fails soft to `allow`) |
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.deepidv.com/v1/igaming/vpn-detection \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "session_id": "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+    "ip_address": "203.0.113.42"
+  }'
+```
+
+```javascript Node.js
+const response = await fetch("https://api.deepidv.com/v1/igaming/vpn-detection", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "x-api-key": "YOUR_API_KEY",
+  },
+  body: JSON.stringify({
+    session_id: "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+    ip_address: "203.0.113.42",
+  }),
+});
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://api.deepidv.com/v1/igaming/vpn-detection",
+    headers={
+        "Content-Type": "application/json",
+        "x-api-key": "YOUR_API_KEY",
+    },
+    json={
+        "session_id": "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+        "ip_address": "203.0.113.42",
+    },
+)
+```
+
+</CodeGroup>
+
+## Response
+
+### 200 — Success
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `verdict` | string | `HIT`, `CLEAR`, or `UNAVAILABLE` |
+| `action` | string | `allow`, `flag`, `step-up`, or `block` |
+| `evidence` | object | Details behind the verdict — e.g. anonymizer `type`, matched rule |
+| `escalation` | object \| null | `{ decision: "ESCALATE", type: string, reason: string }` — present only when `action` is `step-up` |
+
+### Verdicts
+
+| Verdict | Meaning |
+| --- | --- |
+| `HIT` | The IP matched an anonymizer or datacenter rule |
+| `CLEAR` | No match against the anonymizer feed |
+| `UNAVAILABLE` | The step isn't configured on the workflow, or the IP wasn't valid IPv4 — fails soft to `allow` |
+
+### Error responses
+
+| Status | Description |
+| --- | --- |
+| `400 Bad Request` | Invalid request body — check required fields |
+| `401 Unauthorized` | Missing or invalid API key |
+| `404 Not Found` | Session not found, or not in your org |
+
+<ResponseExample>
+```json 200
+{
+  "verdict": "CLEAR",
+  "action": "allow",
+  "evidence": { "type": "none" },
+  "escalation": null
+}
+```
+</ResponseExample>

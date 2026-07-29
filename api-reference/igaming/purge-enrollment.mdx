@@ -1,0 +1,84 @@
+---
+title: Purge Enrollment
+description: Delete a session's enrolled face data
+api: DELETE /v1/igaming/anti-cheat/{session_id}
+---
+
+```
+DELETE /v1/igaming/anti-cheat/{session_id}
+```
+
+Deletes the session's **own** enrolled face (Rekognition) and its dedup crosswalk entry — the GDPR/reset path for removing an applicant's biometric enrollment.
+
+This acts on the session's own enrollment only — there is **no** matched-session fallback. A `DUPLICATE` session that never enrolled its own face returns `deleted: false`. This call is idempotent.
+
+## Request
+
+### Path parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `session_id` | string | Yes | The session whose enrolled face data to purge |
+
+### Headers
+
+| Header      | Required | Description  |
+| ----------- | -------- | ------------ |
+| `x-api-key` | Yes      | Your API key |
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X DELETE https://api.deepidv.com/v1/igaming/anti-cheat/b8991ba9-2566-4fe5-b758-66f387c3e28b \
+  -H "x-api-key: YOUR_API_KEY"
+```
+
+```javascript Node.js
+const response = await fetch(
+  "https://api.deepidv.com/v1/igaming/anti-cheat/b8991ba9-2566-4fe5-b758-66f387c3e28b",
+  {
+    method: "DELETE",
+    headers: { "x-api-key": "YOUR_API_KEY" },
+  }
+);
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.delete(
+    "https://api.deepidv.com/v1/igaming/anti-cheat/b8991ba9-2566-4fe5-b758-66f387c3e28b",
+    headers={"x-api-key": "YOUR_API_KEY"},
+)
+```
+
+</CodeGroup>
+
+## Response
+
+### 200 — Success
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `deleted` | boolean | Whether an enrollment was found and deleted |
+| `face_id` | string \| null | The deleted face ID, or `null` when nothing was deleted |
+
+### Error responses
+
+| Status | Description |
+|--------|-------------|
+| `400 Bad Request` | Missing or malformed `session_id` |
+| `401 Unauthorized` | Missing or invalid API key |
+| `500 Internal Server Error` | Unexpected server error |
+
+<ResponseExample>
+```json 200
+{
+  "deleted": true,
+  "face_id": "8febb583-fddb-4fd4-97a3-71bd5b9e9b2c"
+}
+```
+</ResponseExample>

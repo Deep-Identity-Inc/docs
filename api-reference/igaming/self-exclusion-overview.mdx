@@ -1,0 +1,41 @@
+---
+title: Overview
+description: Manage your organization's self-exclusion registry
+---
+
+The self-exclusion registry lets your organization block excluded players from onboarding. It holds two kinds of entries:
+
+- **Identity entries** — a document number (e.g. passport or ID number) that is barred from re-registering.
+- **Face entries** — an enrolled face (tied to a verification session) that is barred, independent of any document number.
+
+All endpoints in this group are **org-scoped** — the organization is derived from your API key, and you can only read or write entries belonging to your own organization.
+
+<Warning>
+  These are management endpoints and they **fail hard**: if something goes
+  wrong on the server, you get a real `500 Internal Server Error` — never a
+  false success. Do not treat a missing error as silent confirmation; always
+  check the response body.
+</Warning>
+
+<Note>
+  Writes are **idempotent**. Adding a document number that's already excluded,
+  removing one that was never added, or clearing a face that isn't excluded
+  all return a normal `200` with a status field indicating nothing changed —
+  they do not error.
+</Note>
+
+## Preferred exclusion path
+
+When you have a verification session for the applicant you want to exclude, use [Exclude Applicant](/api-reference/igaming/exclude-applicant) — it is a compound endpoint that flags the applicant's enrolled face **and** adds a linked identity exclusion (if the session has a scanned document number) in one call. Use the individual identity and face endpoints when you only have a document number, or only want to target a face directly.
+
+## Endpoints
+
+| Endpoint | Purpose |
+| --- | --- |
+| [Add Identity](/api-reference/igaming/add-identity) | Add one or more document numbers to the registry |
+| [Remove Identity](/api-reference/igaming/remove-identity) | Remove a document number from the registry |
+| [Exclude Face](/api-reference/igaming/exclude-face) | Flag a session's enrolled face as excluded |
+| [Clear Face](/api-reference/igaming/clear-face) | Remove a face exclusion for a session |
+| [List Registry](/api-reference/igaming/list-registry) | List all identity and face entries in the registry |
+| [Exclude Applicant](/api-reference/igaming/exclude-applicant) | Compound endpoint — exclude a session's face and linked identity in one call |
+| [Purge Enrollment](/api-reference/igaming/purge-enrollment) | Delete a session's enrolled face data (GDPR/reset path) |

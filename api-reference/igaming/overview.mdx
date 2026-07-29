@@ -1,0 +1,44 @@
+---
+title: Overview
+description: Real-time iGaming anti-fraud checks on a verification session
+---
+
+The iGaming checks are a set of real-time anti-fraud endpoints that run **against an existing verification session**. Each check is a `POST /v1/igaming/*` call that takes a `session_id` belonging to your org, plus a small check-specific payload. Results are persisted to the session and can be reviewed later alongside the rest of the session's data.
+
+All four checks:
+
+- Are session-scoped — the `session_id` must belong to a session in your org
+- Accept `application/json` request bodies using **snake_case** field names (no camelCase aliases)
+- Are driven by the session's **workflow step configuration** — if the corresponding step isn't configured on the session's workflow, the check returns `UNAVAILABLE`
+- Persist their result to the session for later retrieval
+
+## Verdict and action model
+
+Every check returns a `verdict` (the raw finding) and an `action` (what your integration should do about it). The `action` values are:
+
+| Action        | Meaning                                                          |
+| ------------- | ----------------------------------------------------------------- |
+| `allow`       | No issue found — proceed normally                                  |
+| `flag`        | Soft signal — proceed, but surface it for review                   |
+| `step-up`     | Route the applicant to additional verification (see `escalation`)  |
+| `manual-review` | Hold for a human reviewer before deciding                        |
+| `block`       | Reject the applicant — **the session is marked as failed**         |
+
+<Note>
+  These checks fail **soft**. If an internal error occurs or a required input
+  is missing, the endpoint still returns `200` with `verdict: "UNAVAILABLE"`
+  and `action: "allow"` — it never blocks the applicant or returns a 5xx for
+  this reason. Design your integration to treat `UNAVAILABLE` as "no signal,"
+  not as an error.
+</Note>
+
+A `404` response means the `session_id` either doesn't exist or doesn't belong to your org — the two cases are indistinguishable from the response.
+
+## Endpoints
+
+| Endpoint | Purpose |
+| --- | --- |
+| [`POST /v1/igaming/injection`](/api-reference/igaming/injection) | Detect virtual cameras, emulators, and injected media during liveness capture |
+| [`POST /v1/igaming/vpn-detection`](/api-reference/igaming/vpn-detection) | Detect VPNs, proxies, Tor exit nodes, and datacenter IPs |
+| [`POST /v1/igaming/ip-jurisdiction`](/api-reference/igaming/ip-jurisdiction) | Resolve the applicant's IP to a jurisdiction and check it against allow/block lists |
+| [`POST /v1/igaming/anti-cheat`](/api-reference/igaming/anti-cheat) | Face-based dedup, multi-accounting, and self-exclusion enforcement |

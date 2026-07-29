@@ -1,0 +1,89 @@
+---
+title: Self-exclusion
+description: Manage the self-exclusion registry and the anti-cheat lifecycle
+---
+
+> A per-organization registry of applicants who've excluded themselves from play — checked automatically by anti-cheat on every future session.
+
+## The registry
+
+Each organization maintains its own self-exclusion registry, made up of two kinds of entries:
+
+- **Identity entries** — a document number, added directly or pulled from a session's OCR'd document
+- **Face entries** — a session's enrolled face
+
+When [anti-cheat](/igaming/checks#anti-cheat) later scans a document number or matches a face against the registry, it returns `verdict: SELF_EXCLUSION` and `action: block` — the session is marked failed.
+
+<Note>
+  Anti-cheat needs OCR'd document data on the session to match on identity. Run a document scan step before anti-cheat for full self-exclusion coverage. See [iGaming checks](/igaming/checks#anti-cheat).
+</Note>
+
+## Management endpoints
+
+Registry management is separate from the checks that read it. Unlike the four analyze checks, these endpoints **fail hard**: a real error returns `500` rather than falling back to a soft default, since these calls change registry state.
+
+| Action | Description | Reference |
+| --- | --- | --- |
+| Add identity | Add a document number to the registry directly | [Add identity](/api-reference/igaming/add-identity) |
+| Remove identity | Remove a document number from the registry | [Remove identity](/api-reference/igaming/remove-identity) |
+| Exclude face | Add a session's enrolled face to the registry | [Exclude face](/api-reference/igaming/exclude-face) |
+| Clear face | Remove a face entry from the registry | [Clear face](/api-reference/igaming/clear-face) |
+| List entries | List all identity and face entries on the registry | [List registry](/api-reference/igaming/list-registry) |
+
+### Exclude an applicant (preferred path)
+
+Rather than calling identity and face management separately, `POST /v1/igaming/self-exclusion/applicant` excludes an applicant in one call: it flags the session's enrolled face **and** adds the identity from the session's OCR'd document number. This is the preferred operator path — it's what you call when a person asks to be self-excluded.
+
+```json
+{
+  "session_id": "sess_abc123"
+}
+```
+
+See the [Exclude applicant reference](/api-reference/igaming/exclude-applicant) for the full request and response schema.
+
+### Matched-session fallback
+
+A `DUPLICATE` applicant never enrolled its own face — the face on file belongs to whichever session enrolled first. When you exclude "its" face, the exclusion lands on that **matched original enrollment** instead. Responses surface `matched_session_id` whenever this fallback applies, so you always know which session's face actually got excluded.
+
+## Anti-cheat lifecycle
+
+<Steps>
+  <Step title="Enroll">
+    The first time anti-cheat sees a face, it enrolls it. The verdict is `UNIQUE`.
+  </Step>
+
+  <Step title="Dedup">
+    A later session with the same face returns `DUPLICATE` — the applicant is trying to onboard again under a new identity.
+  </Step>
+
+  <Step title="Exclude">
+    An operator excludes the applicant — via [Exclude applicant](#exclude-an-applicant-preferred-path) or the individual identity/face endpoints. The entry is added to the registry.
+  </Step>
+
+  <Step title="Purge">
+    `DELETE /v1/igaming/anti-cheat/{session_id}` removes the enrolled face for that session — a GDPR deletion request or a manual reset. Purging removes the face's enrollment; it does not remove a self-exclusion registry entry on its own.
+  </Step>
+</Steps>
+
+## Face purge (data deletion)
+
+`DELETE /v1/igaming/anti-cheat/{session_id}` removes the face enrolled for that session. Use it to satisfy a GDPR data deletion request, or to reset a session's enrollment so it no longer counts toward dedup matching. Like the other management endpoints, purge fails hard: a real error returns `500`.
+
+See the [Purge enrollment reference](/api-reference/igaming/purge-enrollment) for the full request and response schema.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="iGaming checks" icon="shield-check" href="/igaming/checks">
+    See how anti-cheat's verdicts and actions work.
+  </Card>
+
+  <Card title="iGaming recipes" icon="code" href="/igaming/recipes">
+    Copy-paste flows for excluding an applicant and purging a face.
+  </Card>
+
+  <Card title="Self-exclusion API reference" icon="book" href="/api-reference/igaming/self-exclusion-overview">
+    Every self-exclusion endpoint in one place.
+  </Card>
+</CardGroup>

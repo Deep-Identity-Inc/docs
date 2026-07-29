@@ -1,0 +1,116 @@
+---
+title: Add Identity
+description: Add one or more document numbers to the self-exclusion registry
+api: POST /v1/igaming/self-exclusion/identity
+---
+
+```
+POST /v1/igaming/self-exclusion/identity
+```
+
+Adds one or more document numbers to your organization's self-exclusion registry. Numbers are normalized (trimmed and upper-cased) before being stored or compared.
+
+## Request
+
+### Headers
+
+| Header         | Required | Description        |
+| -------------- | -------- | ------------------ |
+| `x-api-key`    | Yes      | Your API key       |
+| `Content-Type` | Yes      | `application/json` |
+
+### Body parameters
+
+Provide **one** of `document_number` or `document_numbers`. Field names are snake_case only — there are no camelCase aliases.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `document_number` | string | One of `document_number` / `document_numbers` | A single document number to exclude |
+| `document_numbers` | string[] | One of `document_number` / `document_numbers` | A non-empty array of document numbers to exclude |
+| `reason` | string | No | Free-text reason for the exclusion |
+| `first_name` | string | No | Applicant's first name, stored alongside the entry |
+| `last_name` | string | No | Applicant's last name, stored alongside the entry |
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.deepidv.com/v1/igaming/self-exclusion/identity \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "document_numbers": ["P1234567"],
+    "reason": "self-requested exclusion"
+  }'
+```
+
+```javascript Node.js
+const response = await fetch(
+  "https://api.deepidv.com/v1/igaming/self-exclusion/identity",
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": "YOUR_API_KEY",
+    },
+    body: JSON.stringify({
+      document_numbers: ["P1234567"],
+      reason: "self-requested exclusion",
+    }),
+  }
+);
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://api.deepidv.com/v1/igaming/self-exclusion/identity",
+    headers={
+        "Content-Type": "application/json",
+        "x-api-key": "YOUR_API_KEY",
+    },
+    json={
+        "document_numbers": ["P1234567"],
+        "reason": "self-requested exclusion",
+    },
+)
+```
+
+</CodeGroup>
+
+## Response
+
+### 200 — Success
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `excluded` | array | One entry per number in the request, in request order |
+| `excluded[].document_number` | string | The normalized document number |
+| `excluded[].status` | string | `added`, `already_excluded`, or `invalid` |
+
+<Info>
+  `added` means the number was newly registered. `already_excluded` means it
+  was already present — writes are idempotent, so this is not an error.
+  `invalid` means the value could not be used as a document number.
+</Info>
+
+### Error responses
+
+| Status | Description |
+|--------|-------------|
+| `400 Bad Request` | Neither `document_number` nor `document_numbers` was provided, or `document_numbers` was an empty array |
+| `401 Unauthorized` | Missing or invalid API key |
+| `500 Internal Server Error` | Unexpected server error |
+
+<ResponseExample>
+```json 200
+{
+  "excluded": [
+    { "document_number": "P1234567", "status": "added" }
+  ]
+}
+```
+</ResponseExample>

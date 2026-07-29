@@ -1,0 +1,75 @@
+---
+title: iGaming
+description: Anti-fraud checks and self-exclusion for iGaming onboarding
+---
+
+> Purpose-built checks for online gaming and betting operators — detect VPNs, block ineligible jurisdictions, catch spoofed liveness capture, stop multi-accounting, and enforce self-exclusion.
+
+deepidv's iGaming module adds four fraud and compliance checks on top of your existing verification flow, plus a self-exclusion registry your operator can manage per organization. It's designed for the risk signals that matter most in regulated online gaming: is this applicant using a VPN to mask their location, are they physically located somewhere you're licensed to serve, is their liveness capture being faked with a virtual camera or emulator, and have they — or their device's face — already excluded themselves from play.
+
+## Two ways to run a check
+
+<CardGroup cols={2}>
+  <Card title="Workflow steps" icon="diagram-project">
+    Add `ip-jurisdiction`, `vpn-detection`, `injection-detection`, or `anti-cheat` to a [workflow](/workflows/workflows). The check runs automatically inside the hosted verification flow alongside your other services.
+  </Card>
+
+  <Card title="Standalone calls" icon="plug">
+    Call `POST /v1/igaming/{injection,vpn-detection,ip-jurisdiction,anti-cheat}` directly with a `session_id` and supply the inputs yourself — no workflow step required.
+  </Card>
+</CardGroup>
+
+Both paths write to the same session and produce the same verdict and action model, so you can start with standalone calls and move to workflow steps later without changing how you read results.
+
+## The check catalog
+
+| Check | What it catches |
+| --- | --- |
+| **Injection detection** (`injection-detection`) | Virtual cameras, emulators, and injected media during liveness capture |
+| **VPN detection** (`vpn-detection`) | Applicants masking their real location behind a VPN, proxy, or relay |
+| **IP jurisdiction** (`ip-jurisdiction`) | Applicants connecting from a jurisdiction you're not licensed to serve |
+| **Anti-cheat** (`anti-cheat`) | Duplicate accounts (same face, new identity) and self-excluded applicants |
+
+See [iGaming checks](/igaming/checks) for the inputs, verdicts, and session data each one persists.
+
+## Verdict, action, and session outcome
+
+Every check resolves a `verdict` and an `action` from your workflow step configuration. The possible actions are:
+
+- `allow` — no issue, applicant continues
+- `flag` — noted on the session for review, applicant continues
+- `step-up` — request additional verification
+- `manual-review` — anti-cheat only; route to a human reviewer
+- `block` — stop the flow; **the session is marked failed**
+
+<Info>
+  `block` is the only action that fails the session. Every other action is informational or routes the applicant elsewhere in your flow — you decide what happens next.
+</Info>
+
+## Fail-soft vs. fail-hard
+
+The four analyze checks (injection, VPN, IP jurisdiction, anti-cheat) **fail soft**: when a check isn't configured on the workflow, or an input is unresolvable (for example, a non-IPv4 address or no detectable face), they return `200` with `UNAVAILABLE`/`allow` rather than blocking spuriously. A request that fails schema validation (a missing required field) still returns `400`. Self-exclusion and purge **management** endpoints **fail hard**: a real error returns `500`, because these calls change registry state and shouldn't fail silently. See [iGaming checks](/igaming/checks) for fail-soft details per check.
+
+## The self-exclusion registry
+
+Each organization maintains its own self-exclusion registry — a list of **identity** entries (a document number) and **face** entries (a session's enrolled face). When a future anti-cheat run scans a document number or matches a face already on the registry, it returns `verdict: SELF_EXCLUSION` and `action: block`. See [Self-exclusion](/igaming/self-exclusion) for how the registry works and how to manage it.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="iGaming checks" icon="shield-check" href="/igaming/checks">
+    Inputs, verdicts, and session data for each check.
+  </Card>
+
+  <Card title="Self-exclusion" icon="user-slash" href="/igaming/self-exclusion">
+    Manage the registry and the anti-cheat lifecycle.
+  </Card>
+
+  <Card title="iGaming recipes" icon="code" href="/igaming/recipes">
+    Copy-paste flows for onboarding gates, exclusions, and purges.
+  </Card>
+
+  <Card title="API reference" icon="book" href="/api-reference/igaming/overview">
+    Full endpoint reference for every iGaming route.
+  </Card>
+</CardGroup>

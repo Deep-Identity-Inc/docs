@@ -1,0 +1,225 @@
+---
+title: iGaming recipes
+description: Copy-paste flows for onboarding gates, exclusions, and data deletion
+---
+
+> Three common flows, end to end — gate onboarding on iGaming checks, exclude an applicant, and purge a face for data deletion.
+
+## Onboarding gate
+
+Create a session, run the three standalone checks against it, then aggregate the results into a single decision.
+
+<Steps>
+  <Step title="Create a session">
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://api.deepidv.com/v1/sessions \
+      -H "Content-Type: application/json" \
+      -H "x-api-key: YOUR_API_KEY" \
+      -d '{
+        "first_name": "Jane",
+        "last_name": "Smith",
+        "email": "jane.smith@example.com",
+        "phone": "+15192223333",
+        "workflow_id": "wf_igaming_onboarding"
+      }'
+    ```
+
+    ```javascript Node.js
+    const response = await fetch("https://api.deepidv.com/v1/sessions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": "YOUR_API_KEY",
+      },
+      body: JSON.stringify({
+        first_name: "Jane",
+        last_name: "Smith",
+        email: "jane.smith@example.com",
+        phone: "+15192223333",
+        workflow_id: "wf_igaming_onboarding",
+      }),
+    });
+
+    const { session_id } = await response.json();
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Run VPN detection, IP jurisdiction, and anti-cheat">
+    Call each check standalone with the `session_id`, plus the inputs each check requires. `vpn-detection` and `ip-jurisdiction` both require `ip_address`; `anti-cheat` requires `image`. You can run these in parallel.
+
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://api.deepidv.com/v1/igaming/vpn-detection \
+      -H "Content-Type: application/json" \
+      -H "x-api-key: YOUR_API_KEY" \
+      -d '{
+        "session_id": "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+        "ip_address": "203.0.113.42"
+      }'
+
+    curl -X POST https://api.deepidv.com/v1/igaming/ip-jurisdiction \
+      -H "Content-Type: application/json" \
+      -H "x-api-key: YOUR_API_KEY" \
+      -d '{
+        "session_id": "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+        "ip_address": "203.0.113.42"
+      }'
+
+    curl -X POST https://api.deepidv.com/v1/igaming/anti-cheat \
+      -H "Content-Type: application/json" \
+      -H "x-api-key: YOUR_API_KEY" \
+      -d '{
+        "session_id": "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+        "image": "<base64-encoded JPEG>",
+        "device_fingerprint": "d3b07384-d9a7-4e1c-9f2a-1c2b3d4e5f60"
+      }'
+    ```
+
+    ```javascript Node.js
+    const ipAddress = "203.0.113.42";
+
+    const calls = [
+      {
+        path: "vpn-detection",
+        body: { session_id, ip_address: ipAddress },
+      },
+      {
+        path: "ip-jurisdiction",
+        body: { session_id, ip_address: ipAddress },
+      },
+      {
+        path: "anti-cheat",
+        body: {
+          session_id,
+          image: faceImageBase64, // base64-encoded JPEG, no `data:` prefix
+          device_fingerprint: "d3b07384-d9a7-4e1c-9f2a-1c2b3d4e5f60",
+        },
+      },
+    ];
+
+    const results = await Promise.all(
+      calls.map(({ path, body }) =>
+        fetch(`https://api.deepidv.com/v1/igaming/${path}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": "YOUR_API_KEY",
+          },
+          body: JSON.stringify(body),
+        }).then((res) => res.json())
+      )
+    );
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Aggregate the actions">
+    Each response includes an `action`. Take the highest-severity action across all results and act on that:
+
+    `block` > `manual-review` / `step-up` > `flag` > `allow`
+
+    ```javascript Node.js
+    const severity = { block: 4, "manual-review": 3, "step-up": 3, flag: 2, allow: 1 };
+
+    const worst = results
+      .map((r) => r.action)
+      .reduce((a, b) => (severity[b] > severity[a] ? b : a), "allow");
+
+    if (worst === "block") {
+      // session is already marked failed — deny onboarding
+    } else if (worst === "manual-review" || worst === "step-up") {
+      // route to a human reviewer or request more verification
+    } else if (worst === "flag") {
+      // let the applicant through, note the flag for later review
+    }
+    ```
+
+    <Info>
+      If `worst` is `block`, the session is already marked **failed** — you don't need to fail it yourself, just stop onboarding.
+    </Info>
+  </Step>
+</Steps>
+
+## Exclude an applicant
+
+Flag the applicant's face and add their identity to the self-exclusion registry in one call — the preferred way to handle a self-exclusion request. See [Self-exclusion](/igaming/self-exclusion#exclude-an-applicant-preferred-path) for details.
+
+<Steps>
+  <Step title="Call the exclude-applicant endpoint">
+    <CodeGroup>
+    ```bash cURL
+    curl -X POST https://api.deepidv.com/v1/igaming/self-exclusion/applicant \
+      -H "Content-Type: application/json" \
+      -H "x-api-key: YOUR_API_KEY" \
+      -d '{ "session_id": "b8991ba9-2566-4fe5-b758-66f387c3e28b" }'
+    ```
+
+    ```javascript Node.js
+    const response = await fetch(
+      "https://api.deepidv.com/v1/igaming/self-exclusion/applicant",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": "YOUR_API_KEY",
+        },
+        body: JSON.stringify({ session_id: "b8991ba9-2566-4fe5-b758-66f387c3e28b" }),
+      }
+    );
+
+    const result = await response.json();
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Check for a matched-session fallback">
+    If the applicant's session never enrolled its own face — for example, a `DUPLICATE` applicant — the response includes `matched_session_id`, telling you which original enrollment actually got excluded.
+
+    <Info>
+      See [Matched-session fallback](/igaming/self-exclusion#matched-session-fallback) for why this happens.
+    </Info>
+  </Step>
+</Steps>
+
+## Purge a face (data deletion)
+
+Remove a session's enrolled face — for a GDPR deletion request or a manual reset.
+
+<Steps>
+  <Step title="Call the purge endpoint">
+    <CodeGroup>
+    ```bash cURL
+    curl -X DELETE https://api.deepidv.com/v1/igaming/anti-cheat/b8991ba9-2566-4fe5-b758-66f387c3e28b \
+      -H "x-api-key: YOUR_API_KEY"
+    ```
+
+    ```javascript Node.js
+    const response = await fetch(
+      "https://api.deepidv.com/v1/igaming/anti-cheat/b8991ba9-2566-4fe5-b758-66f387c3e28b",
+      {
+        method: "DELETE",
+        headers: { "x-api-key": "YOUR_API_KEY" },
+      }
+    );
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+<Warning>
+  Purge and the other self-exclusion management endpoints fail **hard** — a real error returns `500` instead of falling back to a soft default. Handle errors from these calls explicitly.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="iGaming overview" icon="dice" href="/igaming/overview">
+    The verdict → action model and fail-soft vs. fail-hard behavior.
+  </Card>
+
+  <Card title="Self-exclusion" icon="user-slash" href="/igaming/self-exclusion">
+    The registry, the lifecycle, and every management endpoint.
+  </Card>
+</CardGroup>

@@ -1,0 +1,87 @@
+---
+title: Remove Identity
+description: Remove a document number from the self-exclusion registry
+api: DELETE /v1/igaming/self-exclusion/identity/{document_number}
+---
+
+```
+DELETE /v1/igaming/self-exclusion/identity/{document_number}
+```
+
+Removes a document number from your organization's self-exclusion registry. This call is idempotent — removing a number that isn't present returns a normal `200` with `removed: false`, not an error.
+
+## Request
+
+### Path parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `document_number` | string | Yes | The document number to remove, URL-encoded |
+
+### Headers
+
+| Header      | Required | Description  |
+| ----------- | -------- | ------------ |
+| `x-api-key` | Yes      | Your API key |
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X DELETE https://api.deepidv.com/v1/igaming/self-exclusion/identity/P1234567 \
+  -H "x-api-key: YOUR_API_KEY"
+```
+
+```javascript Node.js
+const response = await fetch(
+  "https://api.deepidv.com/v1/igaming/self-exclusion/identity/P1234567",
+  {
+    method: "DELETE",
+    headers: { "x-api-key": "YOUR_API_KEY" },
+  }
+);
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.delete(
+    "https://api.deepidv.com/v1/igaming/self-exclusion/identity/P1234567",
+    headers={"x-api-key": "YOUR_API_KEY"},
+)
+```
+
+</CodeGroup>
+
+## Response
+
+### 200 — Success
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `removed` | boolean | `false` if the document number was not present in the registry — idempotent, not an error |
+| `face_unexcluded` | boolean | `true` if a face exclusion linked to this identity via its source session was also cleared |
+
+### Error responses
+
+| Status | Description |
+|--------|-------------|
+| `400 Bad Request` | Malformed or missing `document_number` |
+| `401 Unauthorized` | Missing or invalid API key |
+| `500 Internal Server Error` | Unexpected server error |
+
+<Info>
+  There is no `404` for this endpoint — removing a document number that isn't
+  in the registry returns `removed: false` rather than an error.
+</Info>
+
+<ResponseExample>
+```json 200
+{
+  "removed": true,
+  "face_unexcluded": false
+}
+```
+</ResponseExample>

@@ -1,0 +1,112 @@
+---
+title: List Registry
+description: List all identity and face entries in the self-exclusion registry
+api: GET /v1/igaming/self-exclusion
+---
+
+```
+GET /v1/igaming/self-exclusion
+```
+
+Returns the identity and face entries currently in your organization's self-exclusion registry. Face entries that are already represented by a linked identity entry are de-duplicated.
+
+## Request
+
+### Query parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `limit` | integer | No | `200` | Maximum number of entries to return (1–1000) |
+
+<Info>
+  If the registry has more entries than `limit`, `truncated` is `true` in the
+  response.
+</Info>
+
+### Headers
+
+| Header      | Required | Description  |
+| ----------- | -------- | ------------ |
+| `x-api-key` | Yes      | Your API key |
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.deepidv.com/v1/igaming/self-exclusion?limit=200" \
+  -H "x-api-key: YOUR_API_KEY"
+```
+
+```javascript Node.js
+const params = new URLSearchParams({ limit: "200" });
+
+const response = await fetch(
+  `https://api.deepidv.com/v1/igaming/self-exclusion?${params}`,
+  {
+    headers: { "x-api-key": "YOUR_API_KEY" },
+  }
+);
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.get(
+    "https://api.deepidv.com/v1/igaming/self-exclusion",
+    headers={"x-api-key": "YOUR_API_KEY"},
+    params={"limit": 200},
+)
+```
+
+</CodeGroup>
+
+## Response
+
+### 200 — Success
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `entries` | array | Array of identity and face entries |
+| `entries[].type` | string | `identity` or `face` |
+| `entries[].document_number` | string | Identity entries only |
+| `entries[].session_id` | string | Face entries only |
+| `entries[].reason` | string \| null | Reason recorded at exclusion time, if any |
+| `entries[].added_by` | string \| null | Identity entries only — ID of the user who added the entry |
+| `entries[].added_at` | string \| null | Identity entries only — ISO 8601 timestamp the entry was added |
+| `entries[].excluded_at` | string \| null | Face entries only — ISO 8601 timestamp the face was excluded |
+| `entries[].first_name` | string | Identity entries only, if provided when added |
+| `entries[].last_name` | string | Identity entries only, if provided when added |
+| `truncated` | boolean | `true` if the registry has more entries than `limit` |
+
+### Error responses
+
+| Status | Description |
+|--------|-------------|
+| `400 Bad Request` | Invalid `limit` (out of range or not a number) |
+| `401 Unauthorized` | Missing or invalid API key |
+| `500 Internal Server Error` | Unexpected server error |
+
+<ResponseExample>
+```json 200
+{
+  "entries": [
+    {
+      "type": "identity",
+      "document_number": "P1234567",
+      "reason": "self-requested exclusion",
+      "added_by": "32961365-ce2d-4642-8a4d-3ea21daef0f1",
+      "added_at": "2026-07-27T18:31:09.877Z"
+    },
+    {
+      "type": "face",
+      "session_id": "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+      "reason": null,
+      "excluded_at": "2026-07-27T18:31:09.877Z"
+    }
+  ],
+  "truncated": false
+}
+```
+</ResponseExample>

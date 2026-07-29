@@ -1,0 +1,130 @@
+---
+title: Anti-Cheat
+description: Face-based dedup, multi-accounting, and self-exclusion enforcement
+api: POST /v1/igaming/anti-cheat
+---
+
+```
+POST /v1/igaming/anti-cheat
+```
+
+Runs face-based deduplication against your org's enrollment collection, and checks the applicant's document number and matched face against the self-exclusion registry, using the session's `anti-cheat` step configuration. Persists the full result to the session's analysis data; the response returned here is intentionally redacted to just a verdict and an action.
+
+<Info>
+  Identity self-exclusion and document/name multi-accounting signals read
+  OCR'd data already present on the session. Run a document scan first for
+  full coverage.
+</Info>
+
+<Note>
+  This check fails **soft**. If an internal error occurs, or the `image` is missing, malformed, or has no usable face,
+  it returns `200` with `verdict: "UNAVAILABLE"` and
+  `action: "allow"` rather than blocking or erroring.
+</Note>
+
+## Request
+
+### Headers
+
+| Header         | Required | Description        |
+| -------------- | -------- | ------------------ |
+| `x-api-key`    | Yes      | Your API key       |
+| `Content-Type` | Yes      | `application/json` |
+
+### Body parameters
+
+Bodies use **snake_case** field names — there are no camelCase aliases.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `session_id` | string | Yes | The session to score |
+| `image` | string | Yes | The applicant's face as a **base64-encoded JPEG/PNG** — raw base64 with no `data:` prefix |
+| `device_fingerprint` | string | No | Stable per-device identifier used as a multi-accounting signal |
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.deepidv.com/v1/igaming/anti-cheat \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "session_id": "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+    "image": "/9j/4AAQSkZJRgABAQ... (base64 JPEG)",
+    "device_fingerprint": "d3b07384-d9a7-4e1c-9f2a-1c2b3d4e5f60"
+  }'
+```
+
+```javascript Node.js
+const response = await fetch("https://api.deepidv.com/v1/igaming/anti-cheat", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "x-api-key": "YOUR_API_KEY",
+  },
+  body: JSON.stringify({
+    session_id: "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+    image: "/9j/4AAQSkZJRgABAQ... (base64 JPEG)",
+    device_fingerprint: "d3b07384-d9a7-4e1c-9f2a-1c2b3d4e5f60",
+  }),
+});
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://api.deepidv.com/v1/igaming/anti-cheat",
+    headers={
+        "Content-Type": "application/json",
+        "x-api-key": "YOUR_API_KEY",
+    },
+    json={
+        "session_id": "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+        "image": "/9j/4AAQSkZJRgABAQ... (base64 JPEG)",
+        "device_fingerprint": "d3b07384-d9a7-4e1c-9f2a-1c2b3d4e5f60",
+    },
+)
+```
+
+</CodeGroup>
+
+## Response
+
+### 200 — Success
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `verdict` | string | `UNIQUE`, `DUPLICATE`, `SELF_EXCLUSION`, or `UNAVAILABLE` |
+| `action` | string | `allow`, `flag`, `manual-review`, or `block` |
+
+### Verdicts
+
+| Verdict | Meaning |
+| --- | --- |
+| `UNIQUE` | First sight of this face — enrolled into the org's dedup collection |
+| `DUPLICATE` | The face matches an existing enrollment |
+| `SELF_EXCLUSION` | The applicant's document number or matched face is on the self-exclusion registry |
+| `UNAVAILABLE` | No usable face, or the check was skipped — fails soft to `allow` |
+
+<Note>
+  When `action` is `block`, the session is marked as **failed**.
+</Note>
+
+### Error responses
+
+| Status | Description |
+| --- | --- |
+| `401 Unauthorized` | Missing or invalid API key |
+| `404 Not Found` | Session not found, or not in your org |
+
+<ResponseExample>
+```json 200
+{
+  "verdict": "UNIQUE",
+  "action": "allow"
+}
+```
+</ResponseExample>

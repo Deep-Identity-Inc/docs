@@ -1,0 +1,110 @@
+---
+title: Exclude Applicant
+description: Exclude a session's face and linked identity in a single call
+api: POST /v1/igaming/self-exclusion/applicant
+---
+
+```
+POST /v1/igaming/self-exclusion/applicant
+```
+
+The preferred exclusion path when you have a verification session for the applicant. Flags the applicant's enrolled face as excluded (with the same matched-session fallback as [Exclude Face](/api-reference/igaming/exclude-face)) and, if the session has a scanned document number, also adds a linked identity exclusion — attributing the identity entry to the session whose face was flagged.
+
+## Request
+
+### Headers
+
+| Header         | Required | Description        |
+| -------------- | -------- | ------------------ |
+| `x-api-key`    | Yes      | Your API key       |
+| `Content-Type` | Yes      | `application/json` |
+
+### Body parameters
+
+Field names are snake_case only — there are no camelCase aliases.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `session_id` | string | Yes | The session to exclude |
+| `reason` | string | No | Free-text reason for the exclusion |
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.deepidv.com/v1/igaming/self-exclusion/applicant \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "session_id": "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+    "reason": "self-requested exclusion"
+  }'
+```
+
+```javascript Node.js
+const response = await fetch(
+  "https://api.deepidv.com/v1/igaming/self-exclusion/applicant",
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": "YOUR_API_KEY",
+    },
+    body: JSON.stringify({
+      session_id: "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+      reason: "self-requested exclusion",
+    }),
+  }
+);
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://api.deepidv.com/v1/igaming/self-exclusion/applicant",
+    headers={
+        "Content-Type": "application/json",
+        "x-api-key": "YOUR_API_KEY",
+    },
+    json={
+        "session_id": "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+        "reason": "self-requested exclusion",
+    },
+)
+```
+
+</CodeGroup>
+
+## Response
+
+### 200 — Success
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `face_attached` | boolean | Whether the applicant's face was successfully flagged |
+| `document_number` | string \| null | The normalized document number that was excluded, or `null` if the session had none |
+| `identity_status` | string | `added` or `already_excluded` — present only when a document number existed |
+| `matched_session_id` | string | Present when the face was flagged via the matched enrollment |
+| `message` | string | Present only when there was nothing to exclude for this session — `"nothing to exclude for this session"` |
+
+### Error responses
+
+| Status | Description |
+|--------|-------------|
+| `400 Bad Request` | Missing or malformed `session_id` |
+| `401 Unauthorized` | Missing or invalid API key |
+| `404 Not Found` | Session not found, or not in your organization |
+| `500 Internal Server Error` | Unexpected server error |
+
+<ResponseExample>
+```json 200
+{
+  "face_attached": true,
+  "document_number": "P1234567",
+  "identity_status": "added"
+}
+```
+</ResponseExample>
