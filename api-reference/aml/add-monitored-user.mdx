@@ -1,0 +1,143 @@
+---
+title: Add a User to Monitoring
+description: Place a customer under ongoing AML monitoring by a bot
+api: POST /v1/aml/bots/{botId}/monitored-users
+---
+
+```
+POST /v1/aml/bots/{botId}/monitored-users
+```
+
+Places one of your customers under ongoing AML monitoring by the given bot. The bot re-checks each enrolled subject on its configured cadence.
+
+<Note>
+  You usually don't need this endpoint. [Saving transactions](/api-reference/aml/save-transactions) auto-provisions and enrols a subject on first sight. Use this to enrol a customer who has no transactions yet, or to attach an existing customer to an additional bot.
+</Note>
+
+The call is **idempotent**. Re-adding a subject who is already enrolled returns `200` with the existing enrolment and does **not** reset its cadence or check schedule. Re-adding a subject who was previously removed reactivates them.
+
+## Request
+
+### Headers
+
+| Header         | Required | Description        |
+| -------------- | -------- | ------------------ |
+| `x-api-key`    | Yes      | Your API key       |
+| `Content-Type` | Yes      | `application/json` |
+
+### Path parameters
+
+| Parameter | Type   | Required | Description                                                       |
+| --------- | ------ | -------- | ----------------------------------------------------------------- |
+| `botId`   | string | Yes      | The monitoring bot to enrol into. Must belong to your organization. |
+
+### Body parameters
+
+| Parameter       | Type   | Required | Description                                              |
+| --------------- | ------ | -------- | -------------------------------------------------------- |
+| `subjectUserId` | string | Yes      | Your own identifier for the customer to place under monitoring. |
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.deepidv.com/v1/aml/bots/agt-1a2b3c4d/monitored-users \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "subjectUserId": "cust-8821"
+  }'
+```
+
+```javascript Node.js
+const response = await fetch(
+  "https://api.deepidv.com/v1/aml/bots/agt-1a2b3c4d/monitored-users",
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": "YOUR_API_KEY",
+    },
+    body: JSON.stringify({ subjectUserId: "cust-8821" }),
+  },
+);
+
+// 201 = newly enrolled, 200 = already enrolled (no change made)
+const monitoredUser = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://api.deepidv.com/v1/aml/bots/agt-1a2b3c4d/monitored-users",
+    headers={
+        "Content-Type": "application/json",
+        "x-api-key": "YOUR_API_KEY",
+    },
+    json={"subjectUserId": "cust-8821"},
+)
+
+# 201 = newly enrolled, 200 = already enrolled (no change made)
+monitored_user = response.json()
+```
+
+</CodeGroup>
+
+## Response
+
+### 201 — Enrolled · 200 — Already enrolled
+
+`201` means the subject was newly enrolled. `200` means they were already enrolled and the existing enrolment is returned unchanged.
+
+| Field             | Type           | Description                                                          |
+| ----------------- | -------------- | -------------------------------------------------------------------- |
+| `orgId`           | string         | Your organization id                                                 |
+| `botId`           | string         | The bot the subject is enrolled into                                  |
+| `subjectUserId`   | string         | Your identifier for the customer                                      |
+| `subjectUserName` | string \| null | Display name derived from the customer's stored identity, if known    |
+| `subjectCountry`  | string         | ISO 3166-1 alpha-2, or `XX` when unknown                              |
+| `status`          | string         | `active` while under monitoring                                       |
+| `cadenceDays`     | number         | How often the bot re-checks this subject. `0` means real-time.        |
+| `nextCheckAt`     | string         | When the next check is due (ISO 8601)                                 |
+| `lastCheckedAt`   | string \| null | When the subject was last checked, or `null` if never                 |
+| `addedAt`         | string         | When the enrolment was created (ISO 8601)                             |
+| `addedBy`         | string \| null | Id of the API key that created the enrolment                          |
+| `updatedAt`       | string         | When the enrolment was last modified (ISO 8601)                       |
+
+### Error responses
+
+| Status             | Description                                                                     |
+| ------------------ | ------------------------------------------------------------------------------- |
+| `400 Bad Request`  | `subjectUserId` is missing or empty                                             |
+| `401 Unauthorized` | API key is invalid                                                              |
+| `403 Forbidden`    | API key is missing                                                              |
+| `404 Not Found`    | The bot or the subject does not exist in your organization                       |
+| `500 Server Error` | Unexpected server error                                                         |
+
+<ResponseExample>
+```json 201
+{
+  "orgId": "b890e92f-7d4f-43f6-a989-32d35660c64e",
+  "botId": "agt-1a2b3c4d",
+  "subjectUserId": "cust-8821",
+  "subjectUserName": "Jane Chen",
+  "subjectCountry": "XX",
+  "status": "active",
+  "cadenceDays": 30,
+  "nextCheckAt": "2026-09-02T09:00:00.000Z",
+  "lastCheckedAt": null,
+  "addedAt": "2026-08-03T09:00:00.000Z",
+  "addedBy": "key-7f2c",
+  "updatedAt": "2026-08-03T09:00:00.000Z"
+}
+```
+</ResponseExample>
+
+## Sandbox
+
+With a sandbox API key this endpoint performs full validation — an unknown bot or subject still returns `404` — and returns a realistic enrolment, but **stores nothing**.
+
+## Coming next
+
+Endpoints to list and remove monitored users, and to retrieve monitoring alerts, are in development.

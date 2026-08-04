@@ -102,6 +102,13 @@
             ]
           },
           {
+            "group": "AML",
+            "pages": [
+              "api-reference/aml/save-transactions",
+              "api-reference/aml/add-monitored-user"
+            ]
+          },
+          {
             "group": "Async Jobs",
             "pages": ["api-reference/async-jobs/get-async-job"]
           },
