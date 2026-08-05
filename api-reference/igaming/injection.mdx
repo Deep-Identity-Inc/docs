@@ -106,7 +106,7 @@ response = requests.post(
 | `verdict` | string | `HIT`, `CLEAR`, or `UNAVAILABLE` |
 | `action` | string | `allow`, `flag`, `step-up`, or `block` |
 | `confidence` | number \| null | Confidence score `0`–`100`, or `null` if not applicable |
-| `escalation` | object \| null | `{ type: string, check: "injection-detection" }` — present only when `action` is `step-up` and the workflow configures an escalation |
+| `escalation` | object \| null | `{ type: string, check: "injection-detection" }` — present only when `action` is `step-up` and the workflow configures an escalation. If a step-up would resolve with no escalation configured, the check downgrades it to `flag` |
 
 ### Verdicts
 

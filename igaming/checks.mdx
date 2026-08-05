@@ -11,6 +11,10 @@ Every check below can run as a [workflow step](/workflows/workflows) or as a [st
   All request and response bodies for iGaming endpoints use `snake_case` field names.
 </Note>
 
+<Note>
+  A check returns the `step-up` action only when its step configures an `escalation_type`. If a step-up would resolve without one, the check **downgrades it to `flag`** — so you never get a bare `step-up` with no escalation to run. (Anti-cheat uses `manual-review` rather than `step-up`.)
+</Note>
+
 ## Injection detection
 
 Detects virtual cameras, emulators, and injected media during liveness capture — signs the applicant is feeding in fabricated video instead of a live camera feed.

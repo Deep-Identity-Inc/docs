@@ -91,7 +91,7 @@ response = requests.post(
 | `verdict` | string | `HIT`, `CLEAR`, or `UNAVAILABLE` |
 | `action` | string | `allow`, `flag`, `step-up`, or `block` |
 | `evidence` | object | Details behind the verdict — includes `matchedRule` and `locationDetails.countryIsoCode` |
-| `escalation` | object \| null | `{ decision: "ESCALATE", type: string, reason: string }` — present only when `action` is `step-up` |
+| `escalation` | object \| null | `{ decision: "ESCALATE", type: string, reason: string }` — present only when `action` is `step-up`. A `step-up` is returned only when the step configures an `escalation_type`; otherwise the check downgrades `step-up` to `flag` |
 
 ### Verdicts
 

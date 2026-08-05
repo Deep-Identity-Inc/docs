@@ -38,13 +38,17 @@ Every check resolves a `verdict` and an `action` from your workflow step configu
 
 - `allow` — no issue, applicant continues
 - `flag` — noted on the session for review, applicant continues
-- `step-up` — request additional verification
+- `step-up` — request additional verification (see note below)
 - `manual-review` — anti-cheat only; route to a human reviewer
 - `block` — stop the flow; **the session is marked failed**
 
 <Info>
   `block` is the only action that fails the session. Every other action is informational or routes the applicant elsewhere in your flow — you decide what happens next.
 </Info>
+
+<Note>
+  A check only returns `step-up` when its step has an `escalation_type` configured. If a step-up would resolve with no escalation set, the check **downgrades it to `flag`** — you never get a bare `step-up` with no escalation to run. When `step-up` is returned, the response carries an `escalation` object naming the escalation type; you run that step-up yourself (there is no server-side escalation-completion endpoint) and decide how to proceed.
+</Note>
 
 ## Fail-soft vs. fail-hard
 

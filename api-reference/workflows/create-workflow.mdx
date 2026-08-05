@@ -115,6 +115,10 @@ Config keys are snake_case. Enforcement actions are one of `block`, `flag`, `ste
 | `confidence_threshold` | integer | `70` | Minimum confidence (1–100) to treat signals as a detection |
 | `escalation_type` | string | `"none"` | Escalation type to run when the action is `step-up` |
 
+<Note>
+  **`step-up` requires a configured escalation.** For IP jurisdiction, VPN detection, and injection detection, an action that resolves to `step-up` is only emitted when the step also sets an `escalation_type` (other than `none`). If a step-up would fire with no escalation configured, the check **downgrades it to `flag`** — so it never returns a step-up with nothing for you to step up to. (Anti-cheat uses `manual-review` instead of `step-up`.)
+</Note>
+
 #### ANTI_CHEAT config
 
 Enforcement actions are one of `flag`, `manual-review`, `block`, `allow`. The step has three groups: biometric **duplicate** detection, **multi-accounting** linkage, and **self-exclusion**.

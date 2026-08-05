@@ -51,7 +51,7 @@ Create a workflow with the iGaming steps and the thresholds and actions you want
 </Steps>
 
 <Info>
-  Omit a step's `config` to accept its defaults, or omit a step entirely to skip that check. Every check reads its thresholds and actions from this step config — a session whose workflow doesn't include a given step gets no enforcement from it (VPN, IP jurisdiction, and anti-cheat return `UNAVAILABLE`/`allow`; injection falls back to default thresholds).
+  Omit a step's `config` to accept its defaults, or omit a step entirely to skip that check. Every check reads its thresholds and actions from this step config — a session whose workflow doesn't include a given step gets no enforcement from it (VPN, IP jurisdiction, and anti-cheat return `UNAVAILABLE`/`allow`; injection falls back to default thresholds). Note the `vpn_action: "step-up"` above only steps up if you also set an `escalation_type` on the step; without one it resolves to `flag`.
 </Info>
 
 ## Onboarding gate
