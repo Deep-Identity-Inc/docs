@@ -10,7 +10,7 @@ POST /v1/aml/transactions
 
 Stores one or more transactions for AML transaction-risk monitoring. Send a JSON array of records, or an object with a `transactions` array.
 
-Ingest is **idempotent on `client_txn_id`**: re-posting the same id updates the same record rather than creating a second one, so retries and corrections are safe. A revision entry is appended only when a field actually changed.
+Ingest is **idempotent on `client_txn_id`**: re-posting the same id never creates a second record. It does, however, **replace** that record rather than patching it — any field you omit is cleared, not carried over from the previous version. Always send the complete transaction on a re-post, not just the fields that changed. Nothing is lost: the previous values are preserved in the record's revision history, and a revision entry is appended only when a field actually changed.
 
 Subjects are **auto-provisioned and enrolled in monitoring on first sight** — you do not need to register a customer before sending their transactions. A `counterparty` is stored as a data field for rule evaluation and is never enrolled as a monitored user.
 
@@ -53,7 +53,7 @@ Whichever limit is reached first applies. Over 500 records returns `400` with co
 
 | Parameter          | Type    | Required | Description                                                                                                     |
 | ------------------ | ------- | -------- | --------------------------------------------------------------------------------------------------------------- |
-| `client_txn_id`      | string  | Yes      | Your unique identifier for this transaction. Max 128 characters. Re-posting the same id updates the same record. |
+| `client_txn_id`      | string  | Yes      | Your unique identifier for this transaction. Max 128 characters. Re-posting the same id **replaces** that record in full — any omitted field is cleared, so always send the complete transaction, not just the changed fields. Previous values are kept in the revision history. |
 | `subject_user_id`    | string  | Yes      | Your identifier for the customer this transaction belongs to.                                                   |
 | `timestamp`        | string  | Yes      | When the transaction occurred (ISO 8601).                                                                       |
 | `direction`        | string  | Yes      | `inbound`, `outbound`, or `internal`.                                                                           |
