@@ -33,6 +33,28 @@ An API key is generated when you first create your organization. To find or rege
 
 ---
 
+## Mobile and other client-side apps
+
+The warning above applies to your **organization's secret key** — the one shown under Settings → API Keys. It can call every endpoint (including billing-sensitive and data-export ones) and must never ship inside an app binary.
+
+For client-side integrations that must embed a credential on-device — such as the [iOS Face Liveness SDK](/integrate/sdks/swift/face-liveness) — generate a separate **mobile key** instead:
+
+<Steps>
+  <Step title="Open Settings → API Keys → Mobile Keys">
+    In the [Admin Console](https://app.deepidv.com/dashboard/api/api-keys), switch to the **Mobile Keys** tab.
+  </Step>
+  <Step title="Create a mobile key">
+    Mobile keys are restricted to the custom face-liveness endpoints (`/v1/face/liveness/custom/*`) — they cannot read, export, or bill any other resource in your organization.
+  </Step>
+  <Step title="Embed it in your app">
+    Pass the mobile key as `DeepIDVConfig.apiKey` when constructing `DeepIDVClient`. It's safe to ship inside your app bundle; treat it like any other public client identifier (it can still be rotated or revoked from the same Mobile Keys tab if you suspect abuse).
+  </Step>
+</Steps>
+
+Never put your organization's secret key in an iOS, Android, or web frontend — only a mobile key is intended for that.
+
+---
+
 ## Base URL
 
 All API requests are made against a single base URL:

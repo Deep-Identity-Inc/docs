@@ -12,9 +12,21 @@ The `DeepIDV` iOS SDK provides **custom face liveness**: self-hosted presentatio
   Custom liveness is scored by the deepidv backend's PAD model — see the [Face Liveness API](/api-reference/face-liveness/overview). The SDK orchestrates the create → upload → score flow for you.
 </Info>
 
+## Requirements
+
+- iOS 15.0+
+- Swift 5.9+ / Xcode 15+
+- Camera access — add an `NSCameraUsageDescription` entry to your app's `Info.plist` (e.g. *"Used to verify you're a real, live person"*). Without it, iOS kills the app the moment the camera session starts; the SDK cannot supply this for you since it's an app-level entitlement.
+
 ## Install
 
-Add the package with Swift Package Manager and import it:
+Add the package with Swift Package Manager:
+
+```
+https://github.com/deepidv/deepidv-swift-sdk
+```
+
+In Xcode: **File → Add Package Dependencies…**, paste the URL above, and pick the `DeepIDV` library product. Then import it:
 
 ```swift
 import DeepIDV
@@ -27,19 +39,24 @@ Create a `DeepIDVClient` with the custom liveness provider:
 ```swift
 let client = DeepIDVClient(
     config: DeepIDVConfig(
-        apiKey: "YOUR_API_KEY",
+        apiKey: "YOUR_MOBILE_KEY",
         livenessProvider: .custom
     )
 )
 ```
 
+<Warning>
+`apiKey` here must be a **mobile key**, not your organization's secret key. Mobile keys are scoped to the custom-liveness endpoints only and are safe to ship inside an app binary — see [Authentication → Mobile & other client-side apps](/authentication#mobile-and-other-client-side-apps) for how to generate one. Never embed your org's secret `x-api-key` in a shipped app.
+</Warning>
+
 The result of any liveness flow is a `FaceLivenessResult`:
 
 ```swift
 public struct FaceLivenessResult {
-    public let status: Status        // .succeeded / .inProgress / .failed
-    public let confidence: Double?   // 0–100
-    public let passed: Bool          // status == .succeeded && confidence >= threshold
+    public let status: Status              // .succeeded / .inProgress / .failed
+    public let confidence: Double?         // 0–100; nil until status == .succeeded or .failed
+    public let passed: Bool                // status == .succeeded && confidence >= threshold
+    public let livenessSessionId: String   // the underlying liveness_session_id, for your own records
 }
 ```
 
@@ -68,6 +85,37 @@ When you own the camera and UI, drive the movement challenge yourself with three
 - `client.checkMovementLiveness(frames:clip:confidenceThreshold:)` — uploads the frames and returns the verdict.
 - `client.makeMovementReplayRecorder()` — records the smooth replay clip for you.
 
+### 0. Set up the capture session
+
+`faceProbe` expects an **upright, front-camera** buffer in **32-BGRA**. Configure your `AVCaptureSession` accordingly before wiring up the delegate:
+
+```swift
+let session = AVCaptureSession()
+session.sessionPreset = .high
+
+guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
+      let input = try? AVCaptureDeviceInput(device: device) else { return }
+session.addInput(input)
+
+let output = AVCaptureVideoDataOutput()
+output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+output.setSampleBufferDelegate(self, queue: DispatchQueue(label: "com.yourapp.liveness.capture"))
+session.addOutput(output)
+
+// Buffers arrive rotated to the sensor's native (landscape) orientation — rotate to
+// portrait-up before calling faceProbe, or widthRatio/centerOffset will be measured
+// against the wrong axis.
+if let connection = output.connection(with: .video) {
+    if #available(iOS 17.0, *) {
+        connection.videoRotationAngle = 90 // portrait
+    } else {
+        connection.videoOrientation = .portrait
+    }
+}
+```
+
+Request camera permission (`AVCaptureDevice.requestAccess(for: .video)`) before calling `session.startRunning()`, and start/stop the session on a background queue — never on the main thread.
+
 ### 1. Read face geometry per frame
 
 From your `AVCaptureVideoDataOutput` delegate, hand each frame's pixel buffer to `faceProbe`. It's stateless and local — no network:
@@ -75,6 +123,17 @@ From your `AVCaptureVideoDataOutput` delegate, hand each frame's pixel buffer to
 ```swift
 let probe = client.faceProbe(pixelBuffer)   // FaceProbe { faceCount, widthRatio, centerOffset }
 ```
+
+<Note>
+`captureOutput(_:didOutput:from:)` fires on the queue you passed to `setSampleBufferDelegate` (not main). `faceProbe` itself is safe to call there — it's synchronous, local, and does no UI work. But if you use its result (e.g. the `prompt` string in step 2) to update SwiftUI/UIKit state, hop to the main actor first:
+
+```swift
+let (prompt, done) = capture.onFrame(pixelBuffer)
+Task { @MainActor in
+    self.promptLabel.text = prompt
+}
+```
+</Note>
 
 - `faceCount` — want exactly `1`.
 - `widthRatio` — face width ÷ frame width (0–1). Bigger = closer.
@@ -140,11 +199,14 @@ let result = try await client.checkMovementLiveness(
     confidenceThreshold: 80
 )
 if result.passed { /* live */ }
+print(result.livenessSessionId) // the underlying liveness_session_id, for your own audit trail
 ```
 
 - Pass **3–8 frames in capture order**. Fewer than 3 throws `DeepIDVError.validation`; more than 8 is evenly down-sampled to 8.
 - `clip` is optional — omit it to skip the replay. When present, the SDK uploads it as the session's operator replay (`Uploads.faceliveness_preview_clip`).
 - Errors surface as `DeepIDVError` — `.validation` for bad input, `.network` / `.notFound` for endpoint failures.
+- `checkMovementLiveness` creates the underlying [`liveness_session_id`](/api-reference/face-liveness/create-session) internally and runs the full create → upload-url → result flow for you in one call — you don't need to call those REST endpoints yourself. `FaceLivenessResult.livenessSessionId` gives you that id back so you can correlate the attempt with your own records or look it up via [Get Liveness Result](/api-reference/face-liveness/result).
+- Call `checkMovementLiveness` once per attempt — each call bills a new session. If it throws `.network`, it's safe to retry with a fresh set of frames (retrying does not reuse the failed attempt's session).
 
 <Note>
 The flashing-light challenge isn't available headless — it requires the SDK to render full-screen color flashes. Use the drop-in `CustomFaceLivenessView` for that.
