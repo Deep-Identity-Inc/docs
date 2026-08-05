@@ -1,0 +1,151 @@
+---
+title: Face Liveness (iOS)
+description: "Add self-hosted, globally available face liveness to your iOS app — as a drop-in UI or fully headless with your own camera and UI."
+---
+
+The `DeepIDV` iOS SDK provides **custom face liveness**: self-hosted presentation-attack detection that works the same in every region. You can use it two ways:
+
+- **Drop-in UI** — the SDK owns the camera, on-screen guidance, and both the movement and flashing-light challenges, and returns a result. One view, zero UI work.
+- **Headless** — you own the camera and UI; the SDK contributes the face-geometry guidance, the scoring call, and (optionally) the replay recording. Movement challenge only.
+
+<Info>
+  Custom liveness is scored by the deepidv backend's PAD model — see the [Face Liveness API](/api-reference/face-liveness/overview). The SDK orchestrates the create → upload → score flow for you.
+</Info>
+
+## Install
+
+Add the package with Swift Package Manager and import it:
+
+```swift
+import DeepIDV
+```
+
+## Configure the client
+
+Create a `DeepIDVClient` with the custom liveness provider:
+
+```swift
+let client = DeepIDVClient(
+    config: DeepIDVConfig(
+        apiKey: "YOUR_API_KEY",
+        livenessProvider: .custom
+    )
+)
+```
+
+The result of any liveness flow is a `FaceLivenessResult`:
+
+```swift
+public struct FaceLivenessResult {
+    public let status: Status        // .succeeded / .inProgress / .failed
+    public let confidence: Double?   // 0–100
+    public let passed: Bool          // status == .succeeded && confidence >= threshold
+}
+```
+
+## Drop-in UI
+
+`CustomFaceLivenessView` runs the entire attempt — camera, oval guide, "move closer" prompts, the flashing-light challenge, and the replay recording — and calls you back with the result:
+
+```swift
+CustomFaceLivenessView(client: client) { result in
+    switch result {
+    case .success(let liveness):
+        print("passed:", liveness.passed, "confidence:", liveness.confidence ?? 0)
+    case .failure(let error):
+        print("liveness error:", error)
+    }
+}
+```
+
+Pass `confidenceThreshold:` to override the default pass threshold of `80`.
+
+## Headless
+
+When you own the camera and UI, drive the movement challenge yourself with three SDK pieces:
+
+- `client.faceProbe(_:)` — per-frame face geometry to time your capture.
+- `client.checkMovementLiveness(frames:clip:confidenceThreshold:)` — uploads the frames and returns the verdict.
+- `client.makeMovementReplayRecorder()` — records the smooth replay clip for you.
+
+### 1. Read face geometry per frame
+
+From your `AVCaptureVideoDataOutput` delegate, hand each frame's pixel buffer to `faceProbe`. It's stateless and local — no network:
+
+```swift
+let probe = client.faceProbe(pixelBuffer)   // FaceProbe { faceCount, widthRatio, centerOffset }
+```
+
+- `faceCount` — want exactly `1`.
+- `widthRatio` — face width ÷ frame width (0–1). Bigger = closer.
+- `centerOffset` — distance from frame center (0–1). `0` = centered.
+
+Recommended thresholds match the SDK's own flow and are exposed as constants: `FaceProbe.centeredMaxOffset` (0.20), `FaceProbe.centeredMinWidth` (0.25), `FaceProbe.closeTargetWidth` (0.55).
+
+### 2. Guide the capture (and record the replay)
+
+Show "center your face" until centered, then "move closer" and grab a frame each time the face has grown since the last one — feeding every frame to the replay recorder along the way:
+
+```swift
+final class MovementCapture {
+    private let client: DeepIDVClient
+    private let replay: MovementReplayRecorder
+    private var frames: [FileInput] = []
+    private var centered = false
+    private var lastWidth = 0.0
+
+    init(client: DeepIDVClient) {
+        self.client = client
+        self.replay = client.makeMovementReplayRecorder()
+    }
+
+    /// Call from your camera delegate. Returns the prompt to show; a non-nil
+    /// `done` means you've captured enough — run the check.
+    func onFrame(_ pixelBuffer: CVPixelBuffer) -> (prompt: String, done: [FileInput]?) {
+        let probe = client.faceProbe(pixelBuffer)
+        guard probe.faceCount == 1,
+              probe.centerOffset <= FaceProbe.centeredMaxOffset,
+              probe.widthRatio >= FaceProbe.centeredMinWidth
+        else { return ("Center your face", nil) }
+
+        if !centered {
+            centered = true
+            frames.append(.data(jpeg(from: pixelBuffer)))
+            lastWidth = probe.widthRatio
+            replay.append(pixelBuffer)
+            return ("Move closer", nil)
+        }
+
+        replay.append(pixelBuffer)                          // record every scan frame
+        if probe.widthRatio >= lastWidth + 0.08 {           // real forward movement
+            frames.append(.data(jpeg(from: pixelBuffer)))
+            lastWidth = probe.widthRatio
+        }
+        return frames.count >= 5 ? ("Done", frames) : ("Move closer", nil)
+    }
+}
+```
+
+`jpeg(from:)` is your own encoder (e.g. `CIContext.jpegRepresentation`). The SDK accepts any `FileInput` — `.data`, `.fileURL`, or `.base64`.
+
+### 3. Get the verdict
+
+Finalize the replay and pass everything to `checkMovementLiveness`:
+
+```swift
+let clip = await replay.finish()   // SDK-encoded mp4 of the scan (nil is fine)
+let result = try await client.checkMovementLiveness(
+    frames: frames,
+    clip: clip,
+    confidenceThreshold: 80
+)
+if result.passed { /* live */ }
+```
+
+- Pass **3–8 frames in capture order**. Fewer than 3 throws `DeepIDVError.validation`; more than 8 is evenly down-sampled to 8.
+- `clip` is optional — omit it to skip the replay. When present, the SDK uploads it as the session's operator replay (`Uploads.faceliveness_preview_clip`).
+- Errors surface as `DeepIDVError` — `.validation` for bad input, `.network` / `.notFound` for endpoint failures.
+
+<Note>
+The flashing-light challenge isn't available headless — it requires the SDK to render full-screen color flashes. Use the drop-in `CustomFaceLivenessView` for that.
+</Note>

@@ -1,0 +1,92 @@
+---
+title: Request Upload URLs
+description: Get presigned URLs for a liveness attempt's frames, timeline, and optional replay clip
+api: POST /v1/face/liveness/custom/sessions/{livenessSessionId}/upload-url
+---
+
+```
+POST /v1/face/liveness/custom/sessions/{livenessSessionId}/upload-url
+```
+
+Mints presigned S3 `PUT` URLs for the captured frames, a timeline file, and — optionally — a replay clip. You upload the bytes directly to the returned URLs; nothing is proxied through the API.
+
+## Request
+
+### Path parameters
+
+| Parameter           | Type   | Description                                                        |
+| ------------------- | ------ | ----------------------------------------------------------------- |
+| `livenessSessionId` | string | The `liveness_session_id` from [create session](/api-reference/face-liveness/create-session). |
+
+### Headers
+
+| Header         | Required | Description         |
+| -------------- | -------- | ------------------- |
+| `x-api-key`    | Yes      | Your API key        |
+| `Content-Type` | Yes      | `application/json`  |
+
+### Body parameters
+
+| Parameter        | Type   | Required | Description                                                                                                     |
+| ---------------- | ------ | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `frame_count`    | number | Yes      | Number of captured frames to upload. **1–8** (at least 3 are needed to score).                                  |
+| `clip_mime_type` | string | No       | Mime of an optional full-attempt replay clip — `video/mp4` or `video/webm`. An unrecognized mime yields no clip URL. |
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.deepidv.com/v1/face/liveness/custom/sessions/54535e8b-dbfa-43be-9756-00bf6c93afb9/upload-url \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "frame_count": 5, "clip_mime_type": "video/mp4" }'
+```
+</CodeGroup>
+
+## Response
+
+`200 OK`
+
+| Field                | Type     | Description                                                              |
+| -------------------- | -------- | ------------------------------------------------------------------------ |
+| `frame_upload_urls`  | string[] | Presigned `PUT` URLs, one per frame, in order. Upload as `image/jpeg`.   |
+| `frame_keys`         | string[] | The S3 object keys the frames will occupy.                               |
+| `timeline_upload_url`| string   | Presigned `PUT` URL for the timeline JSON. Upload as `application/json`.  |
+| `timeline_key`       | string   | The S3 object key for the timeline.                                      |
+| `clip_upload_url`    | string   | Present only when `clip_mime_type` was recognized. Upload the clip here. |
+| `clip_key`           | string   | Present only when `clip_mime_type` was recognized.                       |
+
+```json
+{
+  "frame_upload_urls": ["https://s3.amazonaws.com/…/frame_0.jpg?X-Amz-…"],
+  "frame_keys": ["<org>/<session>/<session>/frame_0.jpg"],
+  "timeline_upload_url": "https://s3.amazonaws.com/…/timeline.json?X-Amz-…",
+  "timeline_key": "<org>/<session>/<session>/timeline.json",
+  "clip_upload_url": "https://s3.amazonaws.com/…/clip.mp4?X-Amz-…",
+  "clip_key": "<org>/<session>/<session>/clip.mp4"
+}
+```
+
+## Uploading the bytes
+
+After receiving the URLs, `PUT` each artifact to its URL with the matching `Content-Type`:
+
+- Frames → `frame_upload_urls[i]` with `Content-Type: image/jpeg`
+- Timeline → `timeline_upload_url` with `Content-Type: application/json`
+- Replay clip (if requested) → `clip_upload_url` with the same `Content-Type` you passed as `clip_mime_type`
+
+```bash
+curl -X PUT "$FRAME_URL" -H "Content-Type: image/jpeg" --data-binary @frame_0.jpg
+```
+
+<Note>
+Only the frames and timeline are required to score. The replay clip is best-effort — a failed clip upload never affects the liveness verdict.
+</Note>
+
+### Errors
+
+| Status | Meaning                                                        |
+| ------ | -------------------------------------------------------------- |
+| `400`  | Invalid body (e.g. `frame_count` outside 1–8).                 |
+| `403`  | The `livenessSessionId` does not belong to this session/org.  |
+| `404`  | Unknown liveness session.                                     |

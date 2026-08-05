@@ -1,0 +1,61 @@
+---
+title: Get Liveness Result
+description: Score the uploaded frames and return the liveness status and confidence
+api: GET /v1/face/liveness/custom/sessions/{livenessSessionId}/result
+---
+
+```
+GET /v1/face/liveness/custom/sessions/{livenessSessionId}/result
+```
+
+Runs the presentation-attack-detection (PAD) model and timing checks over the frames uploaded for the session, and returns the liveness verdict. Call this once the frame `PUT`s from [upload-url](/api-reference/face-liveness/upload-url) have completed.
+
+The score is persisted to the session (`AnalysisData.facelivenessScore`), and any uploaded replay clip is promoted to `Uploads.faceliveness_preview_clip` for operator review.
+
+## Request
+
+### Path parameters
+
+| Parameter           | Type   | Description                                                        |
+| ------------------- | ------ | ----------------------------------------------------------------- |
+| `livenessSessionId` | string | The `liveness_session_id` from [create session](/api-reference/face-liveness/create-session). |
+
+### Headers
+
+| Header      | Required | Description  |
+| ----------- | -------- | ------------ |
+| `x-api-key` | Yes      | Your API key |
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl https://api.deepidv.com/v1/face/liveness/custom/sessions/54535e8b-dbfa-43be-9756-00bf6c93afb9/result \
+  -H "x-api-key: YOUR_API_KEY"
+```
+</CodeGroup>
+
+## Response
+
+`200 OK`
+
+| Field        | Type   | Description                                                            |
+| ------------ | ------ | --------------------------------------------------------------------- |
+| `status`     | string | `SUCCEEDED` or `FAILED`.                                              |
+| `confidence` | number | Liveness confidence on a `0–100` scale.                               |
+
+```json
+{ "status": "SUCCEEDED", "confidence": 92 }
+```
+
+<Note>
+A completed check that isn't live is a **success** with a low `confidence`, not an error. Apply your own pass threshold — the SDK treats the attempt as passed when `status == SUCCEEDED` and `confidence` meets the configured threshold (default `80`).
+</Note>
+
+An attempt with fewer than 3 uploaded frames is scored `FAILED` / `0` without invoking the model.
+
+### Errors
+
+| Status | Meaning                    |
+| ------ | -------------------------- |
+| `404`  | Unknown liveness session.  |

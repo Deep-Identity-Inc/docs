@@ -1,0 +1,74 @@
+---
+title: Create Liveness Session
+description: Mint a custom face-liveness session and receive its challenge script
+api: POST /v1/face/liveness/custom/sessions
+---
+
+```
+POST /v1/face/liveness/custom/sessions
+```
+
+Creates a standalone custom face-liveness session and returns its `liveness_session_id` along with the **challenge script** the client should play. This call bills your organization once.
+
+Custom liveness sessions are standalone by design — the returned `liveness_session_id` is the handle used by [`upload-url`](/api-reference/face-liveness/upload-url) and [`result`](/api-reference/face-liveness/result).
+
+## Request
+
+### Headers
+
+| Header         | Required | Description                     |
+| -------------- | -------- | ------------------------------- |
+| `x-api-key`    | Yes      | Your API key                    |
+| `Content-Type` | Yes      | `application/json`              |
+
+### Body parameters
+
+| Parameter        | Type   | Required | Description                                                                                                    |
+| ---------------- | ------ | -------- | -------------------------------------------------------------------------------------------------------------- |
+| `challenge_type` | string | No       | `FaceMovementChallenge` or `FaceMovementAndLightChallenge`. Defaults to the movement challenge when omitted.   |
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.deepidv.com/v1/face/liveness/custom/sessions \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "challenge_type": "FaceMovementChallenge" }'
+```
+</CodeGroup>
+
+## Response
+
+`200 OK`
+
+| Field                 | Type   | Description                                                     |
+| --------------------- | ------ | --------------------------------------------------------------- |
+| `liveness_session_id` | string | The session handle for the upload and result calls.            |
+| `script`              | object | The challenge to play (see below).                              |
+
+The `script` object:
+
+| Field           | Type   | Description                                                                    |
+| --------------- | ------ | ------------------------------------------------------------------------------ |
+| `challengeType` | string | `FaceMovementChallenge` or `FaceMovementAndLightChallenge`.                     |
+| `durationMs`    | number | Suggested attempt duration.                                                    |
+| `steps`         | array  | Ordered steps: `{ kind, atMs, color? }` (`color` is a hex string for flashes). |
+
+```json
+{
+  "liveness_session_id": "54535e8b-dbfa-43be-9756-00bf6c93afb9",
+  "script": {
+    "challengeType": "FaceMovementChallenge",
+    "durationMs": 2000,
+    "steps": [{ "kind": "move-closer", "atMs": 0 }]
+  }
+}
+```
+
+### Errors
+
+| Status | Meaning                                              |
+| ------ | ---------------------------------------------------- |
+| `400`  | Invalid body (e.g. an unsupported `challenge_type`). |
+| `402`  | Payment required — the org could not be billed.      |

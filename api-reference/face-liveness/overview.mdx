@@ -1,0 +1,43 @@
+---
+title: Face Liveness Overview
+description: Self-hosted, globally available face liveness (presentation-attack detection) via a three-call session flow
+---
+
+Custom face liveness confirms that a real, present human is in front of the camera — not a photo, a screen replay, or an injected video. It is **self-hosted and globally available**: unlike region-locked cloud liveness, it runs the same everywhere, scoring each attempt with a purpose-built presentation-attack-detection (PAD) model plus deterministic timing checks.
+
+Most integrations never call these endpoints directly — the [iOS SDK](/integrate/sdks/swift/face-liveness) orchestrates the whole flow for you, both as a drop-in UI and headless. This section documents the underlying REST contract for completeness and for non-SDK clients.
+
+## Challenges
+
+Each session runs one challenge, returned as a **script** the client plays:
+
+| Challenge | Value | What the user does |
+| --- | --- | --- |
+| Movement | `FaceMovementChallenge` | Centers their face, then moves closer through proximity steps. |
+| Movement + Light | `FaceMovementAndLightChallenge` | Same movement, with full-screen color flashes whose reflection is checked. |
+
+<Note>
+The light challenge requires the client to render full-screen color flashes, so it is only available through the SDK's built-in UI. Headless integrations use the movement challenge.
+</Note>
+
+## The flow
+
+A liveness attempt is three calls against a **standalone liveness session** (identified by its `liveness_session_id`):
+
+<Steps>
+  <Step title="Create a session">
+    [`POST /custom/sessions`](/api-reference/face-liveness/create-session) mints a `liveness_session_id` and returns the challenge script. This call bills your organization once.
+  </Step>
+  <Step title="Request upload URLs and upload frames">
+    [`POST /custom/sessions/{id}/upload-url`](/api-reference/face-liveness/upload-url) returns presigned S3 `PUT` URLs for the captured frames (and an optional replay clip). You upload the bytes directly to those URLs.
+  </Step>
+  <Step title="Fetch the result">
+    [`GET /custom/sessions/{id}/result`](/api-reference/face-liveness/result) runs the PAD model over the uploaded frames and returns a `status` and a `0–100` `confidence`.
+  </Step>
+</Steps>
+
+All paths are prefixed `/v1/face/liveness`. Every call is authenticated with your `x-api-key`.
+
+## Result and replay
+
+The result is `{ status, confidence }`. Callers decide the pass threshold (the SDK compares `confidence` against a configurable threshold, default `80`). If a replay clip was uploaded, it is persisted to the session for operator review under `Uploads.faceliveness_preview_clip`.

@@ -117,6 +117,15 @@
             ]
           },
           {
+            "group": "Face Liveness",
+            "pages": [
+              "api-reference/face-liveness/overview",
+              "api-reference/face-liveness/create-session",
+              "api-reference/face-liveness/upload-url",
+              "api-reference/face-liveness/result"
+            ]
+          },
+          {
             "group": "Sandbox",
             "pages": ["api-reference/sandbox/models"]
           }
@@ -158,6 +167,10 @@
                 ]
               }
             ]
+          },
+          {
+            "group": "Swift (iOS)",
+            "pages": ["integrate/sdks/swift/face-liveness"]
           }
         ]
       },
