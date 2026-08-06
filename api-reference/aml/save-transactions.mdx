@@ -64,7 +64,7 @@ Whichever limit is reached first applies. Over 500 records returns `400` with co
 | `status`           | string  | No       | `pending`, `completed`, `failed`, or `reversed`.                                                                 |
 | `channel`          | string  | No       | `web`, `mobile`, `api`, `branch`, `atm`, or `pos`.                                                               |
 | `counterparty`     | object  | No       | The other party: `name`, `external_id`, `account_number`, `institution`, `country`, `wallet_address`.               |
-| `geography`        | object  | No       | `origin_country`, `destination_country`, `ip_country` (ISO 3166-1 alpha-2).                                         |
+| `geography`        | object  | No       | `origin_country`, `destination_country`, `ip_country` (ISO 3166-1 alpha-2), and `ip_address`. See below.             |
 | `crypto`           | object  | No       | `asset_type`, `tx_hash`, `wallet_from`, `wallet_to`, `amount_asset`.                                                  |
 | `metadata`         | object  | No       | Free-form fields, stored verbatim and never interpreted. **Your keys are never case-converted.**                |
 | `subject`          | object  | No       | `first_name`, `last_name`, `email`, `phone` — identity for the auto-provisioned subject.                           |
@@ -74,6 +74,21 @@ Whichever limit is reached first applies. Over 500 records returns `400` with co
 </Note>
 
 Currency codes are ISO 4217 and country codes ISO 3166-1 alpha-2. A well-formed but unrecognized code is rejected rather than stored, since bad reference data produces false alerts later.
+
+#### `geography` fields
+
+| Field                 | Type   | Required | Description                                                                                     |
+| --------------------- | ------ | -------- | ------------------------------------------------------------------------------------------------- |
+| `origin_country`      | string | No       | ISO 3166-1 alpha-2. **Read by the high-risk-geography rule.**                                    |
+| `destination_country` | string | No       | ISO 3166-1 alpha-2. **Read by the high-risk-geography rule.**                                    |
+| `ip_country`          | string | No       | ISO 3166-1 alpha-2, derived from the originating IP. Stored as context; **triggers no rule.**    |
+| `ip_address`          | string | No       | The IPv4 or IPv6 address the transaction originated from. Stored as context; **triggers no rule.** |
+
+<Note>
+  **`ip_address` and `ip_country` are optional and drive no detection.** They are retained as context for risk adjudication and analyst review — **no rule reads either one**. In particular, the high-risk-geography rule matches on `origin_country`, `destination_country` and the counterparty's country only: IP geolocation is routinely a VPN or proxy exit, so treating it as a jurisdiction signal would manufacture false alerts.
+
+  `ip_address` must be a valid IPv4 or IPv6 address (`203.0.113.42`, `2001:db8::1`). A malformed value rejects **that record only**, with `FIELD_INVALID` on `geography.ip_address` — it never fails the batch.
+</Note>
 
 ### Example request
 
@@ -99,7 +114,11 @@ curl -X POST https://api.deepidv.com/v1/aml/transactions \
           "institution": "Bank of Example",
           "country": "GB"
         },
-        "geography": { "origin_country": "US", "destination_country": "GB" },
+        "geography": {
+          "origin_country": "US",
+          "destination_country": "GB",
+          "ip_address": "203.0.113.42"
+        },
         "subject": {
           "first_name": "Jane",
           "last_name": "Chen",
