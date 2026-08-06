@@ -23,7 +23,7 @@ The `DeepIDV` iOS SDK provides **custom face liveness**: self-hosted presentatio
 Add the package with Swift Package Manager:
 
 ```
-https://github.com/deepidv/deepidv-swift-sdk
+https://github.com/Deep-Identity-Inc/deepidv-sdk-swift
 ```
 
 In Xcode: **File → Add Package Dependencies…**, paste the URL above, and pick the `DeepIDV` library product. Then import it:
@@ -39,24 +39,23 @@ Create a `DeepIDVClient` with the custom liveness provider:
 ```swift
 let client = DeepIDVClient(
     config: DeepIDVConfig(
-        apiKey: "YOUR_MOBILE_KEY",
+        apiKey: "YOUR_API_KEY",
         livenessProvider: .custom
     )
 )
 ```
 
 <Warning>
-`apiKey` here must be a **mobile key**, not your organization's secret key. Mobile keys are scoped to the custom-liveness endpoints only and are safe to ship inside an app binary — see [Authentication → Mobile & other client-side apps](/authentication#mobile-and-other-client-side-apps) for how to generate one. Never embed your org's secret `x-api-key` in a shipped app.
+There is currently no restricted, client-safe key type — `apiKey` is your organization's full secret key, and embedding it in a shipped app means it can be extracted from the binary. See [Authentication → Mobile apps](/authentication#mobile-apps-ios-sdk) for mitigations until a scoped mobile key exists.
 </Warning>
 
 The result of any liveness flow is a `FaceLivenessResult`:
 
 ```swift
 public struct FaceLivenessResult {
-    public let status: Status              // .succeeded / .inProgress / .failed
-    public let confidence: Double?         // 0–100; nil until status == .succeeded or .failed
-    public let passed: Bool                // status == .succeeded && confidence >= threshold
-    public let livenessSessionId: String   // the underlying liveness_session_id, for your own records
+    public let status: Status        // .succeeded / .inProgress / .failed
+    public let confidence: Double?   // 0–100; nil until status == .succeeded or .failed
+    public let passed: Bool          // status == .succeeded && confidence >= threshold
 }
 ```
 
@@ -199,13 +198,12 @@ let result = try await client.checkMovementLiveness(
     confidenceThreshold: 80
 )
 if result.passed { /* live */ }
-print(result.livenessSessionId) // the underlying liveness_session_id, for your own audit trail
 ```
 
 - Pass **3–8 frames in capture order**. Fewer than 3 throws `DeepIDVError.validation`; more than 8 is evenly down-sampled to 8.
 - `clip` is optional — omit it to skip the replay. When present, the SDK uploads it as the session's operator replay (`Uploads.faceliveness_preview_clip`).
 - Errors surface as `DeepIDVError` — `.validation` for bad input, `.network` / `.notFound` for endpoint failures.
-- `checkMovementLiveness` creates the underlying [`liveness_session_id`](/api-reference/face-liveness/create-session) internally and runs the full create → upload-url → result flow for you in one call — you don't need to call those REST endpoints yourself. `FaceLivenessResult.livenessSessionId` gives you that id back so you can correlate the attempt with your own records or look it up via [Get Liveness Result](/api-reference/face-liveness/result).
+- `checkMovementLiveness` creates the underlying [`liveness_session_id`](/api-reference/face-liveness/create-session) internally and runs the full create → upload-url → result flow for you in one call — you don't need to call those REST endpoints yourself. The SDK does not currently surface that id back to you; if you need it for your own audit trail (e.g. to correlate with backoffice review), that's an open follow-up rather than something available today.
 - Call `checkMovementLiveness` once per attempt — each call bills a new session. If it throws `.network`, it's safe to retry with a fresh set of frames (retrying does not reuse the failed attempt's session).
 
 <Note>

@@ -69,33 +69,10 @@ curl -X POST https://api.deepidv.com/v1/face/liveness/custom/sessions/54535e8b-d
 
 ## The timeline file
 
-The timeline is a single JSON document describing when each uploaded frame was captured relative to the challenge script returned by [create session](/api-reference/face-liveness/create-session). It's required (not best-effort like the clip) — the PAD model uses inter-frame timing to check the movement was continuous and matches the script, not just that the frames themselves look right.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `challengeType` | string | Echo of the session's `script.challengeType`. |
-| `attemptStartedAt` | string | ISO-8601 timestamp when capture began (device clock). |
-| `frames` | array | One entry per uploaded frame, **same order as `frame_upload_urls`**. |
-| `frames[].index` | number | 0-based index matching the frame's position in `frame_upload_urls` / `frame_keys`. |
-| `frames[].capturedAtMs` | number | Milliseconds since `attemptStartedAt` when this frame was captured. |
-| `frames[].widthRatio` | number | The face-width ratio at capture time (same metric as `FaceProbe.widthRatio` in the [Swift SDK](/integrate/sdks/swift/face-liveness), 0–1). |
-| `frames[].centerOffset` | number | The face-center offset at capture time (same metric as `FaceProbe.centerOffset`, 0–1). |
-
-```json
-{
-  "challengeType": "FaceMovementChallenge",
-  "attemptStartedAt": "2026-08-06T15:04:00.000Z",
-  "frames": [
-    { "index": 0, "capturedAtMs": 0, "widthRatio": 0.26, "centerOffset": 0.04 },
-    { "index": 1, "capturedAtMs": 340, "widthRatio": 0.34, "centerOffset": 0.03 },
-    { "index": 2, "capturedAtMs": 710, "widthRatio": 0.44, "centerOffset": 0.05 },
-    { "index": 3, "capturedAtMs": 1120, "widthRatio": 0.55, "centerOffset": 0.02 }
-  ]
-}
-```
+`timeline_upload_url` must be `PUT` with an `application/json` body, but **the server does not currently parse or validate its contents** — scoring reads only the uploaded frames (the PAD model plus the frame-count/order checks described in [result](/api-reference/face-liveness/result)). There is no defined schema today; an empty JSON value such as `{}` or `[]` is sufficient to satisfy the upload.
 
 <Note>
-If you're driving the flow through the iOS SDK's headless API instead of raw REST, you never construct this file yourself — `checkMovementLiveness` builds and uploads it for you from the frames you pass in.
+This is a placeholder in the current implementation, not a documented contract — a future release may start scoring on real per-frame timing/geometry data uploaded here (mirroring `FaceProbe.widthRatio` / `centerOffset` from the [Swift SDK](/integrate/sdks/swift/face-liveness)), which would change this section. If you're driving the flow through the iOS SDK's headless API instead of raw REST, you don't need to think about this at all — `checkMovementLiveness` uploads a placeholder timeline for you automatically.
 </Note>
 
 ## Uploading the bytes
