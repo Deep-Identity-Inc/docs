@@ -1,0 +1,297 @@
+---
+title: Save Transactions
+description: Store transaction records for AML transaction-risk monitoring
+api: POST /v1/aml/transactions
+---
+
+```
+POST /v1/aml/transactions
+```
+
+Stores one or more transactions for AML transaction-risk monitoring. Send a JSON array of records, or an object with a `transactions` array.
+
+Ingest is **idempotent on `client_txn_id`**: re-posting the same id never creates a second record. It does, however, **replace** that record rather than patching it — any field you omit is cleared, not carried over from the previous version. Always send the complete transaction on a re-post, not just the fields that changed. Nothing is lost: the previous values are preserved in the record's revision history, and a revision entry is appended only when a field actually changed.
+
+Subjects are **auto-provisioned and enrolled in monitoring on first sight** — you do not need to register a customer before sending their transactions. A `counterparty` is stored as a data field for rule evaluation and is never enrolled as a monitored user.
+
+<Note>
+  Field names are documented in `snake_case`, and responses always use `snake_case`. Requests also accept `camelCase` (`client_txn_id` or `clientTxnId`), so either convention works.
+
+  The one exception is **`metadata`**: its keys are yours and are stored and returned exactly as you send them, never case-converted. `{ "someKey": 1 }` stays `someKey`.
+</Note>
+
+<Warning>
+  **Always inspect the response body.** A well-formed request always returns `200`, even when individual records were rejected or stored with warnings. A record can be stored and still be unmonitored or unscreenable — for example when your organization has no running transaction-risk bot, or when a subject has no name. A client that checks only the HTTP status will silently under-detect.
+</Warning>
+
+## Request
+
+### Limits
+
+| Limit | Value |
+| ----- | ----- |
+| Records per request | **500** |
+| Request body size | **5 MB** |
+
+Whichever limit is reached first applies. Over 500 records returns `400` with code `BATCH_TOO_LARGE`; over 5 MB returns `413`. In both cases split the batch into smaller requests.
+
+### Headers
+
+| Header         | Required | Description        |
+| -------------- | -------- | ------------------ |
+| `x-api-key`    | Yes      | Your API key       |
+| `Content-Type` | Yes      | `application/json` |
+
+### Body parameters
+
+| Parameter      | Type   | Required | Description                                                                                                  |
+| -------------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------ |
+| `transactions` | array  | Yes      | 1–500 transaction records. A bare JSON array is also accepted in place of the wrapper object.                 |
+| `bot_id`        | string | No       | Enrol subjects into a specific transaction-risk bot. Required only when your organization has more than one running. |
+
+### Transaction record
+
+| Parameter          | Type    | Required | Description                                                                                                     |
+| ------------------ | ------- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `client_txn_id`      | string  | Yes      | Your unique identifier for this transaction. Max 128 characters. Re-posting the same id **replaces** that record in full — any omitted field is cleared, so always send the complete transaction, not just the changed fields. Previous values are kept in the revision history. |
+| `subject_user_id`    | string  | Yes      | Your identifier for the customer this transaction belongs to.                                                   |
+| `timestamp`        | string  | Yes      | When the transaction occurred (ISO 8601).                                                                       |
+| `direction`        | string  | Yes      | `inbound`, `outbound`, or `internal`.                                                                           |
+| `amount`           | object  | Yes      | `{ value, currency }`. `value` must be a JSON number, not a string.                                             |
+| `type`             | string  | Yes      | `card`, `wire`, `eft`, `ach`, `crypto`, `cash`, `internal_transfer`, or `other`.                                 |
+| `normalized_amount` | object  | No       | `{ value, currency, fx_rate }` in your base currency. See below.                                                  |
+| `fx_rate`           | number  | No       | FX rate applied to this transaction.                                                                            |
+| `status`           | string  | No       | `pending`, `completed`, `failed`, or `reversed`.                                                                 |
+| `channel`          | string  | No       | `web`, `mobile`, `api`, `branch`, `atm`, or `pos`.                                                               |
+| `counterparty`     | object  | No       | The other party: `name`, `external_id`, `account_number`, `institution`, `country`, `wallet_address`.               |
+| `geography`        | object  | No       | `origin_country`, `destination_country`, `ip_country` (ISO 3166-1 alpha-2).                                         |
+| `crypto`           | object  | No       | `asset_type`, `tx_hash`, `wallet_from`, `wallet_to`, `amount_asset`.                                                  |
+| `metadata`         | object  | No       | Free-form fields, stored verbatim and never interpreted. **Your keys are never case-converted.**                |
+| `subject`          | object  | No       | `first_name`, `last_name`, `email`, `phone` — identity for the auto-provisioned subject.                           |
+
+<Note>
+  We perform **no FX conversion**. When a transaction's currency already matches your organization's base currency, `normalized_amount` is inferred. Otherwise supply it yourself — if you don't, the record is still stored but amount-threshold rules will skip it and you receive a `NORMALIZED_AMOUNT_MISSING` warning.
+</Note>
+
+Currency codes are ISO 4217 and country codes ISO 3166-1 alpha-2. A well-formed but unrecognized code is rejected rather than stored, since bad reference data produces false alerts later.
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.deepidv.com/v1/aml/transactions \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "transactions": [
+      {
+        "client_txn_id": "txn-000123",
+        "subject_user_id": "cust-8821",
+        "timestamp": "2026-08-01T09:00:00Z",
+        "direction": "outbound",
+        "amount": { "value": 12500.00, "currency": "USD" },
+        "type": "wire",
+        "status": "completed",
+        "channel": "web",
+        "counterparty": {
+          "name": "Acme Supplies Ltd",
+          "external_id": "vendor-4410",
+          "institution": "Bank of Example",
+          "country": "GB"
+        },
+        "geography": { "origin_country": "US", "destination_country": "GB" },
+        "subject": {
+          "first_name": "Jane",
+          "last_name": "Chen",
+          "email": "jane.chen@example.com"
+        }
+      },
+      {
+        "client_txn_id": "txn-000124",
+        "subject_user_id": "cust-8821",
+        "timestamp": "2026-08-01T14:31:00Z",
+        "direction": "inbound",
+        "amount": { "value": 4200.50, "currency": "CAD" },
+        "normalized_amount": { "value": 3108.37, "currency": "USD", "fx_rate": 0.74 },
+        "type": "eft",
+        "metadata": { "ledger_ref": "GL-99812" }
+      }
+    ]
+  }'
+```
+
+```javascript Node.js
+const response = await fetch("https://api.deepidv.com/v1/aml/transactions", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "x-api-key": "YOUR_API_KEY",
+  },
+  body: JSON.stringify({
+    transactions: [
+      {
+        client_txn_id: "txn-000123",
+        subject_user_id: "cust-8821",
+        timestamp: "2026-08-01T09:00:00Z",
+        direction: "outbound",
+        amount: { value: 12500.0, currency: "USD" },
+        type: "wire",
+        counterparty: { name: "Acme Supplies Ltd", country: "GB" },
+        subject: { first_name: "Jane", last_name: "Chen" },
+      },
+    ],
+  }),
+});
+
+const data = await response.json();
+
+// Per-record outcomes are data, not transport errors — always inspect them.
+for (const result of data.results) {
+  if (result.status !== "accepted") {
+    console.warn(result.client_txn_id, result.status, result.warnings ?? result.errors);
+  }
+}
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://api.deepidv.com/v1/aml/transactions",
+    headers={
+        "Content-Type": "application/json",
+        "x-api-key": "YOUR_API_KEY",
+    },
+    json={
+        "transactions": [
+            {
+                "client_txn_id": "txn-000123",
+                "subject_user_id": "cust-8821",
+                "timestamp": "2026-08-01T09:00:00Z",
+                "direction": "outbound",
+                "amount": {"value": 12500.00, "currency": "USD"},
+                "type": "wire",
+                "counterparty": {"name": "Acme Supplies Ltd", "country": "GB"},
+                "subject": {"first_name": "Jane", "last_name": "Chen"},
+            }
+        ]
+    },
+)
+
+data = response.json()
+
+# Per-record outcomes are data, not transport errors — always inspect them.
+for result in data["results"]:
+    if result["status"] != "accepted":
+        print(result["client_txn_id"], result["status"], result.get("warnings") or result.get("errors"))
+```
+
+</CodeGroup>
+
+## Response
+
+### 200 — Success
+
+| Field      | Type    | Description                                                                                    |
+| ---------- | ------- | ---------------------------------------------------------------------------------------------- |
+| `accepted` | integer | Records that were **stored** — both clean and warned.                                          |
+| `warned`   | integer | Records stored with at least one warning. An informational subset of `accepted`.               |
+| `rejected` | integer | Records that were **not** stored. Disjoint from `accepted`.                                    |
+| `results`  | array   | One entry per submitted record, in the order you sent them.                                    |
+
+Each entry in `results`:
+
+| Field         | Type           | Description                                                            |
+| ------------- | -------------- | ---------------------------------------------------------------------- |
+| `index`       | integer        | Zero-based position in the batch you submitted.                        |
+| `client_txn_id` | string \| null | Your id for the record, or `null` if the record was too malformed.     |
+| `status`      | string         | `accepted`, `warned`, or `rejected`.                                   |
+| `warnings`    | array          | Present when the record was stored with warnings. See the table below. |
+| `errors`      | array          | Present when the record was rejected. Each has `code`, `field`, `message`. |
+
+### Warning codes
+
+A warning means the record **was stored** but something needs your attention.
+
+| Code                        | Scope   | Meaning                                                                                                        | What to do                                                       |
+| --------------------------- | ------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `NORMALIZED_AMOUNT_MISSING` | Record  | The amount is not in your base currency and no `normalized_amount` was supplied. Amount-threshold rules skip it. | Send `normalized_amount`.                                         |
+| `SUBJECT_UNNAMED`           | Subject | The subject was provisioned with no name. It can be transaction-monitored but **not** name-screened.            | Send `subject.first_name` / `subject.last_name`.                    |
+| `NO_TRANSACTION_BOT`        | Request | Your organization has no running transaction-risk bot, so no subject was enrolled.                              | Create and start one in the dashboard.                            |
+| `AMBIGUOUS_TRANSACTION_BOT` | Request | Several running transaction-risk bots and no `bot_id` given. We never auto-select — the wrong rule set would produce wrong alerts. | Pass `bot_id`.                     |
+| `BOT_CADENCE_INVALID`       | Request | The transaction-risk bot's check interval is not configured usably (missing, or `custom` with no cadence set), so no subject was enrolled. | Fix the bot's cadence in the dashboard. |
+| `ENROLMENT_FAILED`          | Subject | Transactions were stored but enrolment failed, so they are not evaluated until a later ingest enrols the subject. | Retry, or enrol via `POST /v1/aml/bots/{bot_id}/monitored-users`. |
+
+Request-scope warnings appear on every stored record. Subject-scope warnings appear only on the records belonging to the affected subject, so you can find the specific customer to fix.
+
+### Error responses
+
+| Status                  | Description                                                                                                       |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `400 Bad Request`       | The **envelope** was invalid: body not an array or `{ transactions }`, empty batch, over 500 records, or a bad `bot_id`. Individual bad records never cause a 400. |
+| `401 Unauthorized`      | API key is invalid                                                                                                |
+| `403 Forbidden`         | API key is missing                                                                                                |
+| `413 Payload Too Large` | Request body exceeded 5 MB. Split the batch.                                                                       |
+| `429 Too Many Requests` | Monthly transaction quota exceeded. **Nothing was stored.**                                                        |
+| `500 Server Error`      | Unexpected server error                                                                                            |
+
+### 429 — Quota exceeded
+
+Quota is reserved atomically before anything is written, so a `429` always means nothing landed. The response tells you exactly where you stand:
+
+```json
+{
+  "error": "Monthly transaction quota exceeded",
+  "code": "QUOTA_EXCEEDED",
+  "quota": 100000,
+  "used": 100000,
+  "remaining": 0,
+  "month": "2026-08",
+  "resets_at": "2026-09-01T00:00:00.000Z"
+}
+```
+
+Retry after `resets_at`, or contact support to raise your monthly quota.
+
+<ResponseExample>
+```json 200
+{
+  "accepted": 2,
+  "warned": 1,
+  "rejected": 1,
+  "results": [
+    {
+      "index": 0,
+      "client_txn_id": "txn-000123",
+      "status": "accepted"
+    },
+    {
+      "index": 1,
+      "client_txn_id": "txn-000124",
+      "status": "warned",
+      "warnings": ["NORMALIZED_AMOUNT_MISSING"]
+    },
+    {
+      "index": 2,
+      "client_txn_id": "txn-000125",
+      "status": "rejected",
+      "errors": [
+        {
+          "code": "FIELD_INVALID",
+          "field": "amount.value",
+          "message": "Invalid input: expected number, received string"
+        }
+      ]
+    }
+  ]
+}
+```
+</ResponseExample>
+
+## Sandbox
+
+With a sandbox API key this endpoint performs **full validation and returns realistic per-record results, but stores nothing** — no transactions, no subject provisioning, and no quota consumption. Use it to verify your integration end to end before sending live data.
+
+## Coming next
+
+Endpoints to read stored transactions and retrieve monitoring alerts are in development.
