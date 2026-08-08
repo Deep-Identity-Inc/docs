@@ -752,6 +752,272 @@ components:
         - faceDetected
       description: Age and gender estimate for the most confident detected face. When
         `faceDetected` is false, only that field is present.
+    CreateLivenessSessionResponse:
+      type: object
+      properties:
+        liveness_session_id:
+          type: string
+          description: The Rekognition Face Liveness session id.
+        region:
+          type: string
+          description: AWS region the liveness session runs in.
+        credentials:
+          $ref: "#/components/schemas/LivenessCredentials"
+        expires_at:
+          type: string
+          format: date-time
+          description: When the vended credentials expire (ISO 8601).
+      required:
+        - liveness_session_id
+        - region
+        - credentials
+        - expires_at
+    LivenessCredentials:
+      type: object
+      properties:
+        access_key_id:
+          type: string
+        secret_access_key:
+          type: string
+        session_token:
+          type: string
+        expiration:
+          type: string
+          format: date-time
+      required:
+        - access_key_id
+        - secret_access_key
+        - session_token
+        - expiration
+      description: Temporary AWS credentials scoped to only
+        rekognition:StartFaceLivenessSession, valid ~15 minutes.
+    CreateLivenessSessionRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+          description: Optional verification session to attach this liveness check to.
+            When provided it must belong to the calling org; the liveness check
+            is then billed as part of that session. When omitted, the check runs
+            standalone and is billed per use.
+        challenge_type:
+          type: string
+          enum:
+            - FaceMovementChallenge
+            - FaceMovementAndLightChallenge
+          description: Rekognition liveness challenge. Defaults to FaceMovementChallenge
+            (movement only); FaceMovementAndLightChallenge adds the
+            colored-light sequence.
+    LivenessResultResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - SUCCEEDED
+            - IN_PROGRESS
+            - FAILED
+          description: Normalized session status (Rekognition CREATED maps to IN_PROGRESS;
+            EXPIRED maps to FAILED).
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: Liveness confidence 0–100 (absent until the session resolves).
+        passed:
+          type: boolean
+          description: True when status is SUCCEEDED and confidence >= the threshold.
+      required:
+        - status
+        - passed
+      description: Face liveness result. `passed` applies the (overridable, default
+        80) confidence threshold server-side.
+    DeepFakePromptResponse:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        challengeWord:
+          type: string
+      required:
+        - sessionId
+        - challengeWord
+    DeepFakeUploadUrlsResponse:
+      type: object
+      properties:
+        uploadUrls:
+          type: object
+          additionalProperties:
+            type: string
+        uploadKeys:
+          type: object
+          additionalProperties:
+            type: string
+        sessionId:
+          type: string
+      required:
+        - uploadUrls
+        - uploadKeys
+        - sessionId
+    DeepFakeUploadUrlsRequest:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        includeAudio:
+          type: boolean
+      required:
+        - sessionId
+        - includeAudio
+    DeepFakeAnalyzeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        passed:
+          type: boolean
+        confidence:
+          type: number
+        verdict:
+          type: string
+          enum:
+            - LIVE
+            - DEEPFAKE
+            - INCONCLUSIVE
+        riskScore:
+          type: number
+        trustVerdict:
+          type: string
+          enum:
+            - PASS
+            - REVIEW
+            - REJECT
+        trustScore:
+          type: number
+        challengeWord:
+          type: string
+        failureReasons:
+          type: array
+          items:
+            type: string
+        verificationId:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        details:
+          $ref: "#/components/schemas/DeepFakeAnalyzeDetails"
+      required:
+        - success
+        - passed
+        - confidence
+        - verdict
+        - riskScore
+        - trustVerdict
+        - trustScore
+        - failureReasons
+        - verificationId
+        - timestamp
+        - details
+    DeepFakeAnalyzeDetails:
+      type: object
+      properties:
+        layers:
+          type: object
+          additionalProperties: {}
+        avgLayerConfidence:
+          type: number
+        trustBreakdown:
+          type: object
+          additionalProperties:
+            type: number
+        degradedModules:
+          type: array
+          items:
+            type: string
+      required:
+        - layers
+        - avgLayerConfidence
+        - trustBreakdown
+        - degradedModules
+    DeepFakeAnalyzeRequest:
+      type: object
+      properties:
+        scanDurationMs:
+          type: number
+        challengeWord:
+          type: string
+        frameMeta:
+          type: array
+          items:
+            type: object
+            properties:
+              actionId:
+                type: string
+              action:
+                type: string
+                enum:
+                  - hold-still
+                  - blink
+                  - turn-left
+                  - turn-right
+                  - speak-prompt
+              timestamp:
+                type: number
+              yaw:
+                type: number
+              pitch:
+                type: number
+              roll:
+                type: number
+              leftEyeOpenness:
+                type: number
+              rightEyeOpenness:
+                type: number
+              faceDetected:
+                type: boolean
+            required:
+              - actionId
+              - action
+              - timestamp
+              - yaw
+              - pitch
+              - roll
+              - leftEyeOpenness
+              - rightEyeOpenness
+              - faceDetected
+        s3Keys:
+          type: object
+          properties:
+            frame_0:
+              type: string
+            frame_1:
+              type: string
+            frame_2:
+              type: string
+            frame_3:
+              type: string
+            frame_4:
+              type: string
+            frame_5:
+              type: string
+            audio_clip:
+              type: string
+            video_clip:
+              type: string
+          required:
+            - frame_0
+            - frame_1
+            - frame_2
+            - frame_3
+            - frame_4
+            - frame_5
+      required:
+        - scanDurationMs
+        - frameMeta
+        - s3Keys
     IdentityVerifyResponse:
       type: object
       properties:
@@ -1512,6 +1778,40 @@ components:
         - phone
       description: Body for creating a hard or soft credit-check session. Snake_case
         keys are also accepted.
+    AuthVerifyResponse:
+      type: object
+      properties:
+        valid:
+          type: boolean
+          enum:
+            - true
+          example: true
+          description: Always `true` on a 200 response. Indicates the API key is valid and
+            the organization is active.
+        organization:
+          $ref: "#/components/schemas/AuthVerifyOrganization"
+      required:
+        - valid
+        - organization
+    AuthVerifyOrganization:
+      type: object
+      properties:
+        id:
+          type: string
+          example: org_a1b2c3d4e5f6
+          description: Unique identifier of the organization the API key belongs to.
+        name:
+          type: string
+          example: Acme Inc.
+          description: Display name of the organization.
+        status:
+          type: string
+          example: active
+          description: Organization status. `active` for a successful connection test.
+      required:
+        - id
+        - name
+        - status
     ListOAuthClientsResponse:
       type: object
       properties:
@@ -2173,6 +2473,324 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/face/liveness/sessions:
+    post:
+      tags:
+        - Face
+      summary: Create a face liveness session and vend streaming credentials
+      description: Creates an AWS Rekognition Face Liveness session and returns
+        short-lived STS credentials scoped to only
+        `rekognition:StartFaceLivenessSession`, which the device uses to open
+        the liveness streaming connection. Pass `session_id` to attach the check
+        to a verification session (billed as part of that session); omit it to
+        run standalone (billed per use). Reference and audit images are never
+        persisted or returned.
+      security: *a2
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLivenessSessionRequest"
+      responses:
+        "200":
+          description: Liveness session created with vended credentials.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateLivenessSessionResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "402":
+          description: Organization has insufficient credits and is not subscribed to the
+            IDV service (standalone checks only).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/face/liveness/sessions/{liveness_session_id}/result:
+    get:
+      tags:
+        - Face
+      summary: Fetch a face liveness result
+      description: Returns the normalized liveness status, confidence, and a
+        server-computed `passed` flag (confidence compared against an
+        overridable threshold, default 80). Reference and audit images are never
+        returned. Pass `session_id` to authorize the read against the owning
+        verification session.
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            description: The Rekognition liveness session id returned at create time.
+          required: true
+          description: The Rekognition liveness session id returned at create time.
+          name: liveness_session_id
+          in: path
+        - schema:
+            type: string
+            description: Optional verification session the liveness check was attached to.
+              When provided, ownership is enforced against it.
+          required: false
+          description: Optional verification session the liveness check was attached to.
+            When provided, ownership is enforced against it.
+          name: session_id
+          in: query
+        - schema:
+            type:
+              - integer
+              - "null"
+            minimum: 0
+            maximum: 100
+            description: Pass/fail cutoff for `passed`. Defaults to 80 when omitted.
+              SDK-overridable.
+          required: false
+          description: Pass/fail cutoff for `passed`. Defaults to 80 when omitted.
+            SDK-overridable.
+          name: confidence_threshold
+          in: query
+      responses:
+        "200":
+          description: Liveness result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LivenessResultResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/deepfake/challenge/{sessionId}:
+    get:
+      tags:
+        - Deepfake
+      summary: Fetch the deepfake liveness challenge phrase
+      description: Returns the challenge phrase the user must speak during the
+        deepfake liveness scan for the given session. The phrase is derived from
+        the session's workflow when configured, otherwise a random phrase is
+        generated.
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: sessionId
+          in: path
+      responses:
+        "200":
+          description: Challenge phrase for the session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeepFakePromptResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/deepfake/upload-urls:
+    post:
+      tags:
+        - Deepfake
+      summary: Generate presigned upload URLs for deepfake scan media
+      description: Generates presigned S3 PUT URLs for the six liveness frames (and,
+        when `includeAudio` is set, the audio clip) captured during the deepfake
+        scan. Returns the upload URLs alongside the S3 object keys to echo back
+        to POST /v1/deepfake/analyze.
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeepFakeUploadUrlsRequest"
+      responses:
+        "200":
+          description: Presigned upload URLs and their S3 object keys.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeepFakeUploadUrlsResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/deepfake/analyze:
+    post:
+      tags:
+        - Deepfake
+      summary: Run the deepfake analysis pipeline and return a verdict
+      description: Runs the three-layer deepfake pipeline (Vision-signal liveness
+        gate, ViT image analysis, and voice verification) over the uploaded scan
+        media and returns a synchronous verdict. The media is downloaded from
+        the ephemeral temp bucket and deleted after analysis — nothing is
+        persisted. Each S3 key must belong to the calling organization.
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeepFakeAnalyzeRequest"
+      responses:
+        "200":
+          description: Deepfake analysis verdict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeepFakeAnalyzeResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "402":
+          description: Organization has insufficient credits to run the analysis.
           content:
             application/json:
               schema:
@@ -3388,6 +4006,48 @@ paths:
         "501":
           description: Credit Checks read API is not yet generally available. Use a
             sandbox API key to preview test responses.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/auth/verify:
+    get:
+      tags:
+        - Auth
+      summary: Verify an API key
+      description: Connection-test endpoint. Validates the API key in the `x-api-key`
+        header and returns the organization it belongs to. Used by integrations
+        (e.g. Zapier) to confirm a key is valid before running other calls.
+      security: *a2
+      responses:
+        "200":
+          description: API key is valid and the organization is active.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthVerifyResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
           content:
             application/json:
               schema:
