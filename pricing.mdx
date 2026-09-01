@@ -3,9 +3,34 @@ title: Pricing
 description: deepidv token-based pricing
 ---
 
-> Prepaid tokens, no contracts, no minimums. You're only billed when a check actually completes.
+> Prepaid tokens, no long-term contracts, no volume minimums. You're only billed when a check actually completes.
 
-deepidv runs on a **pay-per-use model** — buy tokens in USD, and each completed check deducts the corresponding amount from your balance. Tokens never expire, and there are no monthly commitments.
+deepidv runs on a **pay-per-use model** — buy tokens in USD, and each completed check deducts the corresponding amount from your balance. Tokens never expire and there are no volume minimums. On the Pay-Per-Use plan a \$19/month account maintenance fee applies from your second month.
+
+## Plans
+
+<CardGroup cols={2}>
+  <Card title="Pay-Per-Use" icon="credit-card">
+    **First month free**, then a **\$19/month** account maintenance fee from month two.
+
+    - Access to all deepidv services on a pay-per-use basis
+    - Ideal for trials, one-off use, or short-term projects
+    - Cancel anytime
+  </Card>
+
+  <Card title="Enterprise" icon="building-2" href="mailto:sales@deepidv.com">
+    **Custom pricing, contracts, and deployment.**
+
+    - High-throughput, production-ready APIs
+    - Support for millions of checks per year
+    - SSO, role-based access, and audit logs
+    - SLA-backed uptime and dedicated support
+  </Card>
+</CardGroup>
+
+Per-service prices below apply on top of your plan.
+
+---
 
 ### How it works
 
@@ -66,9 +91,9 @@ Each service below can be toggled into a workflow. The session price is the tota
     </tr>
 
     <tr>
-      <td><code>Address Verification</code></td>
-      <td>AI-powered conversation to confirm the applicant's location</td>
-      <td style={{ textAlign: "center", fontWeight: 600 }}>\$0.50</td>
+      <td><code>AI Address Verification</code></td>
+      <td>AI-powered address validation with geo-knowledge quiz and proof-of-residency checks</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$0.70</td>
     </tr>
 
     <tr>
@@ -120,11 +145,63 @@ Each service below can be toggled into a workflow. The session price is the tota
     </tr>
 
     <tr>
-      <td><code>Credit Check</code></td>
-      <td>Pulls credit reports from major bureaus</td>
-      <td style={{ textAlign: "center" }}>
-        <a href="mailto:sales@deepidv.com">Contact Sales</a>
-      </td>
+      <td><code>Deepfake Detection</code></td>
+      <td>AI-native deepfake detection across images, video, audio, and documents, with C2PA content provenance verification</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$0.60</td>
+    </tr>
+
+    <tr>
+      <td><code>NFC Verification</code></td>
+      <td>Reads and verifies NFC chip data from electronic passports and ID cards</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$0.50</td>
+    </tr>
+
+    <tr>
+      <td><code>Accessibility Mode</code></td>
+      <td>Inclusive identity verification designed for applicants with disabilities or limited mobility</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$0.75</td>
+    </tr>
+
+    <tr>
+      <td><code>Tokenized Age Verification</code></td>
+      <td>Issues a cryptographic age token instead of sharing the underlying ID, document, or birth date</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$0.01</td>
+    </tr>
+
+    <tr>
+      <td><code>AML Status</code></td>
+      <td>Anti-money laundering status checks against regulatory watchlists and financial crime databases</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$0.25</td>
+    </tr>
+
+    <tr>
+      <td><code>Background Verification</code></td>
+      <td>AI-powered outbound reference calls that ask your questions and return structured answers</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$0.50 <br /><span style={{ fontWeight: 400, fontSize: "0.85em" }}>per minute</span></td>
+    </tr>
+
+    <tr>
+      <td><code>Enhanced Title Search</code></td>
+      <td>Comprehensive property title search covering liens, encumbrances, and full ownership history</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$6.25</td>
+    </tr>
+
+    <tr>
+      <td><code>Open Banking + AI Analysis</code></td>
+      <td>Bank statement retrieval bundled with AI income and spending analysis in a single step</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$2.00</td>
+    </tr>
+
+    <tr>
+      <td><code>Biometric Document Transfers</code></td>
+      <td>Sends signed or sensitive documents under a biometric lock — only the verified recipient can open them</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$0.05</td>
+    </tr>
+
+    <tr>
+      <td><code>White Label</code></td>
+      <td>Runs the verification flow under your own brand — custom UI, your logo, your domain</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$0.10</td>
     </tr>
   </tbody>
 </table>
@@ -136,6 +213,163 @@ A workflow with **ID Verification**, **Face Liveness**, and **PEP & Sanctions** 
 ```
 $0.50 + $0.05 + $0.40 = $0.95 per session
 ```
+
+---
+
+## Checks & Reports
+
+Bureau and registry-backed reports, billed per check. These are priced separately from workflow services because each one triggers a third-party lookup.
+
+<table>
+  <thead>
+    <tr>
+      <th style={{ width: "35%" }}>Check</th>
+      <th style={{ width: "45%" }}>What it does</th>
+      <th style={{ width: "20%", textAlign: "center" }}>Price per check</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td><code>KYB Check</code></td>
+      <td>Know Your Business verification — company registration, beneficial ownership, and corporate structure validation</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$0.70</td>
+    </tr>
+
+    <tr>
+      <td><code>KYB Global Enhanced</code></td>
+      <td>Cross-border KYB with enriched ownership graphs, sanctions linkage, adverse media on directors, and live registry validation across 211+ jurisdictions</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$3.25</td>
+    </tr>
+
+    <tr>
+      <td><code>Credit Check (US)</code></td>
+      <td>US credit bureau report with score, trade lines, and payment history</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$5.00</td>
+    </tr>
+
+    <tr>
+      <td><code>Credit Check (CAN)</code></td>
+      <td>Canadian credit bureau report with score, trade lines, and payment history</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$10.00</td>
+    </tr>
+
+    <tr>
+      <td><code>Business Credit Check</code></td>
+      <td>Business credit report including company score, payment trends, and risk assessment</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$5.00</td>
+    </tr>
+
+    <tr>
+      <td><code>Background Check (US + Interpol)</code></td>
+      <td>US criminal background check covering federal, state, and county court records</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$8.00</td>
+    </tr>
+
+    <tr>
+      <td><code>Background Check (CAN)</code></td>
+      <td>Canadian criminal record check through RCMP-accredited sources</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$23.50</td>
+    </tr>
+  </tbody>
+</table>
+
+---
+
+## The Agent Suite
+
+Subscription tiers for teams running deepidv's compliance agents. Every tier ships with the full suite — **Luna** (compliance officer and MCP agentic extension), **Arc** (MCP agent gateway and registry), **Arbiter** (autonomous compliance engine with six sub-agents), and the **deepeye SDK** (fraud and deepfake detection). You choose how much credit and which support depth you need.
+
+<table>
+  <thead>
+    <tr>
+      <th style={{ width: "20%" }}>&nbsp;</th>
+      <th style={{ textAlign: "center" }}>Starter</th>
+      <th style={{ textAlign: "center" }}>Growth</th>
+      <th style={{ textAlign: "center" }}>Scale</th>
+      <th style={{ textAlign: "center" }}>Enterprise</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td><strong>Price</strong></td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$299/mo</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$1,499/mo</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>\$5,999/mo</td>
+      <td style={{ textAlign: "center", fontWeight: 600 }}>Contact sales</td>
+    </tr>
+
+    <tr>
+      <td><strong>Credits</strong></td>
+      <td style={{ textAlign: "center" }}>30,000</td>
+      <td style={{ textAlign: "center" }}>200,000</td>
+      <td style={{ textAlign: "center" }}>1,000,000</td>
+      <td style={{ textAlign: "center" }}>Custom commit</td>
+    </tr>
+
+    <tr>
+      <td><strong>Overage</strong></td>
+      <td style={{ textAlign: "center" }}>\$0.012</td>
+      <td style={{ textAlign: "center" }}>\$0.009</td>
+      <td style={{ textAlign: "center" }}>\$0.0055</td>
+      <td style={{ textAlign: "center" }}>\$0.003–0.0045</td>
+    </tr>
+
+    <tr>
+      <td><strong>Seats</strong></td>
+      <td style={{ textAlign: "center" }}>5</td>
+      <td style={{ textAlign: "center" }}>15</td>
+      <td style={{ textAlign: "center" }}>50</td>
+      <td style={{ textAlign: "center" }}>Unlimited</td>
+    </tr>
+
+    <tr>
+      <td><strong>SLA</strong></td>
+      <td style={{ textAlign: "center" }}>99.5%</td>
+      <td style={{ textAlign: "center" }}>99.9%</td>
+      <td style={{ textAlign: "center" }}>99.95%</td>
+      <td style={{ textAlign: "center" }}>99.99% + custom</td>
+    </tr>
+
+    <tr>
+      <td><strong>Support</strong></td>
+      <td style={{ textAlign: "center" }}>Community</td>
+      <td style={{ textAlign: "center" }}>Email &lt;24h</td>
+      <td style={{ textAlign: "center" }}>Slack + CSM</td>
+      <td style={{ textAlign: "center" }}>Dedicated SE + CSM</td>
+    </tr>
+
+    <tr>
+      <td><strong>SSO</strong></td>
+      <td style={{ textAlign: "center" }}>—</td>
+      <td style={{ textAlign: "center" }}>—</td>
+      <td style={{ textAlign: "center" }}>Included</td>
+      <td style={{ textAlign: "center" }}>Included</td>
+    </tr>
+
+    <tr>
+      <td><strong>SOC 2 artifacts</strong></td>
+      <td style={{ textAlign: "center" }}>—</td>
+      <td style={{ textAlign: "center" }}>—</td>
+      <td style={{ textAlign: "center" }}>Included</td>
+      <td style={{ textAlign: "center" }}>Included</td>
+    </tr>
+
+    <tr>
+      <td><strong>Custom deploy</strong></td>
+      <td style={{ textAlign: "center" }}>—</td>
+      <td style={{ textAlign: "center" }}>—</td>
+      <td style={{ textAlign: "center" }}>—</td>
+      <td style={{ textAlign: "center" }}>Included</td>
+    </tr>
+  </tbody>
+</table>
+
+<Info>
+  Committing \$100k or more annually? Credit rates drop by up to 40% — contact
+  [sales@deepidv.com](mailto:sales@deepidv.com) to discuss.
+</Info>
 
 ---
 
@@ -165,7 +399,7 @@ Direct server-to-server API calls — no session or workflow required. Pricing f
   </Accordion>
 
   <Accordion title="Are there contracts or minimum spend requirements?">
-    None. deepidv is fully pay-as-you-go. No annual contracts, no monthly minimums, no lock-ins. You control exactly how much you spend and when.
+    No annual contracts, no volume minimums, and no lock-ins — cancel anytime. The only recurring charge on Pay-Per-Use is the \$19/month account maintenance fee, which starts in your second month; your first month is free. Agent Suite tiers are billed monthly at their listed rate.
   </Accordion>
 
   <Accordion title="How does workflow pricing work?">
