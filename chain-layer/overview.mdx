@@ -5,6 +5,22 @@ description: The cryptographic transparency log behind every deepidv verificatio
 
 > The chain layer is the cryptographic transparency substrate underneath every deepidv verification — a public, append-only log anchored hourly to a blockchain.
 
+export const VideoEmbed = ({ src, title = "Video" }) => (
+  <div className="deepidv-video-embed">
+    <iframe
+      src={src}
+      title={title}
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+      allowFullScreen
+    />
+  </div>
+);
+
+<VideoEmbed
+  src="https://www.youtube.com/embed/bakRDtNOqpw?rel=0&playsinline=1"
+  title="Chain Verification, Built on Base"
+/>
+
 When a verification is minted — a KYC check, document validation, address proof, agent identity — the chain layer produces a signed envelope, places it in an append-only log, and emits hourly checkpoints anchored to a public blockchain.
 
 The result: anyone, anywhere, in any language, can verify that a specific verification happened, when it happened, who issued it, and that the record has not been changed since. Without trusting deepidv.
