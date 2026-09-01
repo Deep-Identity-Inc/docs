@@ -8,6 +8,9 @@
     "dark": "#1456A0"
   },
   "favicon": "/logo/favicon.svg",
+  "icons": {
+    "library": "lucide"
+  },
   "css": "/custom.css",
   "navigation": {
     "tabs": [
@@ -206,13 +209,13 @@
         {
           "anchor": "Admin Console",
           "href": "https://app.deepidv.com",
-          "icon": "grid-2",
+          "icon": "layout-grid",
           "isExternal": true
         },
         {
           "anchor": "Agent Skills",
           "href": "https://github.com/Deep-Identity-Inc/agent-skills",
-          "icon": "robot",
+          "icon": "bot",
           "isExternal": true
         }
       ]
