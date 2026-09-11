@@ -217,6 +217,23 @@ Reason codes:
 | `document_risk_data` | object | Document fraud/risk analysis |
 | `title_search_data` | object | Property title search results |
 | `custom_form_data` | array | Custom form question/answer entries |
+| `ip_jurisdiction_data` | object | iGaming IP jurisdiction result (see [iGaming check data](#igaming-check-data)) |
+| `vpn_detection_data` | object | iGaming VPN / anonymizer result |
+| `injection_detection_data` | object | iGaming injection detection result |
+| `anti_cheat_data` | object | iGaming anti-cheat result — richer than the redacted API response |
+
+### iGaming check data
+
+Each [iGaming check](/igaming/checks) writes its result here when it runs, whether as a workflow step or a standalone `POST /v1/igaming/*` call. Keys inside these objects are snake_case in this response (the live check responses use camelCase evidence keys).
+
+| Object | Fields |
+| --- | --- |
+| `ip_jurisdiction_data` | `verdict`, `action`, `evidence` (`location_details`, `matched_rule`, datacenter-feed fields), `settings_snapshot`, `checked_ip`, `timestamp`, `escalation` (only on step-up) |
+| `vpn_detection_data` | `verdict`, `action`, `evidence` (`asn`, `asn_org`, `matched`, `type`, `confidence`, `feed_version`, `stale`), `settings_snapshot`, `checked_ip`, `timestamp`, `escalation` (only on step-up) |
+| `injection_detection_data` | `verdict`, `action`, `confidence`, `evidence` (`hard_fail`, `signals`, `hard_signals`, or `confidence`, `media_source_score`, `frame_timing_score`, `reason`, `automation_signals`), `timestamp` |
+| `anti_cheat_data` | `verdict`, `action`, `dedup_action`, `matched_session_id`, `similarity`, `face_id`, `threshold`, `links[]` (`session_id`, `score`, `matched_signals`), `multi_account`, `multi_account_action`, `link_sensitivity`, `timestamp`. On `SELF_EXCLUSION`: `verdict`, `action`, `reason` (`identity` or `face`), `matched_session_id`, `threshold`, `timestamp` |
+
+A check whose action was `block` also sets the session's top-level `status` to `FAILED`.
 
 ### `id_analysis_data` object
 

@@ -64,7 +64,7 @@ This is intentional — sandbox mode is for reading and validating response shap
 
 ### Other routes
 
-Endpoints outside of sessions, financial, workflows, and credit-checks (e.g., `/health`) pass through normally.
+Endpoints outside of sessions, financial, workflows, and credit-checks (e.g., `/health`) pass through normally. The [iGaming checks](/igaming/overview) (`/v1/igaming/*`) have no sandbox fixtures, and because sandbox keys can't create sessions they are effectively unavailable in sandbox — use a live key with a test workflow.
 
 ---
 

@@ -94,9 +94,9 @@ If your API key is missing or invalid, the API returns a `401 Unauthorized` resp
 
 | Status Code | Meaning |
 | --- | --- |
-| **401** | API key is missing, invalid, or revoked |
+| **401** | API key is invalid or revoked |
 | **402** | Insufficient token balance in your organization |
-| **403** | API key does not have access to the requested resource |
+| **403** | `x-api-key` header is missing, or the key does not have access to the requested resource |
 | **429** | Rate limit exceeded — back off and retry |
 
 <Tip>

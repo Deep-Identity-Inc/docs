@@ -1,0 +1,185 @@
+---
+title: Injection Detection
+description: Detect virtual cameras, emulators, and injected media during liveness capture
+api: POST /v1/igaming/injection
+---
+
+```
+POST /v1/igaming/injection
+```
+
+Scores signals collected during the applicant's liveness capture for indicators of media injection — virtual cameras, screen replays, emulators, and similar spoofing techniques. Runs against the session's `injection-detection` step configuration and persists its result to the session.
+
+<Note>
+  This check fails **soft**. If an internal error occurs, or neither
+  `device_integrity` nor `media_source` is supplied, it returns `200` with
+  `verdict: "UNAVAILABLE"` and `action: "allow"` rather than blocking or
+  erroring. (`frame_timing` on its own does not count as a signal.)
+</Note>
+
+<Warning>
+  Unlike the other iGaming checks, this endpoint does **not** skip when the
+  session's workflow has no `INJECTION_DETECTION` step. It scores the supplied
+  signals with the default config (`action_on_detection: block`,
+  `automation_handling: block`, `confidence_threshold: 70`) and can fail the
+  session. Only call it on sessions whose workflow includes the step.
+</Warning>
+
+## Request
+
+### Headers
+
+| Header         | Required | Description        |
+| -------------- | -------- | ------------------ |
+| `x-api-key`    | Yes      | Your API key       |
+| `Content-Type` | Yes      | `application/json` |
+
+### Body parameters
+
+Bodies use **snake_case** field names — there are no camelCase aliases.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `session_id` | string | Yes | The session to score |
+| `device_integrity` | object | No | Injection signal group — see below |
+| `media_source` | object | No | Injection signal group — see below |
+| `frame_timing` | object | No | Injection signal group — see below |
+
+Each supplied signal group is an object with this shape:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `pass` | boolean | Whether this signal group passed on the client. `false` is a **hard hit** (see below) |
+| `score` | number | **Trust** score for this group, `0`–`100` — **higher means cleaner**. A missing score counts as `50` (neutral) |
+| `signals` | string[] | Named indicators observed (empty array if none). Non-empty `device_integrity.signals` with `pass: true` still produces a `HIT` |
+
+Omit a signal group entirely to skip it — only supplied groups are scored.
+
+### How the score is resolved
+
+1. **Hard hits.** `media_source.pass: false` resolves to the step's `action_on_detection`; `device_integrity.pass: false` resolves to `automation_handling` (`ignore` → `allow`). If both fire, the more severe action wins. `confidence` in the response is that group's `score`.
+2. **Soft score.** Otherwise `confidence = round(0.6 × media_source.score + 0.4 × frame_timing.score)`. If it is **below** `confidence_threshold` (default `70`), the verdict is `HIT` with `action_on_detection`. `device_integrity.score` does not enter this average.
+3. **Automation soft signals.** If `device_integrity.signals` is non-empty (even with `pass: true`) and `automation_handling` isn't `ignore`, the verdict becomes `HIT` and the action is raised to `automation_handling` when that is more severe.
+4. A `step-up` action is downgraded to `flag` unless the step configures an `escalation_type`.
+
+A clean capture should therefore be sent with **high** scores (for example `90`–`100`). Sending `score: 8` for a clean capture yields `confidence: 25` and a `block` under the default threshold.
+
+### Collecting the signals
+
+The server scores what your client reports; how you derive `pass`, `score`, and `signals` is up to your capture code. Typical sources:
+
+| Group | What clients usually measure |
+| --- | --- |
+| `device_integrity` | Automation and emulator markers — `navigator.webdriver`, headless user agents, missing plugins/languages, rooted or emulated devices |
+| `media_source` | Whether the active camera is a physical device — virtual-camera labels (OBS, ManyCam, etc.), injected `MediaStream` tracks, screen-capture sources |
+| `frame_timing` | Regularity of frame delivery — implausibly uniform or implausibly fast cadence suggests a synthetic stream |
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.deepidv.com/v1/igaming/injection \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "session_id": "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+    "device_integrity": { "pass": true, "score": 95, "signals": [] },
+    "media_source": { "pass": false, "score": 12, "signals": ["virtual-camera:OBS Virtual Camera"] },
+    "frame_timing": { "pass": true, "score": 88, "signals": [] }
+  }'
+```
+
+```javascript Node.js
+const response = await fetch("https://api.deepidv.com/v1/igaming/injection", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "x-api-key": "YOUR_API_KEY",
+  },
+  body: JSON.stringify({
+    session_id: "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+    device_integrity: { pass: true, score: 95, signals: [] },
+    media_source: { pass: false, score: 12, signals: ["virtual-camera:OBS Virtual Camera"] },
+    frame_timing: { pass: true, score: 88, signals: [] },
+  }),
+});
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://api.deepidv.com/v1/igaming/injection",
+    headers={
+        "Content-Type": "application/json",
+        "x-api-key": "YOUR_API_KEY",
+    },
+    json={
+        "session_id": "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+        "device_integrity": {"pass": True, "score": 95, "signals": []},
+        "media_source": {"pass": False, "score": 12, "signals": ["virtual-camera:OBS Virtual Camera"]},
+        "frame_timing": {"pass": True, "score": 88, "signals": []},
+    },
+)
+```
+
+</CodeGroup>
+
+## Response
+
+### 200 — Success
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `verdict` | string | `HIT`, `CLEAR`, or `UNAVAILABLE` |
+| `action` | string | `allow`, `flag`, `step-up`, or `block` |
+| `confidence` | number \| null | Trust confidence `0`–`100` (higher is cleaner) — the weighted soft score, or the failing group's `score` on a hard hit; `null` when `UNAVAILABLE` |
+| `escalation` | object \| null | `{ type: string, check: "injection-detection" }` — present only when `action` is `step-up` and the workflow configures an escalation. If a step-up would resolve with no escalation configured, the check downgrades it to `flag` |
+
+### Verdicts
+
+| Verdict | Meaning |
+| --- | --- |
+| `HIT` | A hard hit (`pass: false`), a soft score below `confidence_threshold`, or automation signals were present |
+| `CLEAR` | Signals passed and the soft score met the threshold — no injection detected |
+| `UNAVAILABLE` | Neither `device_integrity` nor `media_source` was supplied — fails soft to `allow` |
+
+### Error responses
+
+| Status | Description |
+| --- | --- |
+| `400 Bad Request` | Invalid request body — check required fields and signal group shape |
+| `401 Unauthorized` | Invalid or revoked API key |
+| `403 Forbidden` | `x-api-key` header missing |
+| `404 Not Found` | Session not found, or not in your org |
+
+<ResponseExample>
+```json hard hit (example request)
+{
+  "verdict": "HIT",
+  "action": "block",
+  "confidence": 12,
+  "escalation": null
+}
+```
+
+```json clean capture (media_source 95, frame_timing 85)
+{
+  "verdict": "CLEAR",
+  "action": "allow",
+  "confidence": 91,
+  "escalation": null
+}
+```
+
+```json no signals
+{
+  "verdict": "UNAVAILABLE",
+  "action": "allow",
+  "confidence": null,
+  "escalation": null
+}
+```
+</ResponseExample>
