@@ -1,408 +1,159 @@
 export const makePalette = (deps) => {
-  const { WB, utils, store, ui } = deps;
-
-  const PALETTE_WIDTH = (WB.PANEL && WB.PANEL.PALETTE_WIDTH) || 300;
-  const CATEGORY_TABS = WB.CATEGORY_TABS || ['All', 'Verify', 'Docs', 'Screen', 'Crypto', 'Gaming'];
-  const UI_ICONS = WB.UI_ICONS || {};
-  const BRAND = WB.BRAND || { primary: '#1E7FE0', light: '#22B8F0', dark: '#1456A0' };
-  const CATALOG = WB.WORKFLOW_STEPS_OPTIONS || [];
-  const GREY_GRADIENT = 'linear-gradient(135deg, #8E8E93, #AEAEB2)';
+  const { WB, utils, store, ui, dnd } = deps;
+  const wb = WB || {};
+  const I18N = wb.I18N || {};
+  const t = (key, fallback) => (typeof I18N[key] === 'string' ? I18N[key] : fallback);
+  const CATEGORY_TABS = [
+    { value: 'All', key: 'builderCategoryAll', label: 'All' },
+    { value: 'Verify', key: 'builderCategoryVerify', label: 'Verify' },
+    { value: 'Docs', key: 'builderCategoryDocs', label: 'Docs' },
+    { value: 'Screen', key: 'builderCategoryScreen', label: 'Screen' },
+    { value: 'Crypto', key: 'builderCategoryCrypto', label: 'Crypto' },
+    { value: 'Gaming', key: 'builderCategoryGaming', label: 'Gaming' },
+  ];
   const DRAG_MIME = 'application/workflow-step';
-
   const { useWorkflow } = store;
+  const { StepIcon, MuiTextField } = ui;
+  const { useDraggable } = dnd;
 
-  const gradientOf = (stepId) =>
-    (typeof utils.getStepGradient === 'function' && utils.getStepGradient(stepId)) || GREY_GRADIENT;
-
-  const costLabelOf = (service) => {
-    if (typeof utils.getStepCostLabel === 'function') return utils.getStepCostLabel(service);
-    if (service.coupled) return 'included';
-    if (service.costLabel) return service.costLabel;
-    if (typeof service.cost === 'number') {
-      return typeof utils.fCurrency === 'function' ? utils.fCurrency(service.cost) : `$${service.cost.toFixed(2)}`;
-    }
-    return '—';
+  const labelOf = (service) => {
+    const key = (wb.WORKFLOW_STEP_I18N_KEYS || {})[service.id];
+    return (key && I18N[key]) || service.label;
+  };
+  const descriptionOf = (service) => {
+    const key = (wb.WORKFLOW_STEP_DESCRIPTION_I18N_KEYS || {})[service.id];
+    return (key && I18N[key]) || service.description || '';
   };
 
-  const servicesFor = (availableServices) => {
-    if (typeof utils.getAvailableServiceData === 'function') {
-      return utils.getAvailableServiceData(availableServices) || [];
-    }
-    return CATALOG.filter((s) => !s.advancedOnly);
+  const CostColumn = ({ service, covered }) => {
+    const included = t('builderServiceIncluded', 'Included');
+    if (service.coupled) return <span className="wb-pal-included">{included}</span>;
+    return (
+      <>
+        <span className="wb-pal-cost" data-covered={covered ? 'true' : 'false'}>{utils.fCurrency(utils.getStepCost(service))}</span>
+        {covered ? <span className="wb-pal-included-covered">{included}</span> : null}
+      </>
+    );
   };
 
-  const isGated = (service, gateContext) => {
-    try {
-      if (typeof utils.isStepGated === 'function') return !!utils.isStepGated(service, gateContext);
-      if (typeof utils.isGatedStep === 'function') return !!utils.isGatedStep(service);
-    } catch (err) {}
-    return !!(service && service.gated);
-  };
+  const CardBody = ({ service, covered, shadow }) => (
+    <>
+      <span className={'wb-tile' + (shadow ? ' wb-tile-shadow' : '')} style={{ background: utils.getStepGradient(service.id) }} aria-hidden="true">
+        <StepIcon icon={service.icon} size={20} color="#ffffff" />
+      </span>
+      <span className="wb-pal-body">
+        <span className="wb-pal-row">
+          <span className="wb-pal-name">{labelOf(service)}</span>
+          <span className="wb-pal-right"><CostColumn service={service} covered={covered} /></span>
+        </span>
+        <span className="wb-pal-desc">{descriptionOf(service)}</span>
+      </span>
+    </>
+  );
 
-  const iconSrc = (iconId, hex) => {
-    if (typeof ui.iconUrl === 'function') return ui.iconUrl(iconId, hex);
-    const parts = String(iconId || '').split(':');
-    const color = String(hex || '#ffffff').replace('#', '');
-    return `https://api.iconify.design/${parts[0]}/${parts[1]}.svg?color=%23${color}`;
-  };
-
-  const LucideIcon = ui.LucideIcon || (() => null);
-
-  const StepIcon =
-    ui.StepIcon ||
-    (({ icon, size = 20, color = '#ffffff', style }) => (
-      <img
-        src={iconSrc(icon, color)}
-        width={size}
-        height={size}
-        alt=""
-        draggable={false}
-        style={{ display: 'block', ...(style || {}) }}
-      />
-    ));
-
-  const Scrollbar =
-    ui.Scrollbar ||
-    (({ children, style, className }) => (
-      <div className={className} style={{ overflow: 'auto', ...(style || {}) }}>
-        {children}
+  const ServicePaletteCard = ({ service, covered, disabled }) => {
+    const { setNodeRef, listeners, isDragging } = useDraggable({ id: 'palette:' + service.id, data: { service }, disabled });
+    return (
+      <div
+        ref={setNodeRef}
+        className="wb-pal-card wb-palette-card"
+        data-testid={'wb-palette-card-' + service.id}
+        data-step-id={service.id}
+        data-dragging={isDragging ? 'true' : 'false'}
+        data-disabled={disabled ? 'true' : 'false'}
+        role="button"
+        tabIndex={0}
+        aria-label={'Drag ' + labelOf(service) + ' into the workflow'}
+        {...listeners}
+      >
+        <CardBody service={service} covered={covered} />
       </div>
-    ));
+    );
+  };
 
-  const FallbackTextField = ({ value, onChange, placeholder, testId, startIcon }) => (
-    <div className="wb-pal-ff">
-      {startIcon ? <span className="wb-pal-ff-icon">{startIcon}</span> : null}
-      <input
-        type="text"
-        value={value}
-        placeholder={placeholder}
-        aria-label={placeholder}
-        data-testid={testId}
-        onChange={(e) => (onChange ? onChange(e.target.value) : null)}
-      />
-    </div>
-  );
-  const TextField = ui.TextField || FallbackTextField;
-
-  const FallbackTabs = ({ value, onChange, tabs }) => (
-    <div role="tablist" className="wb-pal-ft">
-      {(tabs || []).map((t) => (
-        <button
-          key={t.value}
-          type="button"
-          role="tab"
-          aria-selected={value === t.value ? 'true' : 'false'}
-          data-testid={t.testId}
-          className={value === t.value ? 'is-active' : ''}
-          onClick={() => (onChange ? onChange(t.value) : null)}
-        >
-          {t.label}
-        </button>
-      ))}
-    </div>
-  );
-  const Tabs = ui.Tabs || FallbackTabs;
-
-  const PALETTE_CSS = `
-.wb-pal-root{--wb-pal-bg:#FFFFFF;--wb-pal-surface:#FFFFFF;--wb-pal-border:rgba(145,158,171,0.20);--wb-pal-text:#1C252E;--wb-pal-muted:#637381;--wb-pal-hover-border:rgba(30,127,224,0.45);--wb-pal-shadow:0 8px 16px -4px rgba(145,158,171,0.24);--wb-pal-lock-bg:rgba(255,171,0,0.16);--wb-pal-lock-fg:#B76E00;color:var(--wb-pal-text);}
-.dark .wb-pal-root{--wb-pal-bg:#141A21;--wb-pal-surface:#1C252E;--wb-pal-border:rgba(145,158,171,0.16);--wb-pal-text:#FFFFFF;--wb-pal-muted:#919EAB;--wb-pal-hover-border:rgba(34,184,240,0.55);--wb-pal-shadow:0 8px 16px -4px rgba(0,0,0,0.48);--wb-pal-lock-bg:rgba(255,171,0,0.16);--wb-pal-lock-fg:#FFD666;}
-.wb-pal-tabs{overflow-x:auto;scrollbar-width:none;}
-.wb-pal-tabs::-webkit-scrollbar{display:none;}
-.wb-pal-list{scrollbar-width:thin;}
-.wb-pal-card{position:relative;display:flex;align-items:flex-start;gap:12px;padding:12px;border:1px solid var(--wb-pal-border);border-radius:12px;background:var(--wb-pal-surface);cursor:grab;user-select:none;-webkit-user-select:none;box-sizing:border-box;transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease;}
-.wb-pal-card:hover{border-color:var(--wb-pal-hover-border);box-shadow:var(--wb-pal-shadow);transform:translateY(-1px);}
-.wb-pal-card:active{cursor:grabbing;transform:translateY(0);}
-.wb-pal-card:focus-visible{outline:2px solid ${BRAND.primary};outline-offset:2px;}
-.wb-pal-card[data-gated="true"]{cursor:not-allowed;}
-.wb-pal-card[data-gated="true"] .wb-pal-tile{filter:saturate(.35);opacity:.85;}
-.wb-pal-cost{display:inline-block;max-width:96px;opacity:1;overflow:hidden;white-space:nowrap;flex-shrink:0;transition:max-width .2s ease,opacity .2s ease;}
-.wb-pal-card:hover .wb-pal-cost{max-width:0;opacity:0;}
-.wb-pal-grip{display:inline-flex;align-items:center;flex-shrink:0;max-width:0;opacity:0;overflow:hidden;color:var(--wb-pal-muted);transition:max-width .2s ease,opacity .2s ease;}
-.wb-pal-card:hover .wb-pal-grip{max-width:20px;opacity:1;}
-.wb-pal-desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
-.wb-pal-ff{position:relative;display:flex;align-items:center;}
-.wb-pal-ff-icon{position:absolute;left:10px;display:inline-flex;color:var(--wb-pal-muted);pointer-events:none;}
-.wb-pal-ff input{width:100%;box-sizing:border-box;height:36px;padding:0 12px 0 32px;border:1px solid var(--wb-pal-border);border-radius:8px;background:transparent;color:var(--wb-pal-text);font:inherit;font-size:13px;outline:none;}
-.wb-pal-ff input:focus{border-color:${BRAND.primary};box-shadow:0 0 0 2px rgba(30,127,224,.2);}
-.wb-pal-ft{display:flex;gap:4px;}
-.wb-pal-ft button{border:0;background:transparent;color:var(--wb-pal-muted);font:inherit;font-size:13px;font-weight:600;padding:4px 10px;border-radius:999px;cursor:pointer;white-space:nowrap;}
-.wb-pal-ft button.is-active{background:${BRAND.primary};color:#FFFFFF;}
-@media (prefers-reduced-motion:reduce){.wb-pal-card,.wb-pal-cost,.wb-pal-grip{transition:none;}}
-`;
-
-  const LockChip = ({ stepId }) => (
-    <span
-      className="wb-pal-lock"
-      data-testid={`wb-palette-lock-${stepId}`}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 4,
-        padding: '2px 8px',
-        borderRadius: 999,
-        background: 'var(--wb-pal-lock-bg)',
-        color: 'var(--wb-pal-lock-fg)',
-        fontSize: 11,
-        fontWeight: 700,
-        lineHeight: '16px',
-        whiteSpace: 'nowrap',
-        flexShrink: 0,
-      }}
-    >
-      <LucideIcon name={UI_ICONS.lock || 'lock'} size={12} />
-      Locked
-    </span>
-  );
-
-  const PaletteCard = ({ service, gated, onGated }) => {
-    const gradient = gradientOf(service.id);
-    const costLabel = costLabelOf(service);
-
-    const fireGated = () => {
-      if (typeof onGated === 'function') onGated(service);
-    };
-
-    const handleDragStart = (e) => {
-      if (gated) {
-        e.preventDefault();
-        fireGated();
-        return;
-      }
-      const dt = e.dataTransfer;
-      if (!dt) return;
+  const CanvasPaletteCard = ({ service, covered, disabled }) => {
+    const onDragStart = (e) => {
       try {
-        dt.setData(DRAG_MIME, service.id);
-        dt.setData('text/plain', service.id);
-        dt.effectAllowed = 'copy';
+        e.dataTransfer.setData(DRAG_MIME, service.id);
+        e.dataTransfer.setData('text/plain', service.id);
+        e.dataTransfer.effectAllowed = 'copy';
       } catch (err) {}
     };
-
-    const handleClick = () => {
-      if (gated) fireGated();
-    };
-
-    const handleKeyDown = (e) => {
-      if (!gated) return;
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        fireGated();
-      }
-    };
-
     return (
       <div
         className="wb-pal-card wb-palette-card"
-        data-testid={`wb-palette-card-${service.id}`}
+        data-testid={'wb-palette-card-' + service.id}
         data-step-id={service.id}
-        data-category={service.category}
-        data-gated={gated ? 'true' : 'false'}
-        draggable
+        data-disabled={disabled ? 'true' : 'false'}
+        draggable={!disabled}
+        onDragStart={disabled ? undefined : onDragStart}
         role="button"
         tabIndex={0}
-        aria-label={gated ? `${service.label} (locked)` : `Drag ${service.label} into the workflow`}
-        aria-disabled={gated ? 'true' : undefined}
-        onDragStart={handleDragStart}
-        onClick={handleClick}
-        onKeyDown={handleKeyDown}
+        aria-label={'Drag ' + labelOf(service) + ' onto the canvas'}
       >
-        <div
-          className="wb-pal-tile"
-          aria-hidden="true"
-          style={{
-            width: 36,
-            height: 36,
-            minWidth: 36,
-            borderRadius: '22%',
-            background: gradient,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.12)',
-          }}
-        >
-          <StepIcon icon={service.icon} size={20} color="#ffffff" />
-        </div>
-
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 20 }}>
-            <div
-              className="wb-subtitle2 wb-ellipsis"
-              style={{
-                flex: 1,
-                minWidth: 0,
-                fontSize: 14,
-                fontWeight: 600,
-                lineHeight: '20px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {service.label}
-            </div>
-            {gated ? (
-              <LockChip stepId={service.id} />
-            ) : (
-              <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
-                <span
-                  className="wb-pal-cost"
-                  data-testid={`wb-palette-cost-${service.id}`}
-                  style={{ fontSize: 12, fontWeight: 600, lineHeight: '18px', color: 'var(--wb-pal-muted)' }}
-                >
-                  {costLabel}
-                </span>
-                <span className="wb-pal-grip" aria-hidden="true">
-                  <LucideIcon name={UI_ICONS.drag || 'grip-vertical'} size={16} />
-                </span>
-              </span>
-            )}
-          </div>
-          <div
-            className="wb-pal-desc wb-caption"
-            style={{ fontSize: 12, lineHeight: '18px', color: 'var(--wb-pal-muted)' }}
-          >
-            {service.description}
-          </div>
-        </div>
+        <CardBody service={service} covered={covered} shadow />
       </div>
     );
   };
 
-  const EmptyList = ({ allPlaced, categoryTab }) => (
-    <div
-      data-testid="wb-palette-empty"
-      style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--wb-pal-muted)' }}
-    >
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: 'var(--wb-pal-text)' }}>
-        {allPlaced ? 'All services are in your workflow' : 'No services match'}
-      </div>
-      <div style={{ fontSize: 12, lineHeight: '18px' }}>
-        {allPlaced
-          ? 'Remove a step to make it available again.'
-          : `Try a different search${categoryTab !== 'All' ? ' or category' : ''}.`}
-      </div>
-    </div>
-  );
-
-  const Palette = (paletteProps) => {
-    const { viewMode, availableServices, onGated, gateContext } = paletteProps;
+  const Palette = ({ viewMode, availableServices, disabled }) => {
     const { state } = useWorkflow();
     const steps = (state && state.workflow && state.workflow.steps) || [];
-
     const [searchQuery, setSearchQuery] = useState('');
     const [categoryTab, setCategoryTab] = useState('All');
+    const canvasMode = viewMode === 'canvas';
 
-    const availKey = Array.isArray(availableServices) ? availableServices.join('|') : '';
-    const services = useMemo(() => servicesFor(availableServices), [availKey]);
-
-    const placedIds = useMemo(() => {
-      const set = new Set();
-      steps.forEach((s) => set.add(s.id));
-      return set;
-    }, [steps]);
+    const services = useMemo(() => utils.getAvailableServiceData(availableServices) || [], [Array.isArray(availableServices) ? availableServices.join('|') : '']);
 
     const filtered = useMemo(() => {
-      const q = searchQuery.trim().toLowerCase();
+      const q = searchQuery.toLowerCase();
       return services.filter((service) => {
-        const matchesSearch = !q || String(service.label || '').toLowerCase().includes(q);
+        const matchesSearch = String(service.label || '').toLowerCase().includes(q);
         const matchesCategory = categoryTab === 'All' || service.category === categoryTab;
-        const alreadyInWorkflow = placedIds.has(service.id);
+        const alreadyInWorkflow = steps.some((s) => s.id === service.id);
         return matchesSearch && matchesCategory && !alreadyInWorkflow;
       });
-    }, [services, searchQuery, categoryTab, placedIds]);
+    }, [services, searchQuery, categoryTab, steps]);
 
-    const tabs = useMemo(
-      () => CATEGORY_TABS.map((value) => ({ value, label: value, testId: `wb-palette-tab-${value}` })),
-      []
-    );
-
-    const allPlaced = !searchQuery && categoryTab === 'All' && filtered.length === 0 && services.length > 0;
-
-    const handleSearchChange = (next) => {
-      if (typeof next === 'string') setSearchQuery(next);
-      else if (next && next.target) setSearchQuery(String(next.target.value || ''));
-      else setSearchQuery('');
-    };
+    const Card = canvasMode ? CanvasPaletteCard : ServicePaletteCard;
 
     return (
-      <aside
-        className="wb-palette wb-pal-root"
-        data-testid="wb-palette"
-        data-viewmode={viewMode || 'builder'}
-        data-count={filtered.length}
-        aria-label="Available Services"
-        style={{
-          width: PALETTE_WIDTH,
-          minWidth: PALETTE_WIDTH,
-          maxWidth: PALETTE_WIDTH,
-          flexShrink: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          height: '100%',
-          minHeight: 0,
-          boxSizing: 'border-box',
-          background: 'var(--wb-pal-bg)',
-          borderRight: '1px solid var(--wb-pal-border)',
-        }}
-      >
-        <style>{PALETTE_CSS}</style>
-
-        <div style={{ padding: '16px 16px 8px', display: 'flex', flexDirection: 'column', gap: 12, flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-            <div
-              role="heading"
-              aria-level={2}
-              style={{ margin: 0, fontSize: 16, fontWeight: 700, lineHeight: '24px', color: 'var(--wb-pal-text)' }}
-            >
-              Available Services
-            </div>
-            <span
-              className="wb-caption"
-              data-testid="wb-palette-count"
-              style={{ fontSize: 12, lineHeight: '18px', color: 'var(--wb-pal-muted)' }}
-            >
-              {filtered.length}
-            </span>
-          </div>
-
-          <TextField
-            size="small"
+      <aside className="wb-pal" data-testid="wb-palette" data-viewmode={viewMode || 'builder'} data-count={filtered.length} aria-label={t('builderAvailableServices', 'Available Services')}>
+        <div className="wb-pal-head">
+          <h6 className="wb-pal-title">{t('builderAvailableServices', 'Available Services')}</h6>
+          <MuiTextField
             fullWidth
-            placeholder="Search services…"
+            size="small"
+            placeholder={t('builderSearchPlaceholder', 'Search...')}
             value={searchQuery}
-            onChange={handleSearchChange}
-            startIcon={<LucideIcon name={UI_ICONS.search || 'search'} size={16} />}
+            onChange={setSearchQuery}
+            startAdornment={<StepIcon icon="eva:search-fill" size={20} color="currentColor" />}
             testId="wb-palette-search"
           />
-
-          <div className="wb-pal-tabs">
-            <Tabs value={categoryTab} onChange={setCategoryTab} tabs={tabs} pill />
-          </div>
         </div>
-
-        <Scrollbar className="wb-pal-list" style={{ flex: 1, minHeight: 0 }}>
-          <div
-            data-testid="wb-palette-list"
-            style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '4px 16px 16px' }}
-          >
-            {filtered.length === 0 ? (
-              <EmptyList allPlaced={allPlaced} categoryTab={categoryTab} />
-            ) : (
-              filtered.map((service) => (
-                <PaletteCard
-                  key={service.id}
-                  service={service}
-                  gated={isGated(service, gateContext)}
-                  onGated={onGated}
-                />
-              ))
-            )}
-          </div>
-        </Scrollbar>
+        <div className="wb-pal-tabs" role="tablist">
+          {CATEGORY_TABS.map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              role="tab"
+              className="wb-pal-tab"
+              aria-selected={categoryTab === tab.value ? 'true' : 'false'}
+              data-testid={'wb-palette-tab-' + tab.value}
+              onClick={() => setCategoryTab(tab.value)}
+            >
+              {t(tab.key, tab.label)}
+            </button>
+          ))}
+        </div>
+        <div className={'wb-pal-list' + (canvasMode ? ' wb-pal-list-canvas' : '')} data-testid="wb-palette-list">
+          {filtered.map((service) => (
+            <Card key={service.id} service={service} covered={false} disabled={!!disabled} />
+          ))}
+        </div>
       </aside>
     );
   };
 
   return { Palette };
 };
-

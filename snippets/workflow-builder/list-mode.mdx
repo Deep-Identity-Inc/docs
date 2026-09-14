@@ -1,313 +1,123 @@
 export const makeListMode = (deps) => {
-  const { WB, utils, store, ui } = deps;
+  const { WB, utils, store, ui, dnd } = deps;
   const wb = WB || {};
-  const u = utils || {};
-  const kit = ui || {};
-
-  const noop = () => {};
+  const I18N = wb.I18N || {};
+  const t = (key, fallback) => (typeof I18N[key] === 'string' ? I18N[key] : fallback);
   const START_ID = wb.START_NODE_ID || '__start__';
-  const NODE_WIDTH = (wb.CANVAS && wb.CANVAS.NODE_WIDTH) || 280;
-  const BRAND = wb.BRAND || { primary: '#1E7FE0', light: '#22B8F0', dark: '#1456A0' };
-  const PALETTE_COLORS = wb.VERIFY_COLORS || {};
-  const SUCCESS = PALETTE_COLORS.success || '#22C55E';
-  const DANGER = PALETTE_COLORS.error || '#FF5630';
-  const ICON_IDS = wb.ICONS || {};
-  const EMPTY_ICON = ICON_IDS.emptyCanvas || 'solar:widget-add-bold-duotone';
-  const PLAY_ICON = ICON_IDS.play || 'solar:play-bold';
-  const FALLBACK_ICON = ICON_IDS.fallback || 'solar:widget-bold-duotone';
-  const GREY_GRADIENT = 'linear-gradient(135deg, #8E8E93, #AEAEB2)';
-  const MIME_STEP = 'application/workflow-step';
-  const MIME_REORDER = 'application/workflow-reorder';
-  const REORDER_THROTTLE_MS = 200;
+  const COUPLED = wb.COUPLED_STEPS || {};
+  const OVERRIDES = wb.COUPLED_PROPERTY_OVERRIDES || {};
+  const { StepIcon } = ui;
+  const { useSortable, useDroppable, parseNodeDropId } = dnd;
+  const { useWorkflow } = store;
 
-  const hexToRgb = (hex) => {
-    let h = String(hex || '').replace('#', '');
-    if (h.length === 3) h = h.split('').map((c) => c + c).join('');
-    const n = parseInt(h, 16);
-    if (Number.isNaN(n)) return '30, 127, 224';
-    return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+  const stepKeyOf = (s) => s.instanceId || s.id;
+  const labelOf = (step) => {
+    const key = (wb.WORKFLOW_STEP_I18N_KEYS || {})[step.id];
+    return (key && I18N[key]) || step.label || step.id;
   };
-  const PRIMARY_RGB = hexToRgb(BRAND.primary);
-
-  const LIST_CSS = `
-.wb-lm-canvas{position:relative;flex:1 1 auto;align-self:stretch;height:100%;width:100%;min-width:0;min-height:0;overflow:auto;box-sizing:border-box;outline:none;background-image:radial-gradient(circle,rgba(145,158,171,0.32) 1px,transparent 1px);background-size:20px 20px;scrollbar-width:thin;transition:box-shadow .15s ease}
-.wb-lm-canvas::-webkit-scrollbar{width:8px;height:8px}
-.wb-lm-canvas::-webkit-scrollbar-thumb{background:rgba(145,158,171,0.32);border-radius:8px}
-.dark .wb-lm-canvas{background-image:radial-gradient(circle,rgba(145,158,171,0.2) 1px,transparent 1px)}
-.wb-lm-canvas.is-drop-active{box-shadow:inset 0 0 0 2px rgba(${PRIMARY_RGB},0.35)}
-.wb-lm-inner{display:flex;flex-direction:column;align-items:center;padding:32px 24px 120px;min-height:100%;box-sizing:border-box}
-.wb-lm-inner.is-empty{justify-content:center;padding-bottom:48px}
-.wb-lm-start{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 20px 0 10px;border-radius:25px;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.4);color:#118D57;font-size:14px;font-weight:700;line-height:1;user-select:none;-webkit-user-select:none;box-sizing:border-box;transition:box-shadow .15s ease}
-.dark .wb-lm-start{background:rgba(34,197,94,0.16);border-color:rgba(34,197,94,0.5);color:#5BE49B}
-.wb-lm-start.is-over{box-shadow:0 0 0 3px rgba(${PRIMARY_RGB},0.3)}
-.wb-lm-start-icon{width:24px;height:24px;border-radius:50%;background:${SUCCESS};display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.wb-lm-connector-wrap{position:relative;width:${NODE_WIDTH}px;height:24px;display:flex;justify-content:center;flex-shrink:0}
-.wb-lm-connector{width:2px;height:24px;background:#E2E8F0;border-radius:1px;transition:background .15s ease}
-.dark .wb-lm-connector{background:#2F3944}
-.wb-lm-connector-wrap.is-tail .wb-lm-connector{opacity:0}
-.wb-lm-connector-wrap.is-active .wb-lm-connector{background:${BRAND.primary}}
-.wb-lm-insert{position:absolute;left:0;right:0;top:50%;height:3px;margin-top:-1.5px;border-radius:2px;background:${BRAND.primary};opacity:0;transform:scaleX(0.6);transition:opacity .12s ease,transform .12s ease;pointer-events:none}
-.wb-lm-insert-dot{position:absolute;left:-5px;top:-4.5px;width:12px;height:12px;border-radius:50%;background:${BRAND.primary};box-shadow:0 0 0 2px #FFFFFF}
-.dark .wb-lm-insert-dot{box-shadow:0 0 0 2px #141A21}
-.wb-lm-connector-wrap.is-active .wb-lm-insert{opacity:1;transform:scaleX(1)}
-.wb-lm-node{position:relative;width:${NODE_WIDTH}px;box-sizing:border-box;border-radius:12px;background:#FFFFFF;border:1px solid rgba(145,158,171,0.24);padding:12px 16px;cursor:grab;user-select:none;-webkit-user-select:none;color:#1C252E;box-shadow:0 1px 2px rgba(16,24,40,0.06);transition:box-shadow .15s ease,border-color .15s ease,opacity .15s ease;outline:none;flex-shrink:0}
-.wb-lm-node:hover{border-color:rgba(145,158,171,0.48);box-shadow:0 4px 12px rgba(16,24,40,0.08)}
-.wb-lm-node:focus-visible{box-shadow:0 0 0 3px rgba(${PRIMARY_RGB},0.35)}
-.wb-lm-node:active{cursor:grabbing}
-.wb-lm-node.is-selected{border-color:${BRAND.primary};box-shadow:0 0 0 1px ${BRAND.primary},0 0 0 4px rgba(${PRIMARY_RGB},0.15)}
-.wb-lm-node.is-over{border-style:dashed;border-color:${BRAND.primary}}
-.wb-lm-node.is-dragging{opacity:0.4;cursor:grabbing}
-.dark .wb-lm-node{background:#1C252E;border-color:rgba(145,158,171,0.2);color:#FFFFFF;box-shadow:0 1px 2px rgba(0,0,0,0.3)}
-.wb-lm-node-row{display:flex;align-items:center;gap:12px;min-width:0}
-.wb-lm-tile{width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.12)}
-.wb-lm-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.wb-lm-title-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
-.wb-lm-label{font-size:14px;font-weight:600;line-height:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.wb-lm-cost{font-size:12px;font-weight:600;line-height:18px;color:#637381;flex-shrink:0;white-space:nowrap}
-.wb-lm-desc{font-size:12px;line-height:18px;color:#637381;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dark .wb-lm-cost,.dark .wb-lm-desc{color:#919EAB}
-.wb-lm-badge{position:absolute;top:-10px;left:-10px;width:24px;height:24px;border-radius:50%;background:#1C252E;color:#FFFFFF;font-size:11px;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px #FFFFFF;pointer-events:none}
-.dark .wb-lm-badge{background:#FFFFFF;color:#1C252E;box-shadow:0 0 0 2px #1C252E}
-.wb-lm-delete{position:absolute;top:-9px;right:-9px;width:22px;height:22px;border-radius:50%;border:0;padding:0;margin:0;background:${DANGER};color:#FFFFFF;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 0 0 2px #FFFFFF;opacity:0.9;transition:opacity .15s ease,transform .15s ease;font:inherit;line-height:1}
-.wb-lm-delete:hover{opacity:1;transform:scale(1.08)}
-.wb-lm-delete:focus-visible{outline:2px solid ${BRAND.primary};outline-offset:1px}
-.dark .wb-lm-delete{box-shadow:0 0 0 2px #1C252E}
-.wb-lm-empty{width:320px;max-width:100%;padding:40px 24px;border-radius:16px;border:1px dashed transparent;display:flex;align-items:center;justify-content:center;text-align:center;box-sizing:border-box;transition:border-color .15s ease,background .15s ease}
-.wb-lm-empty.is-over{border-color:${BRAND.primary};background:rgba(${PRIMARY_RGB},0.06)}
-.wb-lm-empty-fallback{display:flex;flex-direction:column;align-items:center;gap:8px;color:#637381}
-.wb-lm-empty-title{font-size:14px;font-weight:600;color:#1C252E}
-.dark .wb-lm-empty-title{color:#FFFFFF}
-.wb-lm-empty-sub{font-size:12px;color:#637381}
-.dark .wb-lm-empty-sub{color:#919EAB}
-@media (prefers-reduced-motion: reduce){.wb-lm-canvas,.wb-lm-node,.wb-lm-delete,.wb-lm-connector,.wb-lm-insert,.wb-lm-start,.wb-lm-empty{transition:none}}
-`;
-
-  const iconifyUrl = (iconId, color) => {
-    const id = String(iconId || FALLBACK_ICON);
-    const i = id.indexOf(':');
-    const prefix = i > 0 ? id.slice(0, i) : 'solar';
-    const name = i > 0 ? id.slice(i + 1) : id;
-    return `https://api.iconify.design/${prefix}/${name}.svg?color=%23${String(color || '#ffffff').replace('#', '')}`;
-  };
-  const iconUrl = typeof kit.iconUrl === 'function' ? kit.iconUrl : iconifyUrl;
-
-  const FallbackStepIcon = ({ icon, size = 20, color = '#ffffff', style }) => (
-    <img
-      src={iconUrl(icon, color)}
-      width={size}
-      height={size}
-      alt=""
-      draggable={false}
-      style={{ display: 'block', ...(style || {}) }}
-    />
-  );
-  const StepIcon = kit.StepIcon || FallbackStepIcon;
-
-  const FallbackEmptyState = ({ icon, title, subtitle }) => (
-    <div className="wb-lm-empty-fallback">
-      <StepIcon icon={icon} size={64} color="#919EAB" />
-      <div className="wb-lm-empty-title">{title}</div>
-      <div className="wb-lm-empty-sub">{subtitle}</div>
-    </div>
-  );
-  const EmptyState = kit.EmptyState || FallbackEmptyState;
-
-  const useToastSafe = typeof kit.useToast === 'function' ? kit.useToast : () => noop;
-
-  const getStepById = (id) => {
-    if (typeof u.getStepById === 'function') return u.getStepById(id) || null;
-    const list = Array.isArray(wb.WORKFLOW_STEPS_OPTIONS) ? wb.WORKFLOW_STEPS_OPTIONS : [];
-    return list.find((s) => s.id === id) || null;
-  };
-  const getGradient = (id) => {
-    const g = typeof u.getStepGradient === 'function' ? u.getStepGradient(id) : (wb.STEP_ICON_GRADIENTS || {})[id];
-    return g || GREY_GRADIENT;
-  };
-  const getDescription = (step) => {
-    if (typeof u.getStepDescription === 'function') return u.getStepDescription(step.id) || '';
-    const svc = getStepById(step.id);
-    return (svc && svc.description) || step.description || '';
-  };
-  const getIcon = (step) => {
-    if (step.icon) return step.icon;
-    if (typeof u.getStepIcon === 'function') return u.getStepIcon(step.id) || FALLBACK_ICON;
-    const svc = getStepById(step.id);
-    return (svc && svc.icon) || FALLBACK_ICON;
-  };
-  const fmtMoney = (n) => (typeof u.fCurrency === 'function' ? u.fCurrency(n) : `$${Number(n).toFixed(2)}`);
-  const getCostLabel = (step) => {
-    const svc = getStepById(step.id);
-    if (typeof u.getStepCostLabel === 'function') return u.getStepCostLabel(svc || step);
-    if (svc && svc.coupled) return 'included';
-    if (svc && svc.costLabel) return svc.costLabel;
-    if (svc && typeof svc.cost === 'number') return fmtMoney(svc.cost);
-    return '—';
-  };
-  const isGated = (svc) => {
-    if (!svc) return false;
-    if (typeof u.isStepGated === 'function') return !!u.isStepGated(svc, { whiteLabelConfigured: false });
-    if (typeof u.isGatedStep === 'function') return !!u.isGatedStep(svc);
-    return !!svc.gated;
-  };
-  const reorderValid = (steps, from, to) =>
-    typeof u.isReorderValidWithPinning === 'function' ? !!u.isReorderValidWithPinning(steps, from, to) : true;
-  const stepKeyOf = (step) => step.instanceId || step.id;
-
-  const send = (dispatch, type, payload) => {
-    const p = payload || {};
-    dispatch({ type, ...p, payload: p });
+  const descriptionOf = (step) => {
+    const key = (wb.WORKFLOW_STEP_DESCRIPTION_I18N_KEYS || {})[step.id];
+    return (key && I18N[key]) || utils.getStepDescription(step.id);
   };
 
-  const readTypes = (e) => {
-    const dt = e && e.dataTransfer;
-    if (!dt || !dt.types) return [];
-    try {
-      return Array.from(dt.types);
-    } catch (err) {
-      return [];
-    }
-  };
-  const setDropEffect = (e, effect) => {
-    const dt = e && e.dataTransfer;
-    if (!dt) return;
-    try {
-      dt.dropEffect = effect;
-    } catch (err) {}
-  };
-  const getData = (e, type) => {
-    const dt = e && e.dataTransfer;
-    if (!dt) return '';
-    try {
-      return dt.getData(type) || '';
-    } catch (err) {
-      return '';
-    }
+  const autoConnUid = (() => { let n = 0; return () => 'auto-conn-' + Date.now() + '-' + (++n); })();
+
+  const rebuildChainWithPinning = (chainSteps) => {
+    const enforced = utils.enforceBottomPinningOnSteps(chainSteps);
+    return enforced.map((step, i) => ({
+      id: autoConnUid(),
+      sourceId: i === 0 ? START_ID : stepKeyOf(enforced[i - 1]),
+      sourceAnchor: 'bottom',
+      targetId: stepKeyOf(step),
+      targetAnchor: 'top',
+      waypoints: [],
+      label: '',
+    }));
   };
 
-  const CloseGlyph = ({ size = 10 }) => (
-    <svg width={size} height={size} viewBox="0 0 10 10" aria-hidden="true" focusable="false">
-      <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" fill="none" />
-    </svg>
-  );
+  const withCoupled = (list, service) => {
+    const out = [...list];
+    (COUPLED[service.id] || []).forEach((coupledId) => {
+      if (out.some((s) => s.id === coupledId)) return;
+      const coupledService = utils.getStepTemplate(coupledId);
+      if (!coupledService) return;
+      const overrides = OVERRIDES[service.id] && OVERRIDES[service.id][coupledId];
+      const step = utils.sanitizeStepForWorkflow(coupledService);
+      out.push({ ...utils.applyOverridesToStep(step, overrides), instanceId: utils.makeInstanceId(coupledId) });
+    });
+    return out;
+  };
 
-  const Connector = ({ active, tail }) => (
-    <div
-      className={'wb-lm-connector-wrap' + (active ? ' is-active' : '') + (tail ? ' is-tail' : '')}
-      aria-hidden="true"
-    >
-      <div className="wb-lm-connector" data-testid={tail ? 'wb-list-connector-tail' : 'wb-list-connector'} />
-      <div className="wb-lm-insert">
-        <span className="wb-lm-insert-dot" />
-      </div>
-    </div>
-  );
-
-  const StartPill = ({ over, onDragOver, onDrop }) => (
-    <div
-      className={'wb-lm-start' + (over ? ' is-over' : '')}
-      data-testid="wb-list-start"
-      data-node-id={START_ID}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-    >
-      <span className="wb-lm-start-icon">
-        <StepIcon icon={PLAY_ICON} size={12} color="#ffffff" />
-      </span>
-      <span>Start</span>
-    </div>
-  );
-
-  const SortableStepNode = ({
-    step,
-    index,
-    number,
-    selected,
-    dragging,
-    over,
-    onSelect,
-    onRemove,
-    onDragStart,
-    onDragEnd,
-    onDragOver,
-    onDrop,
-  }) => {
-    const svc = getStepById(step.id);
-    const label = step.label || (svc && svc.label) || step.id;
-    const cost = getCostLabel(step);
-    const desc = getDescription(step);
-    const key = stepKeyOf(step);
-    const cls =
-      'wb-lm-node' +
-      (selected ? ' is-selected' : '') +
-      (dragging ? ' is-dragging' : '') +
-      (over ? ' is-over' : '');
-
-    const handleKeyDown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        onSelect(step);
-      } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        e.preventDefault();
-        onRemove(step);
-      }
-    };
-
+  const DroppableCanvas = ({ id, children }) => {
+    const { setNodeRef, isOver } = useDroppable({ id });
     return (
-      <div
-        className={cls}
-        data-testid={`wb-list-node-${key}`}
-        data-instance-id={key}
-        data-step-id={step.id}
-        data-index={index}
-        data-selected={selected ? 'true' : 'false'}
-        role="button"
-        tabIndex={0}
-        aria-pressed={selected}
-        aria-label={`${label}, step ${number}`}
-        draggable
-        onClick={(e) => {
-          e.stopPropagation();
-          onSelect(step);
-        }}
-        onKeyDown={handleKeyDown}
-        onDragStart={(e) => onDragStart(e, step, index)}
-        onDragEnd={(e) => onDragEnd(e, step, index)}
-        onDragOver={(e) => onDragOver(e, step, index)}
-        onDrop={(e) => onDrop(e, step, index)}
-      >
-        <span className="wb-lm-badge" data-testid={`wb-list-number-${key}`}>
-          {number}
-        </span>
-        <button
-          type="button"
-          className="wb-lm-delete"
-          data-testid={`wb-list-delete-${key}`}
-          aria-label={`Remove ${label}`}
-          title="Remove step"
-          draggable={false}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onRemove(step);
-          }}
-        >
-          <CloseGlyph />
-        </button>
-        <div className="wb-lm-node-row">
-          <div className="wb-lm-tile" style={{ background: getGradient(step.id) }}>
-            <StepIcon icon={getIcon(step)} size={20} color="#ffffff" />
-          </div>
-          <div className="wb-lm-text">
-            <div className="wb-lm-title-row">
-              <span className="wb-lm-label" title={label}>
-                {label}
-              </span>
-              <span className="wb-lm-cost" data-testid={`wb-list-cost-${key}`}>
-                {cost}
-              </span>
+      <div ref={setNodeRef} id={id} className="wb-drop" data-over={isOver ? 'true' : 'false'} data-testid="wb-list-dropzone">
+        {children}
+      </div>
+    );
+  };
+
+  const DragPreview = ({ label, icon, stepId, isChartItem }) => {
+    if (isChartItem) {
+      return (
+        <div className="wb-dragprev-chart">
+          <span className="wb-tile wb-tile-50" style={{ background: utils.getStepGradient(stepId) }}><StepIcon icon={icon} size={28} /></span>
+          <span className="wb-dragprev-label">{label}</span>
+        </div>
+      );
+    }
+    return (
+      <div className="wb-dragprev-pal">
+        <span className="wb-tile" style={{ background: utils.getStepGradient(stepId) }}><StepIcon icon={icon} size={20} /></span>
+        <span className="wb-dragprev-label">{label}</span>
+      </div>
+    );
+  };
+
+  const SortableStepNode = ({ step, stepNumber, active, onClick, onDelete, covered, disabled }) => {
+    const key = stepKeyOf(step);
+    const { setNodeRef, listeners, isDragging } = useSortable({ id: 'chart:' + key, data: { step }, disabled });
+    const breakdown = utils.getStepCostBreakdown(step);
+    const stepDef = utils.getStepById(step.id);
+    const included = t('builderServiceIncluded', 'Included');
+    return (
+      <div ref={setNodeRef} className="wb-sort" data-dragging={isDragging ? 'true' : 'false'} data-disabled={disabled ? 'true' : 'false'} data-testid={'wb-list-node-' + key} data-instance-id={key} data-step-id={step.id}>
+        <div className="wb-snode" data-active={active ? 'true' : 'false'} data-disabled={disabled ? 'true' : 'false'} onClick={disabled ? undefined : onClick}>
+          {stepNumber ? <span className="wb-snode-num" data-testid={'wb-list-number-' + key}>{stepNumber}</span> : null}
+          <div className="wb-snode-row" {...(disabled ? {} : listeners)}>
+            <span className="wb-tile wb-tile-44 wb-tile-shadow" style={{ background: utils.getStepGradient(step.id) }}>
+              <StepIcon icon={step.icon || utils.getStepIcon(step.id)} size={24} />
+            </span>
+            <div className="wb-snode-text">
+              <div className="wb-snode-title">{labelOf(step)}</div>
+              <span className="wb-snode-desc">{descriptionOf(step)}</span>
             </div>
-            <div className="wb-lm-desc" title={desc}>
-              {desc}
+            <div className="wb-snode-right">
+              <div className="wb-snode-costwrap">
+                {breakdown.coupled ? (
+                  <span className="wb-snode-included">{included}</span>
+                ) : breakdown.partiallyCovered ? (
+                  <>
+                    <span className="wb-snode-cost-struck">{utils.fCurrency(breakdown.covered)}</span>
+                    <span className="wb-snode-cost">{utils.fCurrency(breakdown.charged)}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="wb-snode-cost" data-covered={covered ? 'true' : 'false'} data-testid={'wb-list-cost-' + key}>{(stepDef && stepDef.costLabel) || utils.fCurrency(breakdown.total)}</span>
+                    {covered ? <span className="wb-snode-included" style={{ fontStyle: 'normal', color: 'var(--wb-success)' }}>{included}</span> : null}
+                  </>
+                )}
+              </div>
+              <button
+                type="button"
+                className="wb-snode-del"
+                data-dnd-ignore="true"
+                data-testid={'wb-list-delete-' + key}
+                aria-label={'Remove ' + labelOf(step)}
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              >
+                <StepIcon icon="solar:close-circle-bold" size={22} color="currentColor" />
+              </button>
             </div>
           </div>
         </div>
@@ -315,290 +125,211 @@ export const makeListMode = (deps) => {
     );
   };
 
-  const ListCanvas = ({ onGated }) => {
-    const wf = store.useWorkflow() || {};
-    const state = wf.state || {};
-    const dispatch = typeof wf.dispatch === 'function' ? wf.dispatch : noop;
-    const selectors = wf.selectors || {};
-    const toastApi = useToastSafe();
-    const toast =
-      typeof toastApi === 'function'
-        ? toastApi
-        : toastApi && typeof toastApi.toast === 'function'
-          ? toastApi.toast
-          : noop;
+  const EmptyChain = () => (
+    <div className="wb-chain-empty" data-testid="wb-list-empty">
+      <div className="wb-chain-empty-art">
+        <div className="wb-chain-empty-core"><StepIcon icon="solar:cursor-square-bold-duotone" size={24} color="currentColor" /></div>
+        <div className="wb-chain-empty-ring" />
+      </div>
+      <div className="wb-chain-empty-text">{t('builderCanvasEmpty', 'Drag a service here to start\nbuilding your workflow')}</div>
+    </div>
+  );
 
-    const steps = state.workflow && Array.isArray(state.workflow.steps) ? state.workflow.steps : [];
-    const selectedStepId = state.selectedStepId || null;
-    const resolvedOrder = selectors.resolvedOrder || {};
-    const count = steps.length;
-
-    const rootRef = useRef(null);
+  const useListDnd = ({ onGated }) => {
+    const wf = useWorkflow();
+    const { state, actions } = wf;
+    const steps = state.workflow.steps;
+    const connections = state.workflow.canvasData.connections;
     const stepsRef = useRef(steps);
     stepsRef.current = steps;
-    const dragRef = useRef({ kind: null, instanceId: null, lastFrom: -1, lastTo: -1, lastAt: 0 });
-    const enterCount = useRef(0);
-    const [draggingId, setDraggingId] = useState(null);
-    const [hover, setHover] = useState(null);
+    const connsRef = useRef(connections);
+    connsRef.current = connections;
+    const [activeId, setActiveId] = useState(null);
 
-    const setHoverIf = (insertAt, nodeId) =>
-      setHover((prev) => (prev && prev.insertAt === insertAt && prev.nodeId === nodeId ? prev : { insertAt, nodeId }));
-    const clearHover = () => setHover((prev) => (prev === null ? prev : null));
+    const connectedStepIds = useMemo(() => {
+      const ids = new Set();
+      if (!connections || !connections.length) return ids;
+      const adjacency = {};
+      connections.forEach((c) => { (adjacency[c.sourceId] = adjacency[c.sourceId] || []).push(c.targetId); });
+      let cur = adjacency[START_ID] && adjacency[START_ID][0];
+      const visited = new Set();
+      while (cur && !visited.has(cur)) { visited.add(cur); ids.add(cur); cur = adjacency[cur] && adjacency[cur][0]; }
+      return ids;
+    }, [connections]);
+    const connectedRef = useRef(connectedStepIds);
+    connectedRef.current = connectedStepIds;
 
-    const clearDrag = useCallback(() => {
-      dragRef.current = { kind: null, instanceId: null, lastFrom: -1, lastTo: -1, lastAt: 0 };
-      enterCount.current = 0;
-      setDraggingId((prev) => (prev === null ? prev : null));
-      setHover((prev) => (prev === null ? prev : null));
-    }, []);
-
-    useEffect(() => {
-      const reset = () => clearDrag();
-      window.addEventListener('dragend', reset);
-      window.addEventListener('drop', reset);
-      return () => {
-        window.removeEventListener('dragend', reset);
-        window.removeEventListener('drop', reset);
-      };
-    }, [clearDrag]);
-
-    useEffect(() => {
-      const root = rootRef.current;
-      if (!root || !selectedStepId || /["\\]/.test(selectedStepId)) return;
-      const el = root.querySelector(`[data-instance-id="${selectedStepId}"]`);
-      if (!el) return;
-      const r = root.getBoundingClientRect();
-      const n = el.getBoundingClientRect();
-      if (n.top < r.top + 16) root.scrollTop -= r.top + 16 - n.top;
-      else if (n.bottom > r.bottom - 16) root.scrollTop += n.bottom - (r.bottom - 16);
-    }, [selectedStepId]);
-
-    const readKind = (e) => {
-      const types = readTypes(e);
-      if (types.indexOf(MIME_REORDER) !== -1) return 'reorder';
-      if (types.indexOf(MIME_STEP) !== -1) return 'palette';
-      if (dragRef.current.kind === 'reorder') return 'reorder';
-      return 'unknown';
+    const commit = (nextSteps, rebuildConns, positionsUpdater) => {
+      actions.load({
+        workflow: {
+          ...state.workflow,
+          steps: nextSteps,
+          canvasData: {
+            ...state.workflow.canvasData,
+            connections: rebuildConns ? rebuildChainWithPinning(nextSteps) : connsRef.current,
+            nodePositions: positionsUpdater ? positionsUpdater(state.workflow.canvasData.nodePositions || {}) : state.workflow.canvasData.nodePositions,
+          },
+        },
+        viewMode: state.viewMode,
+        keepSelection: true,
+      });
     };
 
-    const selectStep = (step) => {
-      send(dispatch, 'SELECT_STEP', { instanceId: step ? stepKeyOf(step) : null });
-    };
-    const removeStep = (step) => {
-      send(dispatch, 'REMOVE_STEP', { instanceId: stepKeyOf(step) });
-    };
-
-    const addStepAt = (stepId, index) => {
-      const svc = getStepById(stepId);
-      if (!svc) return false;
-      if (isGated(svc)) {
-        if (typeof onGated === 'function') onGated(svc);
-        return false;
-      }
-      if (stepsRef.current.some((s) => s.id === stepId)) {
-        toast(`${svc.label} is already in this workflow`, { type: 'info' });
-        return false;
-      }
-      const n = stepsRef.current.length;
-      const at = Math.max(0, Math.min(typeof index === 'number' ? index : n, n));
-      send(dispatch, 'ADD_STEP', { stepId, index: at, mode: 'list' });
-      return true;
-    };
-
-    const moveStep = (instanceId, to) => {
+    const insertService = (service, atIndex) => {
+      if (utils.isStepGated(service, { whiteLabelConfigured: false })) { if (onGated) onGated(service); return null; }
       const list = stepsRef.current;
-      const from = list.findIndex((s) => stepKeyOf(s) === instanceId);
-      if (from < 0 || to < 0 || to >= list.length || from === to) return false;
-      if (!reorderValid(list, from, to)) return false;
-      send(dispatch, 'REORDER', { from, to });
-      return true;
+      const newInstanceId = utils.makeInstanceId(service.id);
+      const newSteps = [...list];
+      const idx = typeof atIndex === 'number' ? atIndex : newSteps.length;
+      newSteps.splice(idx, 0, { ...utils.sanitizeStepForWorkflow(utils.getStepTemplate(service.id)), instanceId: newInstanceId });
+      const withC = withCoupled(newSteps, service);
+      const enforced = utils.enforceCoupledOverridesOnSteps(utils.enforceBottomPinningOnSteps(withC.filter((s) => s.id !== 'add-step')));
+      actions.load({
+        workflow: {
+          ...state.workflow,
+          steps: enforced,
+          canvasData: { ...state.workflow.canvasData, connections: rebuildChainWithPinning(enforced) },
+        },
+        viewMode: state.viewMode,
+        keepSelection: true,
+      });
+      actions.selectStep({ instanceId: newInstanceId });
+      return newInstanceId;
     };
 
-    const liveReorder = (e, targetIndex) => {
-      const draggedId = dragRef.current.instanceId;
-      if (!draggedId) return;
+    const handleDragStart = ({ active }) => setActiveId(active.id);
+
+    const handleDragOver = ({ active, over }) => {
+      if (!over) return;
+      const a = parseNodeDropId(active.id);
+      const o = parseNodeDropId(over.id);
+      if (a.context !== 'chart' || o.context !== 'chart' || active.id === over.id) return;
       const list = stepsRef.current;
-      const from = list.findIndex((s) => stepKeyOf(s) === draggedId);
-      const to = targetIndex;
-      if (from < 0 || from === to) return;
-      const hasPointer = !(e.clientX === 0 && e.clientY === 0);
-      if (hasPointer && e.currentTarget && typeof e.currentTarget.getBoundingClientRect === 'function') {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const mid = rect.top + rect.height / 2;
-        if (from < to && e.clientY < mid) return;
-        if (from > to && e.clientY > mid) return;
-      }
-      const d = dragRef.current;
-      const now = Date.now();
-      if (d.lastFrom === from && d.lastTo === to && now - d.lastAt < REORDER_THROTTLE_MS) return;
-      if (!reorderValid(list, from, to)) return;
-      d.lastFrom = from;
-      d.lastTo = to;
-      d.lastAt = now;
-      send(dispatch, 'REORDER', { from, to });
+      const oldIndex = list.findIndex((s) => stepKeyOf(s) === a.id);
+      const newIndex = list.findIndex((s) => stepKeyOf(s) === o.id);
+      if (oldIndex === -1 || newIndex === -1) return;
+      const reordered = utils.arrayMove(list, oldIndex, newIndex);
+      if (!utils.isReorderValidWithPinning(reordered)) return;
+      const connected = connectedRef.current;
+      const chainSteps = reordered.filter((s) => connected.has(stepKeyOf(s)));
+      const oldChain = list.filter((s) => connected.has(stepKeyOf(s)));
+      stepsRef.current = reordered;
+      actions.load({
+        workflow: {
+          ...state.workflow,
+          steps: reordered,
+          canvasData: {
+            ...state.workflow.canvasData,
+            connections: chainSteps.length ? chainSteps.map((step, i) => ({
+              id: autoConnUid(), sourceId: i === 0 ? START_ID : stepKeyOf(chainSteps[i - 1]), sourceAnchor: 'bottom', targetId: stepKeyOf(step), targetAnchor: 'top', waypoints: [], label: '',
+            })) : connsRef.current,
+            nodePositions: (() => {
+              const prev = state.workflow.canvasData.nodePositions || {};
+              const oldPositions = oldChain.map((s) => prev[stepKeyOf(s)] || { x: 340, y: 120 });
+              const updated = { ...prev };
+              chainSteps.forEach((step, i) => { updated[stepKeyOf(step)] = { ...oldPositions[i] }; });
+              return updated;
+            })(),
+          },
+        },
+        viewMode: state.viewMode,
+        keepSelection: true,
+      });
     };
 
-    const handleRootDragEnter = (e) => {
-      e.preventDefault();
-      enterCount.current += 1;
-    };
-    const handleRootDragLeave = () => {
-      enterCount.current = Math.max(0, enterCount.current - 1);
-      if (enterCount.current === 0) clearHover();
-    };
-    const handleRootDragOver = (e) => {
-      e.preventDefault();
-      const kind = readKind(e);
-      setDropEffect(e, kind === 'reorder' ? 'move' : 'copy');
-      if (kind === 'palette') setHoverIf(stepsRef.current.length, null);
-      else clearHover();
-    };
-    const handleRootDrop = (e) => {
-      e.preventDefault();
-      const reorderId = getData(e, MIME_REORDER) || (dragRef.current.kind === 'reorder' ? dragRef.current.instanceId : '');
-      if (reorderId) {
-        clearDrag();
+    const handleDragEnd = ({ active, over }) => {
+      setActiveId(null);
+      if (!over) return;
+      const a = parseNodeDropId(active.id);
+      const o = parseNodeDropId(over.id);
+      if (a.context === 'palette' && o.context === 'chart') {
+        const service = utils.getStepById(a.id);
+        if (!service) return;
+        const overIndex = stepsRef.current.findIndex((s) => stepKeyOf(s) === o.id);
+        insertService(service, overIndex + 1);
         return;
       }
-      const stepId = getData(e, MIME_STEP) || getData(e, 'text/plain');
-      clearDrag();
-      if (stepId) addStepAt(stepId, stepsRef.current.length);
-    };
-    const handleRootClick = () => {
-      if (selectedStepId) selectStep(null);
+      if (a.context === 'palette' && over.id === 'workflow-canvas') {
+        const service = utils.getStepById(a.id);
+        if (service) insertService(service, undefined);
+      }
     };
 
-    const handleStartDragOver = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const kind = readKind(e);
-      setDropEffect(e, kind === 'reorder' ? 'move' : 'copy');
-      if (kind === 'palette') setHoverIf(0, START_ID);
-      else clearHover();
-    };
-    const handleStartDrop = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const reorderId = getData(e, MIME_REORDER) || (dragRef.current.kind === 'reorder' ? dragRef.current.instanceId : '');
-      if (reorderId) {
-        moveStep(reorderId, 0);
-        clearDrag();
-        return;
+    const handleDragCancel = () => setActiveId(null);
+
+    const renderOverlay = (active) => {
+      const parsed = parseNodeDropId(active.id);
+      if (parsed.context === 'palette') {
+        const service = utils.getStepById(parsed.id);
+        if (!service) return null;
+        return <DragPreview label={labelOf(service)} icon={service.icon} stepId={service.id} />;
       }
-      const stepId = getData(e, MIME_STEP) || getData(e, 'text/plain');
-      clearDrag();
-      if (stepId) addStepAt(stepId, 0);
+      if (parsed.context === 'chart') {
+        const step = stepsRef.current.find((s) => stepKeyOf(s) === parsed.id);
+        if (!step) return null;
+        return <DragPreview label={labelOf(step)} icon={step.icon || utils.getStepIcon(step.id)} stepId={step.id} isChartItem />;
+      }
+      return null;
     };
 
-    const handleNodeDragStart = (e, step) => {
-      const id = stepKeyOf(step);
-      const dt = e.dataTransfer;
-      if (dt) {
-        try {
-          dt.setData(MIME_REORDER, id);
-          dt.setData('text/plain', id);
-          dt.effectAllowed = 'move';
-        } catch (err) {}
-      }
-      dragRef.current = { kind: 'reorder', instanceId: id, lastFrom: -1, lastTo: -1, lastAt: 0 };
-      setTimeout(() => {
-        if (dragRef.current.instanceId === id) setDraggingId(id);
-      }, 0);
-    };
-    const handleNodeDragEnd = () => {
-      clearDrag();
-    };
-    const handleNodeDragOver = (e, step, index) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const kind = readKind(e);
-      if (kind === 'reorder') {
-        setDropEffect(e, 'move');
-        clearHover();
-        if (dragRef.current.instanceId === stepKeyOf(step)) return;
-        liveReorder(e, index);
-        return;
-      }
-      setDropEffect(e, 'copy');
-      if (kind === 'palette') setHoverIf(index + 1, stepKeyOf(step));
-      else clearHover();
-    };
-    const handleNodeDrop = (e, step, index) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const reorderId = getData(e, MIME_REORDER) || (dragRef.current.kind === 'reorder' ? dragRef.current.instanceId : '');
-      if (reorderId) {
-        if (reorderId !== stepKeyOf(step)) moveStep(reorderId, index);
-        clearDrag();
-        return;
-      }
-      const stepId = getData(e, MIME_STEP) || getData(e, 'text/plain');
-      clearDrag();
-      if (stepId) addStepAt(stepId, index + 1);
-    };
+    return { activeId, connectedStepIds, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel, renderOverlay, commit };
+  };
 
-    const hoverAt = hover ? hover.insertAt : -1;
-    const hoverNode = hover ? hover.nodeId : null;
-    const dropActive = hover !== null;
+  const ListCanvas = ({ isLoading, connectedStepIds }) => {
+    const { state, actions, selectors } = useWorkflow();
+    const steps = state.workflow.steps;
+    const selectedStepId = state.selectedStepId;
+    const resolvedOrder = useMemo(() => {
+      const order = {};
+      let num = 1;
+      (selectors.orderedSteps || []).forEach((s) => {
+        const key = stepKeyOf(s);
+        if (connectedStepIds && connectedStepIds.has(key)) order[key] = num++;
+      });
+      return order;
+    }, [selectors.orderedSteps, connectedStepIds]);
+
+    const handleDelete = (step) => {
+      actions.removeStep({ instanceId: stepKeyOf(step) });
+    };
 
     return (
-      <div
-        ref={rootRef}
-        id="workflow-canvas"
-        data-testid="wb-list-dropzone"
-        data-drop-active={dropActive ? 'true' : 'false'}
-        data-reordering={draggingId ? 'true' : 'false'}
-        data-step-count={count}
-        className={'wb-lm-canvas wb-dotgrid' + (dropActive ? ' is-drop-active' : '')}
-        onDragEnter={handleRootDragEnter}
-        onDragLeave={handleRootDragLeave}
-        onDragOver={handleRootDragOver}
-        onDrop={handleRootDrop}
-        onClick={handleRootClick}
-      >
-        <style dangerouslySetInnerHTML={{ __html: LIST_CSS }} />
-        {count === 0 ? (
-          <div className="wb-lm-inner is-empty">
-            <StartPill over={hoverNode === START_ID} onDragOver={handleStartDragOver} onDrop={handleStartDrop} />
-            <Connector active={dropActive} />
-            <div className={'wb-lm-empty' + (dropActive ? ' is-over' : '')} data-testid="wb-list-empty">
-              <EmptyState icon={EMPTY_ICON} title="Drag a service here to start" subtitle="building your workflow" />
-            </div>
+      <DroppableCanvas id="workflow-canvas">
+        {isLoading ? (
+          <div className="wb-chain">
+            {[0, 1, 2].map((i) => (
+              <div style={{ display: 'contents' }} key={i}>
+                <div className="wb-skel" style={{ width: '100%', height: 90 }} />
+                {i < 2 ? <div className="wb-chain-connector" /> : null}
+              </div>
+            ))}
           </div>
+        ) : steps.length === 0 ? (
+          <EmptyChain />
         ) : (
-          <div className="wb-lm-inner">
-            <StartPill over={hoverNode === START_ID} onDragOver={handleStartDragOver} onDrop={handleStartDrop} />
-            {steps.map((step, i) => {
+          <div className="wb-chain">
+            {steps.map((step, index) => {
               const key = stepKeyOf(step);
-              const order = resolvedOrder[key];
-              const number = typeof order === 'number' && order > 0 ? order : i + 1;
               return (
                 <div style={{ display: 'contents' }} key={key}>
-                  <Connector active={hoverAt === i} />
                   <SortableStepNode
                     step={step}
-                    index={i}
-                    number={number}
-                    selected={selectedStepId === key}
-                    dragging={draggingId === key}
-                    over={hoverNode === key}
-                    onSelect={selectStep}
-                    onRemove={removeStep}
-                    onDragStart={handleNodeDragStart}
-                    onDragEnd={handleNodeDragEnd}
-                    onDragOver={handleNodeDragOver}
-                    onDrop={handleNodeDrop}
+                    stepNumber={resolvedOrder[key]}
+                    active={selectedStepId === key}
+                    covered={false}
+                    disabled={!!isLoading}
+                    onClick={() => actions.selectStep({ instanceId: key })}
+                    onDelete={() => handleDelete(step)}
                   />
+                  {index < steps.length - 1 ? <div className="wb-chain-connector" /> : null}
                 </div>
               );
             })}
-            <Connector tail active={hoverAt === count} />
           </div>
         )}
-      </div>
+      </DroppableCanvas>
     );
   };
 
-  return { ListCanvas };
+  return { ListCanvas, useListDnd, DragPreview, rebuildChainWithPinning };
 };
-

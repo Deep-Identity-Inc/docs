@@ -9,13 +9,13 @@ export const makeStore = (deps) => {
   const GRID = CV.GRID_SIZE || 20;
   const STORAGE_KEY = 'deepidv-wb-workflow-v1';
   const PERSIST_DELAY = 300;
-  const VIEW_MODES = ['builder', 'canvas', 'preview'];
+  const VIEW_MODES = ['builder'];
   const IS_DEV = !!(WB && WB.IS_DEV);
   const COUPLED = (WB && WB.COUPLED_STEPS) || {};
   const OVERRIDES = (WB && WB.COUPLED_PROPERTY_OVERRIDES) || {};
   const PINNED = (WB && WB.BOTTOM_PINNED_STEPS) || [];
   const CATALOG = (WB && WB.WORKFLOW_STEPS_OPTIONS) || [];
-  const TEMPLATES = (WB && WB.TEMPLATES) || [];
+  const TEMPLATES = (WB && WB.WORKFLOW_TEMPLATES) || [];
 
   const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
   const stepKey = (s) => (s ? s.instanceId || s.id : undefined);
@@ -415,22 +415,20 @@ export const makeStore = (deps) => {
   };
 
   const reduceApplyTemplate = (state, a) => {
+    if (a.templateId === 'scratch') {
+      return {
+        ...state,
+        workflow: { name: '', steps: [], canvasData: { connections: [], nodePositions: { [START]: { x: 400, y: 40 } }, viewport: blankViewport() } },
+        selectedStepId: null,
+        selectedConnectionId: null,
+      };
+    }
+    const build = U('buildWorkflowFromTemplate', null);
     const tpl = TEMPLATES.find((t) => t.id === a.templateId);
-    if (!tpl) return state;
-    let steps = [];
-    (tpl.stepIds || []).forEach((id) => {
-      if (steps.some((s) => s.id === id)) return;
-      const inst = buildInstance(id);
-      if (!inst) return;
-      steps = applyStepRules([...steps, inst], inst).steps;
-    });
-    const connections = steps.length ? rebuildChain(steps) || [] : [];
-    const positions = ensurePositions(steps, {});
-    return {
-      ...withCanvas({ ...state, workflow: { ...state.workflow, steps } }, { connections, nodePositions: positions }),
-      selectedStepId: null,
-      selectedConnectionId: null,
-    };
+    if (!tpl || typeof build !== 'function') return state;
+    const built = build(a.templateId);
+    const workflow = normalizeWorkflow(built);
+    return { ...state, workflow, selectedStepId: null, selectedConnectionId: null };
   };
 
   const reduceRemoveStep = (state, a) => {
@@ -506,6 +504,12 @@ export const makeStore = (deps) => {
       case 'LOAD': {
         const workflow = normalizeWorkflow(a.workflow);
         const viewMode = VIEW_MODES.includes(a.viewMode) ? a.viewMode : state.viewMode;
+        if (a.keepSelection) {
+          const keys = new Set(workflow.steps.map(stepKey));
+          const selectedStepId = keys.has(state.selectedStepId) ? state.selectedStepId : null;
+          const selectedConnectionId = workflow.canvasData.connections.some((c) => c.id === state.selectedConnectionId) ? state.selectedConnectionId : null;
+          return { ...state, workflow, viewMode, hydrated: true, selectedStepId, selectedConnectionId };
+        }
         return { ...state, workflow, viewMode, hydrated: true, selectedStepId: null, selectedConnectionId: null };
       }
       case 'RESET':
@@ -602,6 +606,14 @@ export const makeStore = (deps) => {
         if (!a.stepKey || !a.groupId || !isObj(a.values)) return state;
         return withWorkflow(state, { steps: updatePropertyValuesInSteps(state.workflow.steps, a.stepKey, a.groupId, a.values) });
       }
+      case 'PATCH_STEP': {
+        const key = a.stepKey;
+        const nextStep = a.step;
+        if (!key || !isObj(nextStep)) return state;
+        const steps = state.workflow.steps;
+        if (!steps.some((s) => stepKey(s) === key)) return state;
+        return withWorkflow(state, { steps: steps.map((s) => (stepKey(s) === key ? { ...s, ...nextStep, instanceId: s.instanceId } : s)) });
+      }
       case 'UPDATE_LINKED_WEIGHTS': {
         if (!a.stepKey || !a.groupId || !a.changedId) return state;
         return withWorkflow(state, { steps: updateLinkedWeightsInSteps(state.workflow.steps, a.stepKey, a.groupId, a.changedId, a.value) });
@@ -629,7 +641,7 @@ export const makeStore = (deps) => {
   };
 
   const ACTION_DEFS = {
-    load: ['LOAD', ['workflow', 'viewMode']],
+    load: ['LOAD', ['workflow', 'viewMode', 'keepSelection']],
     reset: ['RESET', []],
     setName: ['SET_NAME', ['name']],
     applyTemplate: ['APPLY_TEMPLATE', ['templateId']],
@@ -649,6 +661,7 @@ export const makeStore = (deps) => {
     updatePropertyValue: ['UPDATE_PROPERTY_VALUE', ['stepKey', 'groupId', 'propId', 'value']],
     updatePropertyValues: ['UPDATE_PROPERTY_VALUES', ['stepKey', 'groupId', 'values']],
     updateLinkedWeights: ['UPDATE_LINKED_WEIGHTS', ['stepKey', 'groupId', 'changedId', 'value']],
+    patchStep: ['PATCH_STEP', ['stepKey', 'step']],
   };
 
   const bindActions = (dispatch) => {

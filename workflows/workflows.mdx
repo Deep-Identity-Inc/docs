@@ -192,71 +192,42 @@ Manage workflows programmatically through the [Workflows API](/api-reference/wor
 
 ## Workflow Templates
 
-Templates are pre-built starting points designed for the most common verification scenarios. Pick one, tweak the services, and you're live.
+Templates are pre-built starting points for the most common verification scenarios. Pick one in the Admin Console or the [Workflow Builder](/workflow-builder), tweak the services, and save.
 
-### KYC Onboarding
-
-The go-to template for full identity verification during user signup.
-
-- **Starts with:** ID Verification
-- **Commonly added:**
-  - `[+]` **Face Liveness** — confirm the applicant is physically present
-  - `[+]` **PEP & Sanctions** — screen against global watchlists
-  - `[+]` **Adverse Media** — surface negative press or legal mentions
-  - `[+]` **Phone Verification** — verify phone ownership via live call
-  - `[+]` **Custom Forms** — collect additional data points specific to your onboarding
-
----
-
-### Lending & Financial Services
-
-Built for lenders, brokers, and financial service providers who need both identity and financial data.
-
-- **Starts with:** ID Verification
-- **Commonly added:**
-  - `[+]` **Face Liveness** — stop spoofed applications
-  - `[+]` **Bank Statement Sync** — pull transaction data directly from the applicant's bank
-  - `[+]` **AI Bank Analysis** — automated income, spending, and affordability breakdown
-  - `[+]` **PEP & Sanctions** — compliance screening
-  - `[+]` **Title Search** — property ownership and lien lookups
-  - `[+]` **Document Upload** — collect pay stubs, tax returns, or other supporting docs with fraud detection
-
----
-
-### Age-Gated Access
-
-A lightweight flow for services that need to confirm the applicant meets a minimum age.
-
-- **Starts with:** Age Estimation via selfie
-- **Fallback logic:** If the estimate is borderline or below your threshold, the workflow can trigger a full **ID Verification** step to confirm date of birth from the document
-- **Commonly added:**
-  - `[+]` **Face Liveness** — prevent photo or video spoofing
-
----
-
-### Property & Real Estate
-
-Designed for real estate transactions, property management, and title companies.
-
-- **Starts with:** ID Verification
-- **Commonly added:**
-  - `[+]` **Title Search** — pull ownership history, liens, and encumbrances
-  - `[+]` **Address Verification** — AI-powered location confirmation
-  - `[+]` **Document Upload** — collect lease agreements, contracts, or proof of ownership with fraud detection
-  - `[+]` **Custom Forms** — capture property details or tenant information
-
----
+| Template | Best for | Services | Defaults |
+| --- | --- | --- | --- |
+| **Basic KYC** | Simple identity verification workflow for basic know-your-customer requirements | ID Verification, Face Liveness, PEP/Sanctions, Adverse Media | Secondary ID required |
+| **Fintech KYC/AML** | Full compliance workflow for financial technology platforms | Custom Form, ID Verification, PEP/Sanctions, Bank Statement, Document Upload | — |
+| **Loan Origination Screening** | End-to-end loan application verification workflow | Custom Form, ID Verification, Credit Check, Bank Statement, E-Signature, Document Upload | — |
+| **Vehicle Leasing** | Comprehensive verification for vehicle leasing applications | Custom Form, E-Signature, ID Verification, Bank Statement, Credit Check, Document Upload | — |
+| **Crypto / VASP Onboarding** | AML-compliant onboarding for cryptocurrency and virtual asset platforms | Custom Form, ID Verification, Face Liveness, PEP/Sanctions, Adverse Media, Document Upload | — |
+| **Insurance Underwriting** | Identity and risk verification for insurance policy applications | Custom Form, ID Verification, Document Upload, E-Signature | — |
+| **New Hire Onboarding** | Comprehensive employee verification for new hires | Custom Form, ID Verification, Document Upload | — |
+| **Contractor Verification** | Verify independent contractors and freelancers before engagement | Custom Form, ID Verification, Document Upload, E-Signature | — |
+| **Vulnerable Sector Check (Canada Only)** | Enhanced screening for working with vulnerable populations | Custom Form, ID Verification | — |
+| **Online Gaming (18+)** | Age verification workflow for online gaming platforms | ID Verification, Age Estimation, Custom Form | — |
+| **Restricted Content** | Age estimation for restricted content access | Age Estimation | — |
+| **Cannabis Dispensary** | Age and identity verification for cannabis retail compliance | ID Verification, Age Estimation, Custom Form | — |
+| **Student Enrollment** | Identity and credential verification for higher education admissions | Custom Form, ID Verification, Document Upload | — |
+| **Scholarship Application** | Verify applicant identity and financial eligibility for scholarships | Custom Form, ID Verification, Document Upload | — |
+| **Exam Proctoring** | Verify test-taker identity before remote examinations | ID Verification, Face Liveness, Deepfake Detection | — |
+| **Online Dating** | Trust and safety verification for dating and social platforms | Face Liveness, Deepfake Detection, Age Estimation, ID Verification | — |
+| **Marketplace Seller** | Verify seller identity for online marketplaces and platforms | ID Verification, Custom Form, Document Upload, E-Signature | — |
+| **Solicitor KYC** | Legal sector verification with biometric signatures | ID Verification, E-Signature, Document Upload | Biometric e-signature |
+| **Realtor Pre-Screening** | Streamlined pre-qualification workflow for real estate transactions | Custom Form, Credit Check, E-Signature | Soft credit check only |
+| **Notary Verification** | Remote online notarization identity verification workflow | ID Verification, Face Liveness, E-Signature, Document Upload | — |
+| **Wallet Verification** | Verify identity and screen connected crypto wallets across chains | ID Verification, Face Liveness, Wallet Verification | — |
+| **iGaming Compliance** | Player onboarding with jurisdiction, VPN, injection, and anti-cheat controls | ID Verification, Age Estimation, IP Jurisdiction, VPN Detection, Injection Detection, Anti-Cheat | — |
 
 ### Custom Workflow
 
 Start from scratch and build exactly what your use case requires. Drag and drop any combination of services to design your workflow and save.
 
 <Note>
-  Every template can be fully customized after creation. Add or remove services at any time from the Admin Console.
+  Every template can be fully customized after creation. Add or remove services at any time from the Admin Console. This list is generated from the builder catalog by `scripts/sync-workflow-builder.mjs`.
 </Note>
 
 ---
-
 ## Using a Workflow
 
 Once you've built a workflow, reference it by `workflowId` when creating sessions:
@@ -304,12 +275,12 @@ sequenceDiagram
 
 | Use Case | Recommended Template | Key Services |
 | --- | --- | --- |
-| Standard user onboarding | KYC Onboarding | ID Verification, Face Liveness, PEP & Sanctions |
-| Mortgage or loan application | Lending & Financial | ID, Bank Sync, AI Analysis, Title Search, Doc Upload |
-| Age-restricted product/content | Age-Gated Access | Age Estimation, Face Liveness, ID fallback |
-| Tenant screening | Property & Real Estate | ID, Address Verification, Custom Forms, Doc Upload |
-| Compliance-heavy onboarding | KYC Onboarding | ID, Face Liveness, PEP, Adverse Media, Phone Verification |
-| Quick document collection | Custom | Document Upload, Custom Forms |
+| Standard user onboarding | Basic KYC | ID Verification, Face Liveness, PEP/Sanctions, Adverse Media |
+| Mortgage or loan application | Loan Origination Screening | Custom Form, ID Verification, Credit Check, Bank Statement, E-Signature, Document Upload |
+| Age-restricted product/content | Online Gaming (18+) or Restricted Content | Age Estimation, ID Verification, Custom Form |
+| Fintech / crypto compliance | Fintech KYC/AML or Crypto / VASP Onboarding | Custom Form, ID Verification, PEP/Sanctions, Adverse Media, Document Upload |
+| Remote exam or dating trust & safety | Exam Proctoring or Online Dating | ID Verification, Face Liveness, Deepfake Detection |
+| Quick document collection | Custom Workflow | Document Upload, Custom Form |
 
 ---
 

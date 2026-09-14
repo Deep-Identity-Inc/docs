@@ -1,0 +1,185 @@
+export const makeDnd = () => {
+  const ACTIVATION_DISTANCE = 10;
+
+  const DndContext = React.createContext(null);
+
+  const rectCenter = (r) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+  const DndProvider = ({ children, onDragStart, onDragOver, onDragEnd, onDragCancel, renderOverlay, disabled }) => {
+    const draggables = useRef(new Map());
+    const droppables = useRef(new Map());
+    const [active, setActive] = useState(null);
+    const [over, setOver] = useState(null);
+    const [pointer, setPointer] = useState(null);
+    const pending = useRef(null);
+    const overRef = useRef(null);
+    const activeRef = useRef(null);
+    const overlayRef = useRef(null);
+    const activeRect = useRef(null);
+    const handlers = useRef({});
+    handlers.current = { onDragStart, onDragOver, onDragEnd, onDragCancel };
+
+    const registerDraggable = useCallback((id, entry) => {
+      draggables.current.set(id, entry);
+      return () => { draggables.current.delete(id); };
+    }, []);
+    const registerDroppable = useCallback((id, entry) => {
+      droppables.current.set(id, entry);
+      return () => { droppables.current.delete(id); };
+    }, []);
+
+    const collide = (pt) => {
+      let best = null;
+      let bestD = Infinity;
+      const stage = document.querySelector('.wb-stage');
+      if (stage) {
+        const sr = stage.getBoundingClientRect();
+        if (pt.x < sr.left || pt.x > sr.right || pt.y < sr.top || pt.y > sr.bottom) return null;
+      }
+      droppables.current.forEach((entry, id) => {
+        const el = entry.ref.current;
+        if (!el || entry.disabled) return;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) return;
+        const inside = pt.x >= r.left && pt.x <= r.right && pt.y >= r.top && pt.y <= r.bottom;
+        const d = inside ? dist(pt, rectCenter(r)) - 100000 : dist(pt, rectCenter(r));
+        if (d < bestD) { bestD = d; best = { id, data: entry.data, rect: r }; }
+      });
+      return best;
+    };
+
+    const finish = (cancelled) => {
+      const a = activeRef.current;
+      const o = overRef.current;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('keydown', onKey);
+      pending.current = null;
+      activeRef.current = null;
+      overRef.current = null;
+      setActive(null);
+      setOver(null);
+      setPointer(null);
+      try { document.body.style.cursor = ''; document.body.style.userSelect = ''; } catch (e) {}
+      if (!a) return;
+      if (cancelled) { if (handlers.current.onDragCancel) handlers.current.onDragCancel({ active: a }); return; }
+      if (handlers.current.onDragEnd) handlers.current.onDragEnd({ active: a, over: o });
+    };
+
+    const onMove = (e) => {
+      const p = pending.current;
+      if (p && !activeRef.current) {
+        if (Math.hypot(e.clientX - p.x, e.clientY - p.y) < ACTIVATION_DISTANCE) return;
+        const entry = draggables.current.get(p.id);
+        if (!entry) { pending.current = null; return; }
+        const el = entry.ref.current;
+        const r = el ? el.getBoundingClientRect() : { left: p.x, top: p.y, width: 0, height: 0 };
+        activeRect.current = { offsetX: p.x - r.left, offsetY: p.y - r.top, width: r.width, height: r.height };
+        const a = { id: p.id, data: entry.data };
+        activeRef.current = a;
+        setActive(a);
+        try { document.body.style.cursor = 'grabbing'; document.body.style.userSelect = 'none'; } catch (err) {}
+        if (handlers.current.onDragStart) handlers.current.onDragStart({ active: a });
+      }
+      if (!activeRef.current) return;
+      e.preventDefault();
+      const pt = { x: e.clientX, y: e.clientY };
+      setPointer(pt);
+      const hit = collide(pt);
+      const prevId = overRef.current ? overRef.current.id : null;
+      const nextId = hit ? hit.id : null;
+      if (prevId !== nextId) {
+        overRef.current = hit;
+        setOver(hit);
+        if (handlers.current.onDragOver) handlers.current.onDragOver({ active: activeRef.current, over: hit });
+      } else if (hit) {
+        overRef.current = hit;
+      }
+    };
+    const onUp = () => finish(false);
+    const onCancel = () => finish(true);
+    const onKey = (e) => { if (e.key === 'Escape') finish(true); };
+
+    const beginPointer = useCallback((id) => (e) => {
+      if (disabled) return;
+      if (e.button !== undefined && e.button !== 0) return;
+      const target = e.target;
+      if (target && target.closest && target.closest('[data-dnd-ignore]')) return;
+      pending.current = { id, x: e.clientX, y: e.clientY };
+      window.addEventListener('pointermove', onMove, { passive: false });
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onCancel);
+      window.addEventListener('keydown', onKey);
+    }, [disabled]);
+
+    useEffect(() => () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('keydown', onKey);
+    }, []);
+
+    const value = useMemo(() => ({ registerDraggable, registerDroppable, beginPointer, active, over }), [registerDraggable, registerDroppable, beginPointer, active, over]);
+
+    const overlay = active && pointer && typeof renderOverlay === 'function' ? renderOverlay(active) : null;
+    const ar = activeRect.current || { offsetX: 0, offsetY: 0, width: 0, height: 0 };
+
+    return (
+      <DndContext.Provider value={value}>
+        {children}
+        {overlay ? (
+          <div
+            ref={overlayRef}
+            className="wb-dnd-overlay"
+            style={{ position: 'fixed', left: pointer.x - ar.offsetX, top: pointer.y - ar.offsetY, width: ar.width || 'auto', zIndex: 1500, pointerEvents: 'none' }}
+          >
+            {overlay}
+          </div>
+        ) : null}
+      </DndContext.Provider>
+    );
+  };
+
+  const useDnd = () => useContext(DndContext);
+
+  const useDraggable = ({ id, data, disabled }) => {
+    const ctx = useContext(DndContext);
+    const ref = useRef(null);
+    useEffect(() => {
+      if (!ctx) return undefined;
+      return ctx.registerDraggable(id, { ref, data });
+    }, [ctx, id, data]);
+    const isDragging = !!(ctx && ctx.active && ctx.active.id === id);
+    const listeners = ctx && !disabled ? { onPointerDown: ctx.beginPointer(id) } : {};
+    return { setNodeRef: (el) => { ref.current = el; }, listeners, isDragging };
+  };
+
+  const useDroppable = ({ id, data, disabled }) => {
+    const ctx = useContext(DndContext);
+    const ref = useRef(null);
+    useEffect(() => {
+      if (!ctx) return undefined;
+      return ctx.registerDroppable(id, { ref, data, disabled });
+    }, [ctx, id, data, disabled]);
+    const isOver = !!(ctx && ctx.over && ctx.over.id === id);
+    return { setNodeRef: (el) => { ref.current = el; }, isOver };
+  };
+
+  const useSortable = ({ id, data, disabled }) => {
+    const drag = useDraggable({ id, data, disabled });
+    const drop = useDroppable({ id, data, disabled });
+    const setNodeRef = (el) => { drag.setNodeRef(el); drop.setNodeRef(el); };
+    return { setNodeRef, listeners: drag.listeners, isDragging: drag.isDragging, isOver: drop.isOver };
+  };
+
+  const parseNodeDropId = (dndId) => {
+    const parts = String(dndId || '').split(':');
+    if (parts[0] === 'palette') return { context: 'palette', id: parts[1] };
+    if (parts[0] === 'chart') return { context: 'chart', id: parts.slice(1).join(':') };
+    return { context: 'unknown', raw: dndId };
+  };
+
+  return { DndProvider, useDnd, useDraggable, useDroppable, useSortable, parseNodeDropId };
+};

@@ -1,14 +1,21 @@
-export const makeApp = ({ WB, WB_CSS, ui, utils, geometry, store, palette, listMode, canvas, configPanel, preview }) => {
-
+export const makeApp = ({ WB, WB_CSS, ui, utils, geometry, store, palette, listMode, configPanel, saveDialog, dnd }) => {
   const { WorkflowProvider, useWorkflow } = store;
   const { Palette } = palette;
-  const { ListCanvas } = listMode;
-  const { WorkflowCanvas } = canvas;
+  const { ListCanvas, useListDnd } = listMode;
   const { RightConfigPanel } = configPanel;
-  const { ClientPreview } = preview;
-  const { Button, IconButton, TextField, Select, Dialog, ToastProvider, useToast, FeatureLockedDialog, LucideIcon, Alert } = ui;
-  const cx = (...p) => p.filter(Boolean).join(' ');
-  const arr = (v) => (Array.isArray(v) ? v : []);
+  const { ToastProvider, FeatureLockedDialog, StepIcon, MuiButton, MuiIconButton, MuiTextField, MuiSelect } = ui;
+  const { DndProvider } = dnd;
+  const SaveFlow = (saveDialog && saveDialog.SaveFlow) || (() => null);
+  const I18N = WB.I18N || {};
+  const t = (key, fallback, vars) => {
+    let s = typeof I18N[key] === 'string' ? I18N[key] : fallback;
+    if (vars) Object.keys(vars).forEach((k) => { s = s.split('{{' + k + '}}').join(String(vars[k])); });
+    return s;
+  };
+  const TEMPLATE_COLORS = WB.WORKFLOW_TEMPLATE_COLORS || {};
+  const PANEL_W = (WB.PANEL && WB.PANEL.WIDTH) || 350;
+  const PANEL_W_EXP = (WB.PANEL && WB.PANEL.WIDTH_EXPANDED) || 600;
+  const FONT_HREF = 'https://fonts.googleapis.com/css2?family=Inter:wght@300..800&display=swap';
 
   const Styles = () => {
     const done = useRef(false);
@@ -22,30 +29,35 @@ export const makeApp = ({ WB, WB_CSS, ui, utils, geometry, store, palette, listM
           el.textContent = WB_CSS;
           document.head.appendChild(el);
         }
+        if (!document.getElementById('wb-font')) {
+          const link = document.createElement('link');
+          link.id = 'wb-font';
+          link.rel = 'stylesheet';
+          link.href = FONT_HREF;
+          document.head.appendChild(link);
+        }
       } catch (e) {}
     }, []);
     return null;
   };
 
-  const Shell = () => {
-    const wf = useWorkflow() || {};
-    const state = wf.state || {};
-    const actions = wf.actions || {};
-    const selectors = wf.selectors || {};
-    const toast = useToast();
+  const templateIconColor = (template) => {
+    const c = TEMPLATE_COLORS[template.colorCategory];
+    if (!c || !c.gradient) return 'var(--wb-primary)';
+    const m = String(c.gradient).match(/#[0-9a-fA-F]{6}/);
+    return m ? m[0] : 'var(--wb-primary)';
+  };
 
-    const workflow = state.workflow || {};
-    const steps = arr(workflow.steps);
-    const viewMode = state.viewMode || 'builder';
+  const Shell = ({ fromScratch: fromScratchProp = false, isLoading = false, showHeader = true }) => {
+    const wf = useWorkflow();
+    const { state, actions, selectors } = wf;
+    const workflow = state.workflow;
+    const steps = workflow.steps || [];
 
-    const [gated, setGated] = useState(null);
-    const [saveOpen, setSaveOpen] = useState(false);
-    const [payload, setPayload] = useState(null);
-    const [apiKey, setApiKey] = useState('');
-    const [sending, setSending] = useState(false);
-    const [sendResult, setSendResult] = useState(null);
-    const [zoom, setZoom] = useState(1);
-    const [device, setDevice] = useState('mobile');
+    const [fromScratch, setFromScratch] = useState(fromScratchProp);
+    const [panelExpanded, setPanelExpanded] = useState(false);
+    const [gatedService, setGatedService] = useState(null);
+    const [saveRequest, setSaveRequest] = useState(null);
     const [headerH, setHeaderH] = useState(112);
 
     useEffect(() => {
@@ -61,155 +73,115 @@ export const makeApp = ({ WB, WB_CSS, ui, utils, geometry, store, palette, listM
       return () => window.removeEventListener('resize', measure);
     }, []);
 
-    const onGated = useCallback((service) => setGated(service || null), []);
+    const handleGatedAttempt = useCallback((service) => setGatedService(service || null), []);
 
-    const cost = selectors.cost || 0;
-    const costLabel = (utils.fCurrency ? utils.fCurrency(cost) : '$' + Number(cost).toFixed(2)) + ' / session';
+    const selectedStep = selectors.selectedStep;
+    const isIdVerification = !!(selectedStep && selectedStep.id === 'id-verification');
+    const rightPanelWidth = panelExpanded && isIdVerification ? PANEL_W_EXP : PANEL_W;
 
-    const handleSave = () => {
-      const name = String(workflow.name || '').trim();
-      if (!steps.length) { toast('Add at least one service before saving.', { type: 'error' }); return; }
-      if (steps.some((s) => s && s.id === 'add-step')) { toast('Remove placeholder steps before saving.', { type: 'error' }); return; }
-      if (!name) { toast('Give your workflow a name.', { type: 'error' }); return; }
+    const listDnd = useListDnd({ onGated: handleGatedAttempt });
 
-      let errors = [];
-      try { errors = arr(utils.stepValidation({ ...workflow, name })); } catch (e) { errors = []; }
-      if (errors.length) { errors.slice(0, 4).forEach((m) => toast(String(m), { type: 'error' })); return; }
+    const costLabel = '$' + Number(selectors.cost || 0).toFixed(2) + ' / session';
 
-      let ordered = steps;
-      try {
-        const res = utils.resolveStepOrderFromConnections(steps, arr(workflow.canvasData && workflow.canvasData.connections));
-        if (res && arr(res.warnings).some((w) => /cycle/i.test(String(w)))) { toast('Cycle detected in the workflow — fix the connections first.', { type: 'error' }); return; }
-        if (res && arr(res.orderedSteps).length) ordered = res.orderedSteps;
-        else if (res && arr(res.ordered).length) ordered = res.ordered;
-      } catch (e) {}
-      let body = null;
-      try {
-        body = utils.buildSavePayload({
-          workflow: { ...workflow, name },
-          orderedSteps: ordered,
-          organizationId: 'org_demo',
-          createdBy: 'you@deepidv.com',
-        });
-      } catch (e) {
-        body = {
-          organizationId: 'org_demo', createdBy: 'you@deepidv.com', name,
-          steps: utils.serializeWorkflowForSave ? utils.serializeWorkflowForSave(ordered) : [],
-          canvasData: utils.serializeCanvasData ? utils.serializeCanvasData(workflow.canvasData) : workflow.canvasData,
-          status: 'active',
-        };
-      }
-      if (body && !body.status) body.status = 'active';
-      setPayload(body);
-      setSendResult(null);
-      setSaveOpen(true);
-      toast('Workflow payload ready.', { type: 'success' });
+    const onTemplateChange = (templateId) => {
+      if (!templateId) return;
+      if (templateId === 'scratch') setFromScratch(true);
+      actions.applyTemplate({ templateId });
     };
 
-    const copyPayload = () => {
-      try {
-        const text = JSON.stringify(payload, null, 2);
-        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text);
-        toast('Payload copied.', { type: 'success' });
-      } catch (e) { toast('Could not copy.', { type: 'error' }); }
-    };
+    const templateOptions = (WB.WORKFLOW_TEMPLATES || []).map((template) => ({
+      value: template.id,
+      label: (I18N.templates && I18N.templates[template.id] && I18N.templates[template.id].label) || template.label,
+      icon: <StepIcon icon={template.icon} size={20} color={templateIconColor(template)} />,
+    }));
 
-    const downloadPayload = () => {
-      try {
-        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = (String(workflow.name || 'workflow').toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'workflow') + '.json';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      } catch (e) { toast('Download failed.', { type: 'error' }); }
-    };
+    const handleSave = () => setSaveRequest({ at: Date.now() });
 
-    const sendToApi = () => {
-      if (!apiKey.trim()) { toast('Enter an API key first.', { type: 'error' }); return; }
-      setSending(true); setSendResult(null);
-      try {
-        fetch('https://api.deepidv.com/v1/workflows', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey.trim() },
-          body: JSON.stringify(payload),
-        }).then((r) => r.text().then((t) => {
-          setSending(false);
-          setSendResult({ ok: r.ok, status: r.status, body: t.slice(0, 600) });
-        })).catch((err) => { setSending(false); setSendResult({ ok: false, status: 0, body: String(err && err.message) }); });
-      } catch (e) { setSending(false); setSendResult({ ok: false, status: 0, body: String(e && e.message) }); }
-    };
+    const header = showHeader ? (
+      <header className="wb-hd" data-testid="wb-header">
+        <div className="wb-hd-group">
+          <a href="/workflows/workflows" style={{ textDecoration: 'none' }}>
+            <MuiButton variant="text" noHover className="wb-mbtn-back" testId="wb-back"
+              startIcon={<StepIcon icon="eva:arrow-ios-back-fill" size={18} color="currentColor" />}>
+              {t('builderBack', 'Back')}
+            </MuiButton>
+          </a>
+          <div className="wb-hd-costwrap">
+            <span className="wb-hd-cost" data-testid="wb-cost">{costLabel}</span>
+            <span className="wb-hd-info"><StepIcon icon="eva:info-outline" size={18} color="currentColor" /></span>
+          </div>
+        </div>
 
-    const templates = arr(WB.TEMPLATES);
+        <div className="wb-hd-group">
+          <MuiTextField
+            size="small"
+            label={t('builderWorkflowName', 'Workflow Name')}
+            placeholder={t('builderWorkflowNamePlaceholder', 'My Workflow')}
+            value={workflow.name || ''}
+            onChange={(v) => actions.setName({ name: v })}
+            style={{ minWidth: fromScratch ? 320 : 200 }}
+            testId="wb-name-input"
+          />
+          {!fromScratch ? (
+            <MuiSelect
+              size="small"
+              label={t('builderTemplate', 'Template')}
+              displayEmpty
+              value=""
+              renderValue={() => t('builderTemplatePlaceholder', 'Select template...')}
+              options={templateOptions}
+              onChange={onTemplateChange}
+              style={{ minWidth: 300 }}
+              testId="wb-template-select"
+            />
+          ) : null}
+        </div>
+
+        <div className="wb-hd-group">
+          <MuiButton variant="contained" gradient className="wb-mbtn-save" onClick={handleSave} testId="wb-save-btn">
+            {t('builderSaveWorkflow', 'Save Workflow')}
+          </MuiButton>
+        </div>
+      </header>
+    ) : null;
+
+    const panel = (
+      <RightConfigPanel
+        selectedStep={selectedStep}
+        dimmed={steps.length === 0}
+        expanded={panelExpanded}
+        onExpandedChange={setPanelExpanded}
+      />
+    );
+
+    const body = (
+      <DndProvider
+        disabled={isLoading}
+        onDragStart={listDnd.handleDragStart}
+        onDragOver={listDnd.handleDragOver}
+        onDragEnd={listDnd.handleDragEnd}
+        onDragCancel={listDnd.handleDragCancel}
+        renderOverlay={listDnd.renderOverlay}
+      >
+        <div className="wb-main">
+          <Palette viewMode="builder" disabled={isLoading} />
+          <div className="wb-stage" data-testid="wb-center">
+            <div className="wb-stage-content">
+              <ListCanvas isLoading={isLoading} connectedStepIds={listDnd.connectedStepIds} />
+            </div>
+          </div>
+          {panel}
+        </div>
+      </DndProvider>
+    );
 
     return (
-      <div className="wb-root" data-testid="wb-root" style={{ height: 'calc(100vh - ' + headerH + 'px)' }}>
+      <div className="wb-root wb-shell" data-testid="wb-root" style={{ height: 'calc(97vh - ' + headerH + 'px)' }}>
         <Styles />
-
-        <header className="wb-header">
-          <a className="wb-back" href="/workflows/workflows"><LucideIcon name="arrow-left" size={16} /><span>{'Workflows'}</span></a>
-          <span className="wb-cost" data-testid="wb-cost">{costLabel}</span>
-          <div className="wb-header-mid">
-            <TextField value={workflow.name || ''} placeholder="Untitled workflow" testId="wb-name-input"
-              onChange={(v) => { if (typeof actions.setName === 'function') actions.setName({ name: v }); }} />
-            <Select value="" placeholder="Start from a template" testId="wb-template-select"
-              options={templates.map((t) => ({ value: t.id, label: t.label }))}
-              onChange={(id) => { if (id && typeof actions.applyTemplate === 'function') { actions.applyTemplate({ templateId: id }); toast('Template applied.', { type: 'success' }); } }} />
-          </div>
-          <button type="button" className="wb-btn wb-btn-primary" data-testid="wb-save-btn" onClick={handleSave}>
-            <LucideIcon name="save" size={15} color="#ffffff" /><span>{'Save Workflow'}</span>
-          </button>
-        </header>
-
-        <div className="wb-viewtoggle">
-          {viewMode === 'preview' ? (
-            <>
-              <IconButton name="smartphone" size={16} label="Mobile" testId="wb-device-mobile" active={device === 'mobile'} onClick={() => setDevice('mobile')} />
-              <IconButton name="monitor" size={16} label="Desktop" testId="wb-device-desktop" active={device === 'desktop'} onClick={() => setDevice('desktop')} />
-              <IconButton name="zoom-out" size={16} label="Zoom out" testId="wb-preview-zoom-out" onClick={() => setZoom((z) => Math.max(0.5, z - 0.1))} />
-              <IconButton name="zoom-in" size={16} label="Zoom in" testId="wb-preview-zoom-in" onClick={() => setZoom((z) => Math.min(1.4, z + 0.1))} />
-            </>
-          ) : null}
-          <IconButton name="list" size={16} label="List view" testId="wb-view-toggle-builder" active={viewMode === 'builder'}
-            onClick={() => { if (typeof actions.setViewMode === 'function') actions.setViewMode({ viewMode: 'builder' }); }} />
-          <IconButton name="layout-grid" size={16} label="Canvas view" testId="wb-view-toggle-canvas" active={viewMode === 'canvas'}
-            onClick={() => { if (typeof actions.setViewMode === 'function') actions.setViewMode({ viewMode: 'canvas' }); }} />
-          <IconButton name="eye" size={16} label="Preview" testId="wb-view-toggle-preview" active={viewMode === 'preview'}
-            onClick={() => { if (typeof actions.setViewMode === 'function') actions.setViewMode({ viewMode: 'preview' }); }} />
-        </div>
-
-        <div className="wb-main">
-          <Palette viewMode={viewMode} onGated={onGated} />
-          <main className="wb-center">
-            {viewMode === 'canvas' ? <WorkflowCanvas onGated={onGated} />
-              : viewMode === 'preview' ? <ClientPreview zoomLevel={zoom} deviceMode={device} branding={{ primaryColor: WB.BRAND.primary }} />
-              : <ListCanvas onGated={onGated} />}
-          </main>
-          <RightConfigPanel />
-        </div>
-
-        <FeatureLockedDialog open={!!gated} onClose={() => setGated(null)} feature={gated ? gated.label : ''} />
-
-        <Dialog open={saveOpen} onClose={() => setSaveOpen(false)} title="Workflow payload" width={720} testId="wb-save-dialog"
-          actions={(
-            <>
-              <Button variant="text" color="inherit" onClick={() => setSaveOpen(false)}>Close</Button>
-              <Button variant="outlined" startIcon="copy" onClick={copyPayload} testId="wb-save-copy">Copy</Button>
-              <Button variant="contained" startIcon="download" onClick={downloadPayload} testId="wb-save-download">Download</Button>
-            </>
-          )}>
-          <pre className="wb-json" data-testid="wb-save-json">{payload ? JSON.stringify(payload, null, 2) : ''}</pre>
-          <div className="wb-send">
-            <div className="wb-field-label">Send to the deepidv API (optional)</div>
-            <div className="wb-row">
-              <TextField value={apiKey} onChange={setApiKey} placeholder="x-api-key" fullWidth testId="wb-api-key" type="password" />
-              <Button variant="outlined" onClick={sendToApi} disabled={sending} testId="wb-send-api">{sending ? 'Sending...' : 'Send'}</Button>
-            </div>
-            <div className="wb-caption wb-muted">{'POSTs to api.deepidv.com/v1/workflows. The key is never stored.'}</div>
-            {sendResult ? <Alert severity={sendResult.ok ? 'success' : 'error'} title={'HTTP ' + sendResult.status}>{sendResult.body}</Alert> : null}
-          </div>
-        </Dialog>
+        {header}
+        {body}
+        <FeatureLockedDialog open={!!gatedService} onClose={() => setGatedService(null)} feature={gatedService ? gatedService.label : ''} />
+        <SaveFlow request={saveRequest} onDone={() => setSaveRequest(null)} />
       </div>
     );
   };
@@ -222,32 +194,29 @@ export const makeApp = ({ WB, WB_CSS, ui, utils, geometry, store, palette, listM
     </ToastProvider>
   );
 
-  return { WorkflowBuilder };
+  return { WorkflowBuilder, Shell };
 };
 
 export const WorkflowBuilderApp = (props) => {
   const d = (props && props.deps) || {};
   const App = useMemo(() => {
     if (typeof d.makeApp !== 'function') return () => <div className="wb-boot-error">Workflow Builder failed to load.</div>;
+    const WB = typeof d.makeWB === 'function' ? d.makeWB(d.generated) : d.WB;
     const ui = d.makeUi();
-    const utils = d.makeUtils({ WB: d.WB, STEP_PROPERTY_GROUPS: d.STEP_PROPERTY_GROUPS });
-    const geometry = d.makeGeometry({ WB: d.WB });
-    const store = d.makeStore({ WB: d.WB, utils, geometry });
-    const beats = d.makeBeats();
-    const previewSteps = d.makePreviewSteps({ WB: d.WB, utils, ui, beats });
-    const previewMod = d.makePreview({ WB: d.WB, utils, store, ui, previewSteps, beats });
-    const fields = d.makeFields({ WB: d.WB, utils, ui });
-    const configPanelMod = d.makeConfigPanel({ WB: d.WB, utils, store, ui, fields });
-    const paletteMod = d.makePalette({ WB: d.WB, utils, store, ui });
-    const listModeMod = d.makeListMode({ WB: d.WB, utils, store, ui });
-    const canvasMod = d.makeCanvas({ WB: d.WB, utils, geometry, store, ui });
+    const utils = d.makeUtils({ WB });
+    const geometry = d.makeGeometry({ WB });
+    const store = d.makeStore({ WB, utils, geometry });
+    const dnd = d.makeDnd();
+    const mui = d.makeMui({ ui });
+    const configPanelMod = d.makeConfigPanel({ WB, utils, store, ui, mui });
+    const paletteMod = d.makePalette({ WB, utils, store, ui, dnd });
+    const listModeMod = d.makeListMode({ WB, utils, store, ui, dnd });
+    const saveDialogMod = typeof d.makeSaveDialog === 'function' ? d.makeSaveDialog({ WB, utils, store, ui, mui }) : {};
     return d.makeApp({
-      WB: d.WB, WB_CSS: d.WB_CSS, ui, utils, geometry, store,
-      palette: paletteMod, listMode: listModeMod, canvas: canvasMod,
-      configPanel: configPanelMod, preview: previewMod,
+      WB, WB_CSS: d.WB_CSS, ui, utils, geometry, store, dnd,
+      palette: paletteMod, listMode: listModeMod,
+      configPanel: configPanelMod, saveDialog: saveDialogMod,
     }).WorkflowBuilder;
   }, []);
   return <App />;
 };
-
-

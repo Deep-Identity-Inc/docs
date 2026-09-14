@@ -202,19 +202,6 @@ export const makeUi = () => {
 :where(.wb-scrollbar)::-webkit-scrollbar{width:6px;height:6px}
 :where(.wb-scrollbar)::-webkit-scrollbar-thumb{background:var(--wb-outline);border-radius:3px}
 :where(.wb-scrollbar)::-webkit-scrollbar-track{background:transparent}
-:where(.wb-toasts){position:fixed;z-index:1400;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:min(420px,calc(100vw - 32px))}
-:where(.wb-toasts-bottom-right){right:24px;bottom:24px;align-items:flex-end}
-:where(.wb-toasts-bottom-left){left:24px;bottom:24px;align-items:flex-start}
-:where(.wb-toasts-top-right){right:24px;top:24px;align-items:flex-end}
-:where(.wb-toast){pointer-events:auto;display:flex;align-items:flex-start;gap:10px;min-width:240px;max-width:100%;padding:10px 8px 10px 12px;border-radius:10px;background:var(--wb-paper);color:var(--wb-text);box-shadow:var(--wb-shadow-lg);border:1px solid var(--wb-divider);font-size:13px;line-height:1.45;animation:wb-ui-toast-in .22s cubic-bezier(.2,.8,.2,1)}
-:where(.wb-toast-icon){display:inline-flex;flex-shrink:0;margin-top:1px;line-height:0}
-:where(.wb-toast-success .wb-toast-icon){color:var(--wb-success)}
-:where(.wb-toast-error .wb-toast-icon){color:var(--wb-error)}
-:where(.wb-toast-info .wb-toast-icon){color:var(--wb-info)}
-:where(.wb-toast-warning .wb-toast-icon){color:var(--wb-warning)}
-:where(.wb-toast-msg){flex:1;min-width:0;word-break:break-word;padding-top:1px}
-:where(.wb-toast-close){display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;border:0;background:transparent;color:var(--wb-text-3);cursor:pointer;padding:0;flex-shrink:0;margin-left:2px}
-:where(.wb-toast-close:hover){background:var(--wb-hover);color:var(--wb-text)}
 :where(.wb-spinner){display:inline-block;width:24px;height:24px;border:3px solid var(--wb-track);border-top-color:var(--wb-primary);border-radius:50%;animation:wb-ui-spin .8s linear infinite;box-sizing:border-box;flex-shrink:0}
 :where(.wb-empty){display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:4px;padding:24px;color:var(--wb-text-2)}
 :where(.wb-empty-icon){display:inline-flex;margin-bottom:12px;opacity:.9;line-height:0}
@@ -229,8 +216,7 @@ export const makeUi = () => {
 @keyframes wb-ui-spin{to{transform:rotate(360deg)}}
 @keyframes wb-ui-fade-in{from{opacity:0}to{opacity:1}}
 @keyframes wb-ui-pop{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
-@keyframes wb-ui-toast-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-@media (prefers-reduced-motion:reduce){:where(.wb-spinner,.wb-toast,.wb-dialog,.wb-dialog-overlay,.wb-menu,.wb-tooltip){animation:none}}
+@media (prefers-reduced-motion:reduce){:where(.wb-spinner,.wb-dialog,.wb-dialog-overlay,.wb-menu,.wb-tooltip){animation:none}}
 `;
 
   const mintIcon = (name, size, color) => (typeof color === 'string' && color
@@ -587,8 +573,6 @@ export const makeUi = () => {
   const ToastContext = React.createContext(null);
 
   const ToastProvider = ({ children }) => {
-    const [toasts, setToasts] = useState([]);
-    const seq = useRef(0);
     const styleRef = useRef(false);
     useEffect(() => {
       if (styleRef.current) return;
@@ -602,36 +586,10 @@ export const makeUi = () => {
         }
       } catch (e) {}
     }, []);
-    const push = useCallback((message, opts) => {
-      const type = (opts && opts.type) || 'info';
-      seq.current += 1;
-      const id = 'wb-toast-' + seq.current;
-      setToasts((prev) => prev.concat([{ id, message: String(message), type }]));
-      try {
-        window.setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), (opts && opts.duration) || 3500);
-      } catch (e) {}
-      return id;
-    }, []);
-    const value = useMemo(() => ({ toast: push }), [push]);
-    return (
-      <ToastContext.Provider value={value}>
-        {children}
-        <div className="wb-toasts" data-testid="wb-toasts" aria-live="polite">
-          {toasts.map((t) => (
-            <div key={t.id} className={cx('wb-toast', 'wb-toast-' + t.type)} data-testid="wb-toast">
-              <LucideIcon name={t.type === 'error' ? 'circle-alert' : t.type === 'success' ? 'circle-check' : 'info'} size={15} />
-              <span>{t.message}</span>
-            </div>
-          ))}
-        </div>
-      </ToastContext.Provider>
-    );
+    return <ToastContext.Provider value={null}>{children}</ToastContext.Provider>;
   };
 
-  const useToast = () => {
-    const ctx = useContext(ToastContext);
-    return (ctx && ctx.toast) || noop;
-  };
+  const useToast = () => noop;
 
   const FeatureLockedDialog = ({ open, onClose, feature }) => (
     <Dialog
@@ -647,10 +605,171 @@ export const makeUi = () => {
     </Dialog>
   );
 
+
+  const MuiButton = React.forwardRef(function WbMuiButton(p, ref) {
+    const { variant = 'text', gradient, startIcon, endIcon, disabled, loading, onClick, children, className, style, testId, noHover, type = 'button', ...rest } = p;
+    return (
+      <button
+        ref={ref}
+        type={type}
+        className={cx('wb-mbtn', 'wb-mbtn-' + variant, gradient && 'wb-mbtn-gradient', noHover && 'wb-mbtn-nohover', loading && 'wb-mbtn-loading', className)}
+        style={style}
+        disabled={!!disabled || !!loading}
+        onClick={onClick}
+        data-testid={testId}
+        {...rest}
+      >
+        {startIcon ? <span className="wb-mbtn-start">{startIcon}</span> : null}
+        <span>{children}</span>
+        {endIcon ? <span className="wb-mbtn-start" style={{ margin: '0 -4px 0 4px' }}>{endIcon}</span> : null}
+        {loading ? <span className="wb-spin" /> : null}
+      </button>
+    );
+  });
+
+  const MuiIconButton = React.forwardRef(function WbMuiIconButton(p, ref) {
+    const { size = 'small', label, onClick, disabled, className, style, testId, children, active, ...rest } = p;
+    return (
+      <button
+        ref={ref}
+        type="button"
+        aria-label={label}
+        aria-pressed={active === undefined ? undefined : !!active}
+        disabled={disabled}
+        onClick={onClick}
+        data-testid={testId}
+        className={cx('wb-micon', 'wb-micon-' + (size === 'small' ? 'sm' : 'md'), className)}
+        style={style}
+        {...rest}
+      >
+        {children}
+      </button>
+    );
+  });
+
+  const MuiTextField = ({ label, placeholder, value, onChange, size = 'small', fullWidth, startAdornment, endAdornment, disabled, error, helperText, type = 'text', testId, style, className, multiline, rows, inputProps, onKeyDown, autoFocus }) => {
+    const [focused, setFocused] = useState(false);
+    const filled = value !== undefined && value !== null && String(value) !== '';
+    const shrunk = focused || filled || !!startAdornment || !!placeholder;
+    const InputTag = multiline ? 'textarea' : 'input';
+    return (
+      <div className={cx('wb-mf', fullWidth && 'wb-mf-full', shrunk && 'wb-mf-shrunk', error && 'wb-mf-error', disabled && 'wb-mf-disabled', className)} style={style} data-testid={testId ? testId + '-root' : undefined}>
+        <div className="wb-mf-ctrl">
+          {startAdornment ? <span className="wb-mf-start">{startAdornment}</span> : null}
+          <InputTag
+            className={cx('wb-mf-input', startAdornment && 'wb-mf-has-start')}
+            type={multiline ? undefined : type}
+            rows={multiline ? rows || 3 : undefined}
+            value={value === undefined || value === null ? '' : value}
+            placeholder={placeholder}
+            disabled={disabled}
+            autoFocus={autoFocus}
+            data-testid={testId}
+            aria-label={typeof label === 'string' ? label : placeholder}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onKeyDown={onKeyDown}
+            onChange={(e) => { if (typeof onChange === 'function') onChange(e.target.value); }}
+            style={multiline ? { height: 'auto', minHeight: 40, resize: 'vertical', lineHeight: 1.5, paddingTop: 10, paddingBottom: 10 } : undefined}
+            {...(inputProps || {})}
+          />
+          {endAdornment ? <span className="wb-mf-end">{endAdornment}</span> : null}
+          <fieldset className="wb-mf-outline" aria-hidden="true"><legend><span>{label || ' '}</span></legend></fieldset>
+        </div>
+        {label ? <label className="wb-mf-label">{label}</label> : null}
+        {helperText ? <div className="wb-mf-helper">{helperText}</div> : null}
+      </div>
+    );
+  };
+
+  const MuiSelect = ({ label, value, onChange, options, placeholder, renderValue, fullWidth, disabled, size = 'small', testId, style, className, displayEmpty, menuWidth }) => {
+    const [open, setOpen] = useState(false);
+    const anchorRef = useRef(null);
+    const [pos, setPos] = useState(null);
+    const list = Array.isArray(options) ? options : [];
+    const selected = list.find((o) => String(o.value) === String(value));
+    const shrunk = displayEmpty || (value !== undefined && value !== null && String(value) !== '') || open;
+
+    useEffect(() => {
+      if (!open) return undefined;
+      const place = () => {
+        const el = anchorRef.current;
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        const below = window.innerHeight - r.bottom;
+        const maxH = 320;
+        const top = below > Math.min(maxH, 200) + 8 ? r.bottom + 4 : Math.max(8, r.top - Math.min(maxH, 320) - 4);
+        setPos({ left: r.left, top, width: menuWidth || r.width });
+      };
+      place();
+      const close = (e) => { if (anchorRef.current && anchorRef.current.contains(e.target)) return; if (e.target.closest && e.target.closest('.wb-menu-pop')) return; setOpen(false); };
+      const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+      window.addEventListener('mousedown', close);
+      window.addEventListener('keydown', onKey);
+      window.addEventListener('resize', place);
+      window.addEventListener('scroll', place, true);
+      return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', onKey); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
+    }, [open, menuWidth]);
+
+    const shown = selected
+      ? (typeof renderValue === 'function' ? renderValue(selected) : (
+        <>
+          {selected.icon ? <span className="wb-menu-item-icon">{selected.icon}</span> : null}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selected.label}</span>
+        </>
+      ))
+      : (typeof renderValue === 'function' ? renderValue(null) : placeholder || '');
+
+    const menu = open && pos ? (
+      <div className="wb-menu-pop" role="listbox" style={{ left: pos.left, top: pos.top, minWidth: pos.width }} data-testid={testId ? testId + '-menu' : undefined}>
+        {list.map((o) => (
+          <div
+            key={String(o.value)}
+            role="option"
+            className="wb-menu-item"
+            aria-selected={String(o.value) === String(value) ? 'true' : 'false'}
+            aria-disabled={o.disabled ? 'true' : undefined}
+            data-value={String(o.value)}
+            onClick={() => { if (o.disabled) return; setOpen(false); if (typeof onChange === 'function') onChange(o.value); }}
+          >
+            {o.flagSrc ? <img className="wb-menu-item-flag" src={o.flagSrc} alt="" /> : null}
+            {o.icon ? <span className="wb-menu-item-icon">{o.icon}</span> : null}
+            <span style={{ flex: '1 1 auto', minWidth: 0 }}>{o.label}{o.hint ? <span className="wb-menu-item-hint">{' ' + o.hint}</span> : null}</span>
+            {o.cost !== undefined && o.cost !== null ? <span className="wb-menu-item-cost">{typeof o.cost === 'number' ? '$' + o.cost.toFixed(2) : o.cost}</span> : null}
+          </div>
+        ))}
+      </div>
+    ) : null;
+
+    return (
+      <div className={cx('wb-mf', 'wb-mf-select', fullWidth && 'wb-mf-full', shrunk && 'wb-mf-shrunk', open && 'wb-mf-select-open', disabled && 'wb-mf-disabled', className)} style={style} ref={anchorRef}>
+        <div className="wb-mf-ctrl">
+          <button
+            type="button"
+            className={cx('wb-mf-input', !selected && 'wb-mf-placeholder')}
+            disabled={disabled}
+            aria-haspopup="listbox"
+            aria-expanded={open ? 'true' : 'false'}
+            aria-label={typeof label === 'string' ? label : placeholder}
+            data-testid={testId}
+            onClick={() => { if (!disabled) setOpen((v) => !v); }}
+          >
+            {shown}
+          </button>
+          <span className="wb-mf-caret"><LucideIcon name="chevron-down" size={22} /></span>
+          <fieldset className="wb-mf-outline" aria-hidden="true"><legend><span>{label || ' '}</span></legend></fieldset>
+        </div>
+        {label ? <label className="wb-mf-label">{label}</label> : null}
+        {menu}
+      </div>
+    );
+  };
+
   return {
     LucideIcon, StepIcon, Button, IconButton, TextField, Select, Switch, Slider, RangeSlider,
     Tabs, Chip, Alert, Divider, Tooltip, Dialog, Menu, Scrollbar, ToastProvider, useToast,
     FeatureLockedDialog, Spinner, EmptyState, iconUrl, cx,
+    MuiButton, MuiIconButton, MuiTextField, MuiSelect,
   };
 };
 

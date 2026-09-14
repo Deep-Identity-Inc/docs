@@ -1,223 +1,1507 @@
-export const makeConfigPanel = ({ WB, utils, store, ui, fields }) => {
-
+export const makeConfigPanel = ({ WB, utils, store, ui, mui }) => {
   const { useWorkflow } = store;
-  const { renderField } = fields;
-  const { LucideIcon, StepIcon, Alert, Divider, Tabs, IconButton, EmptyState } = ui;
-  const cx = (...p) => p.filter(Boolean).join(' ');
-  const arr = (v) => (Array.isArray(v) ? v : []);
+  const { StepIcon } = ui;
+  const { Iconify, FlagIcon, MuiSwitch, MuiCheckbox, MuiChip, MuiAlert, MuiDialog, MuiSlider, MuiRangeSlider, MuiToggleGroup, MuiTabs, MuiDivider, Adornment, NumberBadge, SmallIconButton, Spinner, MuiButton, MuiTextField, MuiSelect, cx } = mui;
+  const I18N = WB.I18N || {};
+  const REMOVED = new Set(WB.REMOVED_PROPERTY_GROUPS || ['id-classification-settings']);
+  const STEP_UP_GUARD_STEPS = WB.STEP_UP_GUARD_STEPS || ['ip-jurisdiction', 'vpn-detection', 'injection-detection'];
+  const PHONE_INTEL_BLOCK_IDS = ['phone-trust-check', 'carrier-age-gate', 'phone-ownership-match'];
+  const CUSTOM_FORM_FIELD_TYPES = WB.CUSTOM_FORM_FIELD_TYPES || [];
+  const CUSTOM_FORM_FIELD_TYPE_DEFAULT = WB.CUSTOM_FORM_FIELD_TYPE_DEFAULT || 'short-text';
+  const CUSTOM_FORM_MAX_OPTIONS = WB.MAX_OPTIONS || 10;
+  const MAX_FIELDS_PER_PAGE = WB.MAX_FIELDS_PER_PAGE || 5;
+  const QUESTIONNAIRE_TEMPLATES = WB.QUESTIONNAIRE_TEMPLATES || {};
+  const INPUT_TYPE_ICONS = WB.INPUT_TYPE_ICONS || {};
+  const INPUT_TYPE_LABELS = WB.INPUT_TYPE_LABELS || {};
+  const OPTION_MARKERS = WB.OPTION_MARKERS || {};
+  const PROOFCALL_QUESTION_TEMPLATES = WB.PROOFCALL_QUESTION_TEMPLATES || {};
+  const AGE_RESTRICTION_CATEGORIES = WB.AGE_RESTRICTION_CATEGORIES || [];
+  const AGE_RESTRICTION_COUNTRY_DATA = WB.AGE_RESTRICTION_COUNTRY_DATA || [];
+  const US_UNIVERSITIES = WB.US_UNIVERSITIES || [];
+  const CA_UNIVERSITIES = WB.CA_UNIVERSITIES || [];
+  const JURISDICTIONS = WB.JURISDICTIONS || [];
+  const E_SIGNATURE_FIELD_TYPES = (WB.ESIGN && WB.ESIGN.FIELD_TYPES) || [];
+  const ADMIN_CONSOLE = 'https://app.deepidv.com/dashboard';
   const stepKeyOf = (s) => (s && (s.instanceId || s.id)) || null;
-  const REMOVED = arr(WB.REMOVED_PROPERTY_GROUPS);
-  const GUARD = arr(WB.STEP_UP_GUARD_STEPS);
-  const PHONE_INTEL = arr(WB.PHONE_INTEL_BLOCK_IDS);
+  const GRADIENT_BTN = 'wb-mbtn-gradient';
 
-  const allPropsOf = (step) => {
-    const out = [];
-    arr(step && step.propertyGroups).forEach((g) => arr(g && g.properties).forEach((p) => out.push(p)));
-    return out;
+  const t = (key, fallback, vars) => {
+    let s = typeof I18N[key] === 'string' ? I18N[key] : fallback;
+    if (typeof s !== 'string') s = fallback || '';
+    if (vars) Object.keys(vars).forEach((k) => { s = s.split('{{' + k + '}}').join(String(vars[k])); });
+    return s;
+  };
+  const tCount = (key, count) => {
+    const k = count === 1 ? key + '_one' : key + '_other';
+    return t(k, I18N[key] || '{{count}}', { count });
+  };
+  const deepGet = (obj, path) => path.reduce((acc, k) => (acc && typeof acc === 'object' ? acc[k] : undefined), obj);
+  const tPath = (path, fallback) => {
+    const v = deepGet(I18N, path);
+    return typeof v === 'string' ? v : fallback || '';
+  };
+  const tGroup = (step, group, field) => tPath(['stepConfig', step.id, group.groupId, field], group[field] || '');
+  const tProp = (step, group, prop, field = 'label') => tPath(['stepConfig', step.id, group.groupId, prop.id, field], prop[field] || '');
+  const tOption = (step, group, prop, option, field = 'label') => tPath(['stepConfig', step.id, group.groupId, prop.id, 'options', option.value, field], option[field] || '');
+  const stepLabel = (step) => {
+    const key = (WB.WORKFLOW_STEP_I18N_KEYS || {})[step.id];
+    return (key && I18N[key]) || step.label || step.id;
   };
 
-  const requirementMet = (prop, all) => {
-    if (utils && typeof utils.isRequirementMet === 'function') {
-      try { return utils.isRequirementMet(prop, all); } catch (e) {}
-    }
-    const find = (id) => all.find((p) => p && p.id === id);
-    const req = prop && prop.requirement;
-    let ok = true;
-    if (typeof req === 'string') { const r = find(req); ok = !!(r && r.value === true); }
-    else if (req && typeof req === 'object') {
-      const r = find(req.id);
-      if ('equals' in req) ok = !!(r && r.value === req.equals);
-      else if ('notEquals' in req) ok = !!(r && r.value !== req.notEquals);
-    }
-    if (ok && prop && typeof prop.requirementInverse === 'string') {
-      const inv = find(prop.requirementInverse);
-      ok = !(inv && inv.value === true);
-    }
-    return ok;
-  };
-
-  const StepHeader = ({ step }) => (
-    <div className="wb-panel-head">
-      <div className="wb-panel-head-row">
-        <span className="wb-tile wb-tile-lg" style={{ background: utils.getStepGradient(step.id) }}>
-          <StepIcon icon={utils.getStepIcon(step.id)} size={24} />
-        </span>
-        <div className="wb-panel-head-text">
-          <div className="wb-panel-step">{step.label}</div>
-          <div className="wb-muted wb-caption">{utils.getStepDescription(step.id)}</div>
-        </div>
-      </div>
-      <h6 className="wb-panel-title">Configure Settings</h6>
-      <Divider />
-      {GUARD.indexOf(step.id) >= 0 ? (
-        <Alert severity="warning" title="Step-up escalation">
-          A failure here escalates the session to step-up verification rather than declining it outright.
-        </Alert>
-      ) : null}
-    </div>
+  const GradientButton = ({ children, onClick, disabled, startIcon, size = 'small', style, testId, fullWidth }) => (
+    <MuiButton variant="contained" gradient className={cx('wb-sp-gbtn', size === 'small' && 'wb-mbtn-sm', fullWidth && 'wb-mbtn-full')} onClick={onClick} disabled={disabled} startIcon={startIcon} style={style} testId={testId}>{children}</MuiButton>
+  );
+  const OutlinedSmall = ({ children, onClick, disabled, startIcon, className, style, dashed, testId }) => (
+    <MuiButton variant="outlined" className={cx('wb-mbtn-sm wb-sp-obtn', dashed && 'wb-sp-obtn-dashed', className)} onClick={onClick} disabled={disabled} startIcon={startIcon} style={style} testId={testId}>{children}</MuiButton>
+  );
+  const SoftButton = ({ children, onClick, disabled, color = 'primary', startIcon, className, style, fullWidth, testId }) => (
+    <button type="button" className={cx('wb-mbtn wb-mbtn-sm wb-sp-soft', 'wb-sp-soft-' + color, fullWidth && 'wb-mbtn-full', className)} onClick={onClick} disabled={disabled} style={style} data-testid={testId}>
+      {startIcon ? <span className="wb-mbtn-start">{startIcon}</span> : null}<span>{children}</span>
+    </button>
   );
 
-  const GroupBlock = ({ step, group, allProps, onValue, onValues, onWeights }) => {
-    const visible = arr(group.properties).filter((p) => p && p.type !== 'hidden');
-    if (!visible.length) return null;
+  const stepUpNeedsEscalation = (step) => {
+    if (!STEP_UP_GUARD_STEPS.includes(step && step.id)) return false;
+    const props = (step.propertyGroups || []).flatMap((g) => g.properties || []);
+    const hasStepUp = props.some((p) => p.value === 'step-up');
+    const esc = props.find((p) => p.id === 'escalation-type');
+    return hasStepUp && (!esc || !esc.value || esc.value === 'none');
+  };
+
+  const getProp = (step, groupId, propId) => {
+    const g = (step.propertyGroups || []).find((x) => x.groupId === groupId);
+    return g ? (g.properties || []).find((p) => p.id === propId) : undefined;
+  };
+  const getPropValue = (step, groupId, propId) => { const p = getProp(step, groupId, propId); return p ? p.value : undefined; };
+
+  const mapProps = (step, groupId, fn) => ({
+    ...step,
+    propertyGroups: (step.propertyGroups || []).map((g) => (g.groupId === groupId ? { ...g, properties: (g.properties || []).map(fn) } : g)),
+  });
+
+  const DialogFooterButtons = ({ onCancel, onSave, saveLabel = 'Save', cancelLabel = 'Cancel', outlinedCancel }) => (
+    <>
+      {outlinedCancel ? (
+        <MuiButton variant="outlined" className="wb-mbtn-sm wb-sp-cancel-outlined" onClick={onCancel}>{cancelLabel}</MuiButton>
+      ) : (
+        <MuiButton variant="text" className="wb-mbtn-sm" style={{ color: 'var(--wb-text-secondary)' }} onClick={onCancel}>{cancelLabel}</MuiButton>
+      )}
+      <GradientButton onClick={onSave} style={{ borderRadius: 8 }}>{saveLabel}</GradientButton>
+    </>
+  );
+
+  const CountryCustomizeButton = ({ value, countries, onChange }) => {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const [localValue, setLocalValue] = useState(value || {});
+    const allCountries = (countries || []).flatMap((region) => (region.categoryOptions || []).map((c) => ({ ...c, region: region.category })));
+    const filtered = search.trim() ? allCountries.filter((c) => c.name.toLowerCase().includes(search.toLowerCase())) : allCountries;
+    const grouped = {};
+    filtered.forEach((c) => { (grouped[c.region] = grouped[c.region] || []).push(c); });
+    const selectedCount = Object.values(localValue).filter(Boolean).length;
+    const toggleAll = (on) => { const next = {}; allCountries.forEach((c) => { next[c.id] = on; }); setLocalValue(next); };
     return (
-      <section className="wb-group" data-testid={'wb-group-' + group.groupId}>
-        <header className="wb-group-head">
-          {group.groupIcon ? <LucideIcon name={group.groupIcon} size={15} /> : null}
-          <span className="wb-group-name">{group.groupName}</span>
-          {group.groupTooltip ? <span className="wb-group-tip" title={group.groupTooltip}><LucideIcon name="info" size={13} /></span> : null}
-        </header>
-        <div className="wb-group-body">
-          {visible.map((prop) => {
-            const met = requirementMet(prop, allProps);
-            const isDisabled = !!(prop.locked || prop.disabled || !met);
-            return renderField({
-              prop, group, step, isDisabled, allProps,
-              onChange: (value) => onValue(group.groupId, prop.id, value),
-              onChangeMany: (values) => onValues(group.groupId, values),
-              onLinkedWeight: (changedId, value) => onWeights(group.groupId, changedId, value),
-            });
+      <>
+        <OutlinedSmall startIcon={<Iconify icon="solar:settings-linear" width={16} />} onClick={() => { setLocalValue(value || {}); setOpen(true); }} testId="wb-country-customize">
+          Customize ({Object.values(value || {}).filter(Boolean).length})
+        </OutlinedSmall>
+        <MuiDialog open={open} onClose={() => setOpen(false)} maxWidth="sm" testId="wb-country-dialog" paperStyle={{ borderRadius: 24, maxHeight: '80vh' }}
+          title={(
+            <div className="wb-sp-dialog-head">
+              <span className="wb-sp-dialog-h6">Select Countries</span>
+              <SmallIconButton icon="mingcute:close-line" width={20} onClick={() => setOpen(false)} label="Close" />
+            </div>
+          )}
+          actions={<DialogFooterButtons outlinedCancel onCancel={() => setOpen(false)} onSave={() => { onChange(localValue); setOpen(false); }} />}
+        >
+          <div className="wb-sp-stack16" style={{ paddingTop: 8 }}>
+            <MuiTextField fullWidth size="small" placeholder="Search countries..." value={search} onChange={setSearch} startAdornment={<Iconify icon="eva:search-fill" width={18} />} />
+            <div className="wb-sp-row8">
+              <SoftButton onClick={() => toggleAll(true)}>Select All</SoftButton>
+              <SoftButton color="inherit" onClick={() => toggleAll(false)}>Deselect All</SoftButton>
+            </div>
+            <div style={{ maxHeight: '50vh', overflowY: 'auto' }}>
+              {Object.entries(grouped).map(([region, list]) => (
+                <div key={region} style={{ marginBottom: 16 }}>
+                  <div className="wb-sp-overline">{region}</div>
+                  <div className="wb-sp-chips" style={{ marginTop: 4 }}>
+                    {list.map((country) => (
+                      <MuiChip key={country.id} label={country.name} icon={<FlagIcon code={country.id} size={18} />} variant={localValue[country.id] ? 'filled' : 'outlined'} color={localValue[country.id] ? 'primary' : 'default'} onClick={() => setLocalValue((prev) => ({ ...prev, [country.id]: !prev[country.id] }))} className="wb-sp-chip-sq" />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="wb-sp-caption">{selectedCount} selected</div>
+          </div>
+        </MuiDialog>
+      </>
+    );
+  };
+
+  const EducationInstitutionPicker = ({ value, onUpdate }) => {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const [localValue, setLocalValue] = useState(value || {});
+    const universities = useMemo(() => [
+      ...US_UNIVERSITIES.map((u) => ({ ...u, country: u.country || 'US' })),
+      ...CA_UNIVERSITIES.map((u) => ({ ...u, country: u.country || 'CA' })),
+    ], []);
+    const selectedCount = universities.length - Object.keys(localValue).length;
+    const currentCount = universities.length - Object.keys(value || {}).length;
+    const filtered = search.trim() ? universities.filter((u) => u.name.toLowerCase().includes(search.toLowerCase())) : universities;
+    const toggleAll = (on) => setLocalValue(on ? {} : Object.fromEntries(universities.map((u) => [u.id, true])));
+    const UniLogo = ({ domain }) => {
+      const [idx, setIdx] = useState(0);
+      const sources = ['https://logo.clearbit.com/' + domain, 'https://www.google.com/s2/favicons?domain=' + domain + '&sz=128', ''];
+      const src = sources[idx];
+      if (!src) return <span className="wb-sp-unilogo-fallback"><Iconify icon="solar:square-academic-cap-bold" width={12} /></span>;
+      return <img src={src} alt="" className="wb-sp-unilogo" onError={() => setIdx((i) => i + 1)} />;
+    };
+    return (
+      <>
+        <div className="wb-sp-stack12">
+          <div className="wb-sp-caption">{currentCount} of {universities.length} institutions selected</div>
+          <OutlinedSmall startIcon={<Iconify icon="solar:settings-linear" width={16} />} onClick={() => { setLocalValue(value || {}); setOpen(true); }}>Configure ({currentCount})</OutlinedSmall>
+        </div>
+        <MuiDialog open={open} onClose={() => setOpen(false)} maxWidth="md" paperStyle={{ borderRadius: 24, maxHeight: '85vh' }}
+          title={(
+            <div>
+              <div className="wb-sp-dialog-head">
+                <span className="wb-sp-dialog-h6">Select Institutions</span>
+                <SmallIconButton icon="mingcute:close-line" width={20} onClick={() => setOpen(false)} label="Close" />
+              </div>
+              <div className="wb-sp-body2 wb-sp-secondary" style={{ marginTop: 4 }}>{selectedCount} of {universities.length} selected</div>
+            </div>
+          )}
+          actions={<DialogFooterButtons outlinedCancel onCancel={() => setOpen(false)} onSave={() => { onUpdate(localValue); setOpen(false); }} />}
+        >
+          <div className="wb-sp-stack16" style={{ paddingTop: 8 }}>
+            <MuiTextField fullWidth size="small" placeholder="Search institutions..." value={search} onChange={setSearch} startAdornment={<Iconify icon="eva:search-fill" width={18} />} />
+            <div className="wb-sp-row8">
+              <SoftButton onClick={() => toggleAll(true)}>Select All</SoftButton>
+              <SoftButton color="inherit" onClick={() => toggleAll(false)}>Deselect All</SoftButton>
+            </div>
+            <div style={{ maxHeight: '50vh', overflowY: 'auto' }}>
+              <div className="wb-sp-chips" style={{ gap: 6 }}>
+                {filtered.map((uni) => {
+                  const isSelected = !localValue[uni.id];
+                  return (
+                    <MuiChip key={uni.id} label={uni.name} icon={<UniLogo domain={uni.domain} />} variant={isSelected ? 'filled' : 'outlined'} color={isSelected ? 'primary' : 'default'} className="wb-sp-chip-sq"
+                      onClick={() => setLocalValue((prev) => { const next = { ...prev }; if (next[uni.id]) delete next[uni.id]; else next[uni.id] = true; return next; })} />
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </MuiDialog>
+      </>
+    );
+  };
+
+  const CustomizeQuestionsDialog = ({ open, section, questions, onClose, onSave }) => {
+    const [edited, setEdited] = useState(questions || []);
+    const update = (idx, key, value) => setEdited((prev) => prev.map((q, i) => (i === idx ? { ...q, [key]: value } : q)));
+    const remove = (idx) => setEdited((prev) => prev.filter((_, i) => i !== idx));
+    const move = (idx, dir) => { const list = [...edited]; const target = idx + dir; if (target < 0 || target >= list.length) return; [list[idx], list[target]] = [list[target], list[idx]]; setEdited(list); };
+    const isMarker = (o) => typeof o === 'string' && !!OPTION_MARKERS[o];
+    return (
+      <MuiDialog open={open} onClose={onClose} maxWidth="md" dividers contentStyle={{ padding: 0 }}
+        title={t('stepConfigCustomizeQuestions', 'Customize Questions')}
+        titleIcon={<Iconify icon="solar:clipboard-list-linear" width={22} color="var(--wb-primary)" />}
+        subtitle={section ? section.name + ' • ' + tCount('stepConfigQuestionCount', edited.length) : null}
+        actions={<DialogFooterButtons onCancel={onClose} onSave={() => { onSave(edited); onClose(); }} cancelLabel={t('stepConfigDialogCancel', 'Cancel')} saveLabel={t('stepConfigDialogSave', 'Save Changes')} />}
+      >
+        {edited.map((q, idx) => (
+          <div key={q.id} className="wb-sp-qrow">
+            <div className="wb-sp-qmove">
+              <SmallIconButton icon="solar:alt-arrow-up-linear" width={14} disabled={idx === 0} onClick={() => move(idx, -1)} label="Move up" />
+              <SmallIconButton icon="solar:alt-arrow-down-linear" width={14} disabled={idx === edited.length - 1} onClick={() => move(idx, 1)} label="Move down" />
+            </div>
+            <div className="wb-sp-stack8" style={{ flex: 1, minWidth: 0 }}>
+              <MuiTextField fullWidth size="small" multiline rows={1} value={q.text} onChange={(v) => update(idx, 'text', v)} className="wb-sp-small-input" />
+              <div className="wb-sp-row8" style={{ alignItems: 'center' }}>
+                <MuiChip variant="outlined" label={INPUT_TYPE_LABELS[q.type] ? tPath(['stepConfigInputType', q.type], INPUT_TYPE_LABELS[q.type]) : q.type} icon={<Iconify icon={INPUT_TYPE_ICONS[q.type] || 'solar:text-linear'} width={14} />} className="wb-sp-chip-xs" />
+                <MuiChip label={q.required ? t('stepConfigQuestionRequired', 'Required') : t('stepConfigQuestionOptional', 'Optional')} color={q.required ? 'primary' : 'default'} variant={q.required ? 'filled' : 'outlined'} onClick={() => update(idx, 'required', !q.required)} className="wb-sp-chip-xs" />
+                {q.conditional ? <MuiChip label={t('stepConfigQuestionConditional', 'Conditional')} variant="outlined" color="warning" className="wb-sp-chip-xs" /> : null}
+              </div>
+              {Array.isArray(q.options) ? (
+                <MuiTextField fullWidth size="small" label={t('stepConfigQuestionOptions', 'Options (comma-separated)')} value={q.options.join(', ')} onChange={(v) => update(idx, 'options', v.split(',').map((s) => s.trim()))} className="wb-sp-small-input" />
+              ) : null}
+              {isMarker(q.options) ? (
+                <MuiChip variant="outlined" icon={<Iconify icon="solar:global-linear" width={14} />} label={t('stepConfigQuestionOptionsFromList', 'Country list ({{count}} options)', { count: (OPTION_MARKERS[q.options] || []).length })} className="wb-sp-chip-xs" style={{ alignSelf: 'flex-start' }} />
+              ) : null}
+            </div>
+            <SmallIconButton icon="solar:trash-bin-minimalistic-linear" width={16} onClick={() => remove(idx)} label="Remove" danger style={{ marginTop: 4 }} />
+          </div>
+        ))}
+      </MuiDialog>
+    );
+  };
+
+  const QuestionnaireTemplateToggles = ({ prop, onUpdate }) => {
+    const [customize, setCustomize] = useState(null);
+    const value = prop.value || {};
+    const all = Object.values(QUESTIONNAIRE_TEMPLATES);
+    const tTemplateName = (tpl) => tPath(['questionnaire', tpl.id, 'name'], tpl.name);
+    const tSectionName = (tpl, sec) => tPath(['questionnaire', tpl.id, sec.id, 'name'], sec.name);
+    const toggleTemplate = (id) => { const cur = value[id] || { enabled: false, sections: {} }; onUpdate({ ...value, [id]: { ...cur, enabled: !cur.enabled } }); };
+    const toggleSection = (tid, sid) => {
+      const tpl = value[tid] || { enabled: true, sections: {} };
+      const sec = (tpl.sections && tpl.sections[sid]) || { enabled: false, questions: null };
+      onUpdate({ ...value, [tid]: { ...tpl, sections: { ...(tpl.sections || {}), [sid]: { ...sec, enabled: !sec.enabled } } } });
+    };
+    const saveQuestions = (tid, sid, questions) => {
+      const tpl = value[tid] || { enabled: true, sections: {} };
+      onUpdate({ ...value, [tid]: { ...tpl, sections: { ...(tpl.sections || {}), [sid]: { enabled: true, questions } } } });
+    };
+    return (
+      <>
+        <div className="wb-sp-stack12">
+          {all.map((template) => {
+            const st = value[template.id] || { enabled: false, sections: {} };
+            return (
+              <div key={template.id}>
+                <div className={cx('wb-sp-qt-head', st.enabled && 'wb-sp-qt-head-on')}>
+                  <div className="wb-sp-row8" style={{ alignItems: 'center' }}>
+                    <MuiSwitch size="small" color="success" checked={!!st.enabled} onChange={() => toggleTemplate(template.id)} />
+                    <span className={cx('wb-sp-caption', 'wb-sp-bold', st.enabled ? 'wb-sp-primarytext' : 'wb-sp-secondary')}>{tTemplateName(template)}</span>
+                  </div>
+                  <span className="wb-sp-caption wb-sp-disabled" style={{ fontSize: '0.6rem' }}>{tCount('stepConfigSectionCount', template.sections.length)}</span>
+                </div>
+                {st.enabled ? (
+                  <div className="wb-sp-qt-body">
+                    {template.sections.map((section, idx) => {
+                      const sec = (st.sections && st.sections[section.id]) || { enabled: false };
+                      const qCount = (sec.questions && sec.questions.length) || section.questions.length;
+                      return (
+                        <div key={section.id} className={cx('wb-sp-qt-sec', sec.enabled && 'wb-sp-qt-sec-on')} style={{ borderBottom: idx < template.sections.length - 1 ? '1px solid var(--wb-grey-a10)' : 'none' }}>
+                          <div className="wb-sp-row6" style={{ alignItems: 'center', flex: 1, minWidth: 0 }}>
+                            <span style={{ transform: 'scale(0.8)', display: 'inline-flex' }}><MuiSwitch size="small" color="success" checked={!!sec.enabled} onChange={() => toggleSection(template.id, section.id)} /></span>
+                            <div style={{ minWidth: 0 }}>
+                              <div className={cx('wb-sp-caption wb-sp-semibold wb-sp-nowrap', sec.enabled ? 'wb-sp-primarytext' : 'wb-sp-disabled')} style={{ fontSize: '0.7rem' }}>{tSectionName(template, section)}</div>
+                              <div className="wb-sp-caption wb-sp-disabled" style={{ fontSize: '0.6rem' }}>{tCount('stepConfigQuestionCount', qCount)}</div>
+                            </div>
+                          </div>
+                          {sec.enabled ? <SmallIconButton icon="solar:settings-linear" width={14} label="Customize" onClick={() => setCustomize({ templateId: template.id, section, questions: sec.questions || section.questions.map((q) => ({ ...q })) })} /> : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            );
           })}
         </div>
-      </section>
+        {customize ? <CustomizeQuestionsDialog open section={customize.section} questions={customize.questions} onClose={() => setCustomize(null)} onSave={(qs) => saveQuestions(customize.templateId, customize.section.id, qs)} /> : null}
+      </>
     );
   };
 
-  const GenericSettings = ({ step, onValue, onValues, onWeights }) => {
-    const allProps = allPropsOf(step);
-    const groups = arr(step.propertyGroups).filter((g) => g && REMOVED.indexOf(g.groupId) < 0).filter((g) => {
-      if (!g.parentToggle) return true;
-      const parent = allProps.find((p) => p && p.id === g.parentToggle);
-      return !!(parent && parent.value);
-    });
+  const WORKFLOW_ESIGN_ROLE_OPTIONS = [{ value: 'recipient', label: 'Applicant' }, { value: 'sender', label: 'Sender' }];
+  const WORKFLOW_ESIGN_DEFAULT_FIELD_TYPES = E_SIGNATURE_FIELD_TYPES.filter((f) => ['signature', 'initial', 'date_signed', 'textbox', 'checkbox'].includes(f.value));
+  let esignFieldCounter = 0;
+  let esignFileCounter = 0;
+  const esignLocalFiles = new Map();
+  const resolveFieldType = (input) => {
+    const raw = typeof input === 'string' ? input : (input && (input.type || input.value || input.inputType)) || '';
+    const legacy = { date: 'date_signed', text: 'textbox', initials: 'initial' };
+    const norm = legacy[raw] || raw;
+    return E_SIGNATURE_FIELD_TYPES.find((f) => f.value === norm) || E_SIGNATURE_FIELD_TYPES.find((f) => f.inputType === norm) || WORKFLOW_ESIGN_DEFAULT_FIELD_TYPES[0] || { value: 'signature', label: 'Signature', inputType: 'signature' };
+  };
+  const normalizeESignField = (field, index = 0) => {
+    const ft = resolveFieldType(field);
+    return {
+      id: (field && field.id) || 'workflow-esign-field-' + Date.now() + '-' + (++esignFieldCounter),
+      type: ft.value,
+      inputType: ft.inputType,
+      label: (field && field.label) || ft.label,
+      role: field && field.role === 'sender' ? 'sender' : 'recipient',
+      page: Math.max(1, Number((field && field.page) || 1) || 1),
+      x: Number.isFinite(Number(field && field.x)) ? Number(field.x) : 48 + (index % 4) * 24,
+      y: Number.isFinite(Number(field && field.y)) ? Number(field.y) : 620 - (index % 4) * 28,
+      scale: 1, scaleX: 1, scaleY: 1,
+      options: Array.isArray(field && field.options) ? field.options : [],
+      direction: (field && field.direction) || 'row',
+    };
+  };
 
-    const forced = useRef({});
-    useEffect(() => {
-      const key = stepKeyOf(step);
-      arr(step.propertyGroups).forEach((g) => arr(g && g.properties).forEach((p) => {
-        if (!p || p.type !== 'boolean' || p.locked) return;
-        const met = requirementMet(p, allProps);
-        const shouldDisable = !!(p.disabled || !met);
-        if (shouldDisable && p.value === true) {
-          const marker = key + '|' + g.groupId + '|' + p.id;
-          if (forced.current[marker]) return;
-          forced.current[marker] = true;
-          onValue(g.groupId, p.id, false);
-        }
-      }));
-    }, [step, allProps, onValue]);
-
-    if (!groups.length) {
+  const ESignFieldDialog = ({ open, file, sourceFile, onClose, onSave }) => {
+    const [fields, setFields] = useState(() => (Array.isArray(file && file.fields) ? file.fields.map(normalizeESignField) : []));
+    const [activeRole, setActiveRole] = useState('recipient');
+    const sourceIsPdf = !!(sourceFile && (sourceFile.type === 'application/pdf' || /\.pdf$/i.test(sourceFile.name || '')));
+    const addField = (ft) => setFields((prev) => [...prev, normalizeESignField({ type: ft.value, role: activeRole, label: ft.label }, prev.length)]);
+    const renderList = (roleId) => {
+      const roleFields = fields.filter((f) => f.role === roleId);
       return (
-        <div className="wb-panel-empty">
-          <span className="wb-tile wb-tile-lg" style={{ background: utils.getStepGradient(step.id) }}><StepIcon icon={utils.getStepIcon(step.id)} size={24} /></span>
-          <div className="wb-panel-step">{step.label}</div>
-          <div className="wb-muted">No configurable options</div>
+        <div className="wb-sp-stack8">
+          {roleFields.length === 0 ? <span className="wb-sp-caption wb-sp-disabled" style={{ fontStyle: 'italic' }}>No fields added yet</span> : null}
+          {roleFields.map((field) => {
+            const ft = resolveFieldType(field);
+            return (
+              <div key={field.id} className="wb-sp-esign-fieldrow">
+                <Iconify icon={ft.icon || 'solar:pen-new-square-linear'} width={16} color="var(--wb-text-secondary)" />
+                <select className="wb-sp-plainselect" value={field.type} onChange={(e) => { const nft = resolveFieldType(e.target.value); setFields((prev) => prev.map((it) => (it.id === field.id ? { ...it, type: nft.value, inputType: nft.inputType, label: nft.label } : it))); }}>
+                  {E_SIGNATURE_FIELD_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <SmallIconButton icon="solar:close-circle-bold" width={16} label="Remove field" danger onClick={() => setFields((prev) => prev.filter((it) => it.id !== field.id))} />
+              </div>
+            );
+          })}
         </div>
       );
-    }
-    return (
-      <div className="wb-groups">
-        {groups.map((g) => <GroupBlock key={g.groupId} step={step} group={g} allProps={allProps} onValue={onValue} onValues={onValues} onWeights={onWeights} />)}
-      </div>
-    );
-  };
-
-  const PhoneVerificationSettings = ({ step, onValue, onValues, onWeights }) => {
-    const [tab, setTab] = useState('call');
-    const allProps = allPropsOf(step);
-    const groups = arr(step.propertyGroups).filter((g) => g && REMOVED.indexOf(g.groupId) < 0);
-    const tabs = [{ value: 'call', label: 'Call' }, { value: 'script', label: 'Script' }, { value: 'advanced', label: 'Advanced' }];
-    const pick = (g, i) => {
-      if (tab === 'call') return i === 0;
-      if (tab === 'script') return i === 1 || (groups.length === 1 && i === 0);
-      return i >= 2;
     };
-    const shown = groups.filter(pick);
     return (
-      <div className="wb-groups" data-testid="wb-phone-settings">
-        <Tabs value={tab} onChange={setTab} tabs={tabs} testIdPrefix="wb-phone-tab-" />
-        {shown.length
-          ? shown.map((g) => <GroupBlock key={g.groupId} step={step} group={g} allProps={allProps} onValue={onValue} onValues={onValues} onWeights={onWeights} />)
-          : <div className="wb-muted wb-pad">Nothing to configure in this tab.</div>}
+      <MuiDialog open={open} onClose={onClose} maxWidth="lg" dividers title="Configure Signature Fields" subtitle={file && file.name} titleIcon={<Iconify icon="solar:pen-new-square-linear" width={22} color="var(--wb-primary)" />}
+        actions={<DialogFooterButtons onCancel={onClose} onSave={() => { onSave({ fields, pageCount: Math.max(1, Number((file && file.pageCount) || 1) || 1) }); onClose(); }} saveLabel="Done" />}>
+        <div className="wb-sp-esign-editor">
+          <div className="wb-sp-esign-side">
+            <div className="wb-sp-stack8">
+              <div className="wb-sp-subtitle2 wb-sp-bold">Assign New Fields To</div>
+              <MuiToggleGroup value={activeRole} onChange={setActiveRole} options={WORKFLOW_ESIGN_ROLE_OPTIONS} />
+              <span className="wb-sp-caption wb-sp-secondary">Drag a field into the page, or click a field below to place it.</span>
+            </div>
+            <MuiDivider />
+            <div className="wb-sp-stack8">
+              <div className="wb-sp-subtitle2 wb-sp-bold">Field Palette</div>
+              <div className="wb-sp-stack6">
+                {WORKFLOW_ESIGN_DEFAULT_FIELD_TYPES.map((ft) => (
+                  <button key={ft.value} type="button" className="wb-sp-esign-palette-item" onClick={() => addField(ft)}>
+                    <Iconify icon={ft.icon} width={18} /><span>{ft.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <MuiDivider />
+            <div className="wb-sp-stack16">
+              <MuiAlert severity="info" variant="outlined">{sourceIsPdf ? 'Field placement preview is not available in the docs sandbox. You can still manage the field list below.' : 'Field placement preview currently supports PDF files only. You can still manage the field list below.'}</MuiAlert>
+              <div className="wb-sp-grid2">
+                <div className="wb-sp-stack12">
+                  <div className="wb-sp-row8" style={{ alignItems: 'center' }}><span className="wb-sp-dot" style={{ background: 'var(--wb-success)' }} /><span className="wb-sp-subtitle2 wb-sp-bold">Applicant Fields</span></div>
+                  {renderList('recipient')}
+                </div>
+                <div className="wb-sp-stack12">
+                  <div className="wb-sp-row8" style={{ alignItems: 'center' }}><span className="wb-sp-dot" style={{ background: 'var(--wb-primary)' }} /><span className="wb-sp-subtitle2 wb-sp-bold">Sender Fields</span></div>
+                  {renderList('sender')}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="wb-sp-esign-stage">
+            <div className="wb-sp-esign-stage-empty">
+              <Iconify icon="solar:file-text-linear" width={44} />
+              <span className="wb-sp-body2">Preview unavailable for this document.</span>
+            </div>
+          </div>
+        </div>
+      </MuiDialog>
+    );
+  };
+
+  const ESignDocumentSetup = ({ prop, isDisabled, onUpdate }) => {
+    const inputRef = useRef(null);
+    const [dialogOpen, setDialogOpen] = useState(false);
+    const [editingIdx, setEditingIdx] = useState(null);
+    const files = (prop.value && prop.value.files) || [];
+    const handleFiles = (e) => {
+      const picked = Array.from(e.target.files || []).slice(0, 25 - files.length);
+      if (!picked.length) return;
+      const newFiles = picked.map((file) => {
+        const localFileId = 'workflow-esign-doc-' + Date.now() + '-' + (++esignFileCounter);
+        esignLocalFiles.set(localFileId, file);
+        return { localFileId, name: file.name, size: file.size, type: file.type || '', pageCount: 0, fields: [] };
+      });
+      onUpdate({ ...(prop.value || {}), files: [...files, ...newFiles] });
+      setEditingIdx(files.length);
+      setDialogOpen(true);
+      e.target.value = '';
+    };
+    const editing = editingIdx !== null ? files[editingIdx] : null;
+    return (
+      <div className="wb-sp-stack12">
+        {files.map((file, idx) => (
+          <div key={idx} className="wb-sp-esign-filerow">
+            <Iconify icon="solar:file-text-linear" width={18} color="var(--wb-text-secondary)" />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="wb-sp-caption wb-sp-semibold wb-sp-nowrap">{file.name}</div>
+              <div className="wb-sp-caption wb-sp-disabled">{(file.fields && file.fields.length) || 0} field{(file.fields && file.fields.length) !== 1 ? 's' : ''} configured</div>
+            </div>
+            <OutlinedSmall className="wb-sp-tinybtn" disabled={isDisabled} onClick={() => { setEditingIdx(idx); setDialogOpen(true); }}>Edit Fields</OutlinedSmall>
+            <SmallIconButton icon="solar:close-circle-bold" width={18} danger disabled={isDisabled} label="Remove" onClick={() => { if (file.localFileId) esignLocalFiles.delete(file.localFileId); onUpdate({ ...(prop.value || {}), files: files.filter((_, i) => i !== idx) }); }} />
+          </div>
+        ))}
+        {files.length < 25 ? (
+          <>
+            <input ref={inputRef} type="file" multiple accept=".pdf,application/pdf" style={{ display: 'none' }} onChange={handleFiles} disabled={isDisabled} />
+            <OutlinedSmall dashed disabled={isDisabled} startIcon={<Iconify icon="solar:upload-linear" width={16} />} onClick={() => inputRef.current && inputRef.current.click()}>
+              Upload Document{files.length > 0 ? ' (' + files.length + '/25)' : ' (up to 25)'}
+            </OutlinedSmall>
+          </>
+        ) : null}
+        {editing && dialogOpen ? (
+          <ESignFieldDialog open file={editing} sourceFile={editing.localFileId ? esignLocalFiles.get(editing.localFileId) : null}
+            onClose={() => { setDialogOpen(false); setEditingIdx(null); }}
+            onSave={({ fields, pageCount }) => onUpdate({ ...(prop.value || {}), files: files.map((f, i) => (i === editingIdx ? { ...f, fields, pageCount: pageCount || f.pageCount || 0 } : f)) })} />
+        ) : null}
       </div>
     );
   };
 
-  const PhoneIntelBlock = ({ step, onValue, onValues, onWeights }) => (
-    <div className="wb-groups" data-testid="wb-phone-intel">
-      <Alert severity="info" title="Phone intelligence">Signals from this block feed the shared phone-intelligence score.</Alert>
-      <GenericSettings step={step} onValue={onValue} onValues={onValues} onWeights={onWeights} />
+  const MOCK_ESIGN_TEMPLATES = [
+    { id: 'tpl-nda-applicant', title: 'Mutual NDA (applicant signs)', workflowSignerCount: 1, workflowSignerRoles: ['signer_1'] },
+    { id: 'tpl-service-agreement', title: 'Service Agreement (applicant + sender)', workflowSignerCount: 2, workflowSignerRoles: ['signer_1', 'signer_2'] },
+    { id: 'tpl-lease', title: 'Residential Lease (applicant signs)', workflowSignerCount: 1, workflowSignerRoles: ['signer_1'] },
+    { id: 'tpl-board-resolution', title: 'Board Resolution (3 signers)', workflowSignerCount: 3, workflowSignerRoles: ['signer_1', 'signer_2', 'signer_3'] },
+  ];
+  const mapTemplateOption = (template) => {
+    const signerCount = Number(template.workflowSignerCount || 0);
+    return {
+      value: template.id,
+      label: template.title || template.name || 'Template ' + template.id,
+      workflowSignerCount: signerCount,
+      workflowSignerRoles: template.workflowSignerRoles || [],
+      disabled: signerCount > 2 || signerCount < 1,
+      hint: signerCount > 2 ? 'Workflow supports max 2 signers' : signerCount === 2 ? 'Applicant + sender' : signerCount === 1 ? 'Applicant only' : 'Missing signer fields',
+    };
+  };
+
+  const FormFieldEditor = ({ fieldKey, fieldConfig, onChange, onDelete, disabled }) => {
+    const normalized = fieldConfig && typeof fieldConfig === 'object' && fieldConfig.label !== undefined
+      ? { label: fieldConfig.label || '', type: fieldConfig.type || CUSTOM_FORM_FIELD_TYPE_DEFAULT, options: fieldConfig.options && typeof fieldConfig.options === 'object' ? fieldConfig.options : {} }
+      : { label: typeof fieldConfig === 'string' ? fieldConfig : '', type: CUSTOM_FORM_FIELD_TYPE_DEFAULT, options: {} };
+    const { label, type, options } = normalized;
+    const FIELD_TYPE_I18N = { 'short-text': 'stepConfigFieldTypeShortText', dropdown: 'stepConfigFieldTypeDropdown', checkbox: 'stepConfigFieldTypeCheckbox', 'yes-no': 'stepConfigFieldTypeYesNo', date: 'stepConfigFieldTypeDate', number: 'stepConfigFieldTypeNumber' };
+    const typeLabel = (id, fb) => t(FIELD_TYPE_I18N[id], fb);
+    const def = CUSTOM_FORM_FIELD_TYPES.find((ft) => ft.id === type) || CUSTOM_FORM_FIELD_TYPES.find((ft) => ft.id === CUSTOM_FORM_FIELD_TYPE_DEFAULT) || {};
+    const optionsArray = Array.isArray(options) ? options : Object.keys(options).sort((a, b) => parseInt(a.replace('option', ''), 10) - parseInt(b.replace('option', ''), 10)).map((k) => options[k]);
+    const toObj = (arr) => arr.reduce((acc, v, i) => { acc['option' + (i + 1)] = v; return acc; }, {});
+    const maxOptions = def.maxOptions || CUSTOM_FORM_MAX_OPTIONS;
+    return (
+      <div className="wb-sp-ffield">
+        <MuiTextField fullWidth size="small" placeholder={t('stepConfigFieldLabelPlaceholder', 'Field label (e.g., Company Name)')} value={label} disabled={disabled}
+          onChange={(v) => onChange(fieldKey, { ...normalized, label: v })}
+          error={!label || !label.trim()} helperText={!label || !label.trim() ? t('stepConfigFieldLabelRequired', 'Label is required') : ''}
+          startAdornment={<NumberBadge color="warning"><Iconify icon={def.icon || 'solar:text-field-bold'} width={12} /></NumberBadge>}
+          endAdornment={<SmallIconButton icon="solar:close-circle-bold" width={18} danger label="Remove field" onClick={() => onDelete(fieldKey)} style={{ pointerEvents: 'auto' }} />} />
+        <MuiSelect size="small" value={type} style={{ minWidth: 160 }} disabled={disabled}
+          options={CUSTOM_FORM_FIELD_TYPES.map((ft) => ({ value: ft.id, label: typeLabel(ft.id, ft.label), icon: <Iconify icon={ft.icon} width={16} /> }))}
+          onChange={(nt) => { const ntDef = CUSTOM_FORM_FIELD_TYPES.find((ft) => ft.id === nt); const has = options && typeof options === 'object' && Object.keys(options).length > 0; onChange(fieldKey, { ...normalized, type: nt, options: ntDef && ntDef.hasOptions ? (has ? options : { option1: '' }) : {} }); }} />
+        {def.hasOptions ? (
+          <div className="wb-sp-stack8">
+            <span className="wb-sp-caption wb-sp-secondary">Options (max {maxOptions})</span>
+            {optionsArray.map((opt, index) => (
+              <MuiTextField key={index} fullWidth size="small" placeholder={'Option ' + (index + 1)} value={opt} disabled={disabled}
+                onChange={(v) => { const arr = [...optionsArray]; arr[index] = v; onChange(fieldKey, { ...normalized, options: toObj(arr) }); }}
+                startAdornment={<NumberBadge color="infoLight">{index + 1}</NumberBadge>}
+                endAdornment={<SmallIconButton icon="solar:close-circle-bold" width={18} danger disabled={optionsArray.length <= 1} label="Remove option" onClick={() => onChange(fieldKey, { ...normalized, options: toObj(optionsArray.filter((_, i) => i !== index)) })} style={{ pointerEvents: 'auto' }} />} />
+            ))}
+            {optionsArray.length < maxOptions ? <SoftButton color="info" startIcon={<Iconify icon="solar:add-circle-bold" width={16} />} onClick={() => onChange(fieldKey, { ...normalized, options: toObj([...optionsArray, '']) })} style={{ alignSelf: 'flex-start' }}>Add Option</SoftButton> : null}
+            {optionsArray.length >= maxOptions ? <span className="wb-sp-caption" style={{ color: 'var(--wb-warning)' }}>Maximum of {maxOptions} options reached</span> : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const CustomFormPages = ({ prop, isDisabled, updateValue }) => {
+    const rawVal = prop.value && typeof prop.value === 'object' ? prop.value : {};
+    const isLegacyFlat = Object.keys(rawVal).length === 0 || Object.values(rawVal).some((v) => v && typeof v === 'object' && 'label' in v);
+    const pages = isLegacyFlat ? { page1: { fields: rawVal } } : rawVal;
+    const pageEntries = Object.entries(pages);
+    const blankField = () => ({ label: '', type: CUSTOM_FORM_FIELD_TYPE_DEFAULT, options: {} });
+    return (
+      <div className="wb-sp-stack16">
+        <span className="wb-sp-caption wb-sp-secondary">{t('stepConfigFormFieldsHint', 'Form fields the applicant needs to fill in')}</span>
+        {pageEntries.map(([pageKey, pageData], pageIdx) => {
+          const fields = (pageData && pageData.fields) || {};
+          const fieldEntries = Object.entries(fields);
+          const canAdd = fieldEntries.length < MAX_FIELDS_PER_PAGE;
+          return (
+            <div key={pageKey} className="wb-sp-stack12">
+              <div className="wb-sp-between">
+                <span className="wb-sp-subtitle2 wb-sp-bold">Page {pageIdx + 1}</span>
+                {pageEntries.length > 1 ? <SmallIconButton icon="solar:close-circle-bold" width={18} danger disabled={isDisabled} label="Remove page" onClick={() => { const np = { ...pages }; delete np[pageKey]; const re = {}; Object.values(np).forEach((p, i) => { re['page' + (i + 1)] = p; }); updateValue(re); }} /> : null}
+              </div>
+              <div className="wb-sp-stack12 wb-sp-pagefields">
+                {fieldEntries.map(([fieldKey, fieldConfig]) => (
+                  <FormFieldEditor key={fieldKey} fieldKey={fieldKey} fieldConfig={fieldConfig} disabled={isDisabled}
+                    onChange={(fk, cfg) => updateValue({ ...pages, [pageKey]: { ...pages[pageKey], fields: { ...fields, [fk]: cfg } } })}
+                    onDelete={(fk) => { const nf = { ...fields }; delete nf[fk]; const re = {}; Object.values(nf).forEach((f, i) => { re['field' + (i + 1)] = f; }); updateValue({ ...pages, [pageKey]: { ...pages[pageKey], fields: re } }); }} />
+                ))}
+                {canAdd ? <SoftButton color="warning" disabled={isDisabled} startIcon={<Iconify icon="solar:add-circle-bold" width={16} />} onClick={() => updateValue({ ...pages, [pageKey]: { ...pages[pageKey], fields: { ...fields, ['field' + (Object.keys(fields).length + 1)]: blankField() } } })} style={{ alignSelf: 'flex-start' }}>{t('stepConfigAddField', 'Add Field')}</SoftButton>
+                  : <span className="wb-sp-caption wb-sp-disabled" style={{ fontStyle: 'italic' }}>Maximum of {MAX_FIELDS_PER_PAGE} questions per page</span>}
+              </div>
+              {pageIdx < pageEntries.length - 1 ? <MuiDivider dashed style={{ margin: '4px 0' }} /> : null}
+            </div>
+          );
+        })}
+        <MuiDivider dashed>
+          <SoftButton color="info" disabled={isDisabled} startIcon={<Iconify icon="solar:add-circle-bold" width={16} />} onClick={() => updateValue({ ...pages, ['page' + (pageEntries.length + 1)]: { fields: { field1: blankField() } } })}>Add Page</SoftButton>
+        </MuiDivider>
+      </div>
+    );
+  };
+
+  const MultiSelectTable = ({ options, values, onChange, optionLabel, categoryLabel }) => {
+    const [search, setSearch] = useState('');
+    const [openRows, setOpenRows] = useState({});
+    const selected = values && typeof values === 'object' && !Array.isArray(values) ? values : {};
+    const q = search.toLowerCase();
+    const rows = (options || []).map((row) => {
+      if (!q) return row;
+      const catMatch = row.category.toLowerCase().includes(q);
+      const matching = (row.categoryOptions || []).filter((o) => o.name.toLowerCase().includes(q) || catMatch);
+      return catMatch || matching.length ? { ...row, categoryOptions: matching } : null;
+    }).filter(Boolean);
+    const allIds = rows.flatMap((r) => (r.categoryOptions || []).map((o) => o.id));
+    const numSelected = Object.keys(selected).filter((k) => selected[k]).length;
+    const setAll = () => { if (allIds.every((id) => selected[id])) onChange({}); else { const next = { ...selected }; allIds.forEach((id) => { next[id] = true; }); onChange(next); } };
+    return (
+      <div className="wb-sp-stack16">
+        <MuiTextField fullWidth size="small" placeholder={'Search by ' + (optionLabel || 'item') + '...'} value={search} onChange={setSearch} startAdornment={<Iconify icon="eva:search-fill" width={20} />} />
+        <div className="wb-sp-table">
+          <div className="wb-sp-table-head">
+            <MuiCheckbox checked={allIds.length > 0 && numSelected === allIds.length} indeterminate={numSelected > 0 && numSelected < allIds.length} onChange={setAll} ariaLabel="Select all" />
+            <span className="wb-sp-table-headcell">{categoryLabel}</span>
+          </div>
+          {rows.map((row) => {
+            const ids = (row.categoryOptions || []).map((o) => o.id);
+            const all = ids.length > 0 && ids.every((id) => selected[id]);
+            const some = ids.some((id) => selected[id]);
+            const open = !!openRows[row.id] || (!!q && (row.category.toLowerCase().includes(q) || ids.length > 0));
+            return (
+              <div key={row.id} className="wb-sp-table-row">
+                <div className="wb-sp-table-primary" onClick={() => setOpenRows((p) => ({ ...p, [row.id]: !open }))}>
+                  <MuiCheckbox checked={all} indeterminate={some && !all} onChange={() => { const next = { ...selected }; if (all) ids.forEach((id) => { delete next[id]; }); else ids.forEach((id) => { next[id] = true; }); onChange(next); }} ariaLabel={row.category} />
+                  <span className="wb-sp-body2 wb-sp-nowrap" style={{ flex: 1 }}>{row.category}</span>
+                  <Iconify icon="eva:arrow-ios-downward-fill" width={20} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                </div>
+                {open ? (
+                  <div className="wb-sp-table-secondary">
+                    {(row.categoryOptions || []).map((o) => (
+                      <div key={o.id} className="wb-sp-table-option">
+                        <MuiCheckbox size="small" checked={!!selected[o.id]} onChange={() => { const next = { ...selected }; if (next[o.id]) delete next[o.id]; else next[o.id] = true; onChange(next); }} ariaLabel={o.name} />
+                        <div><div className="wb-sp-body2">{o.name}</div>{o.description ? <div className="wb-sp-caption wb-sp-secondary">{o.description}</div> : null}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+          {!rows.length ? <div className="wb-sp-body2 wb-sp-secondary" style={{ textAlign: 'center', padding: 24 }}>No data</div> : null}
+        </div>
+      </div>
+    );
+  };
+
+  const CountryIdTable = ({ options, value, onChange, categoryLabel = 'Continent' }) => {
+    const [open, setOpen] = useState(false);
+    const [local, setLocal] = useState(value || {});
+    const [search, setSearch] = useState('');
+    const [expanded, setExpanded] = useState({});
+    const isOn = (vals, key) => vals && vals[key] === true;
+    const countryKeys = (c) => (c.idTypes || []).map((i) => i.id);
+    const continentKeys = (c) => (c.countries || []).flatMap(countryKeys);
+    const allKeys = (options || []).flatMap(continentKeys);
+    const totalCountries = (options || []).reduce((s, c) => s + ((c.countries || []).length), 0);
+    const acceptedCountries = (options || []).reduce((s, c) => s + (c.countries || []).filter((co) => countryKeys(co).some((k) => isOn(value, k))).length, 0);
+    const q = search.toLowerCase();
+    const filtered = (options || []).map((continent) => {
+      if (!q) return continent;
+      if (continent.category.toLowerCase().includes(q)) return continent;
+      const countries = (continent.countries || []).filter((c) => c.name.toLowerCase().includes(q) || (c.idTypes || []).some((i) => i.name.toLowerCase().includes(q)));
+      return countries.length ? { ...continent, countries } : null;
+    }).filter(Boolean);
+    const localSelected = allKeys.filter((k) => isOn(local, k)).length;
+    const setKeys = (keys, on) => setLocal((prev) => { const next = { ...prev }; keys.forEach((k) => { next[k] = on; }); return next; });
+    const summary = acceptedCountries === totalCountries ? 'All ' + totalCountries + ' countries accepted' : acceptedCountries + ' of ' + totalCountries + ' countries selected';
+    return (
+      <>
+        <div className="wb-sp-row12" style={{ alignItems: 'center' }}>
+          <OutlinedSmall startIcon={<Iconify icon="solar:pen-bold" width={16} />} onClick={() => { setLocal(value || {}); setSearch(''); setOpen(true); }}>Edit</OutlinedSmall>
+          <span className="wb-sp-caption wb-sp-secondary">{summary}</span>
+        </div>
+        <MuiDialog open={open} onClose={() => setOpen(false)} maxWidth="md" paperStyle={{ borderRadius: 24, maxHeight: '85vh' }}
+          title={(
+            <div className="wb-sp-dialog-head">
+              <div><div className="wb-sp-dialog-h6">Valid ID Types by Country</div><div className="wb-sp-caption wb-sp-secondary">Select the countries and the individual ID documents accepted for verification.</div></div>
+              <SmallIconButton icon="mingcute:close-line" width={20} onClick={() => setOpen(false)} label="Close" />
+            </div>
+          )}
+          actions={<><MuiButton variant="text" className="wb-mbtn-sm" onClick={() => setOpen(false)}>Cancel</MuiButton><MuiButton variant="contained" className="wb-mbtn-sm" onClick={() => { onChange(local); setOpen(false); }}>Save ({localSelected})</MuiButton></>}>
+          <div className="wb-sp-stack16" style={{ paddingTop: 8 }}>
+            <MuiTextField fullWidth size="small" value={search} onChange={setSearch} placeholder="Search country or ID type..." startAdornment={<Iconify icon="eva:search-fill" width={20} />} />
+            <div className="wb-sp-row8">
+              <SoftButton onClick={() => setKeys(allKeys, true)}>Accept All</SoftButton>
+              <SoftButton color="inherit" onClick={() => setKeys(allKeys, false)}>Reject All</SoftButton>
+            </div>
+            <div style={{ maxHeight: '55vh', overflowY: 'auto', paddingRight: 8 }} className="wb-sp-stack4">
+              {filtered.map((continent) => {
+                const keys = continentKeys(continent);
+                const allOn = keys.length > 0 && keys.every((k) => isOn(local, k));
+                const someOn = keys.some((k) => isOn(local, k));
+                const isOpen = !!q || !!expanded[continent.id];
+                const accepted = (continent.countries || []).filter((c) => countryKeys(c).some((k) => isOn(local, k))).length;
+                return (
+                  <div key={continent.id} className="wb-sp-cid-group">
+                    <div className="wb-sp-cid-grouphead">
+                      <MuiCheckbox checked={allOn} indeterminate={someOn && !allOn} onChange={() => setKeys(keys, !allOn)} ariaLabel={continent.category + ' ' + categoryLabel + ' checkbox'} />
+                      <div className="wb-sp-row8" style={{ alignItems: 'center', flex: 1, cursor: 'pointer' }} onClick={() => setExpanded((p) => ({ ...p, [continent.id]: !isOpen }))}>
+                        <span className="wb-sp-subtitle2" style={{ flex: 1 }}>{continent.category}</span>
+                        <span className="wb-sp-caption wb-sp-secondary">{accepted}/{(continent.countries || []).length}</span>
+                        <Iconify icon="eva:arrow-ios-downward-fill" width={18} color="var(--wb-text-secondary)" style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                      </div>
+                    </div>
+                    {isOpen ? (
+                      <div style={{ paddingBottom: 8 }}>
+                        {(continent.countries || []).map((country) => {
+                          const ck = countryKeys(country);
+                          const cAll = ck.length > 0 && ck.every((k) => isOn(local, k));
+                          const cSome = ck.some((k) => isOn(local, k));
+                          return (
+                            <div key={country.id} className="wb-sp-cid-country">
+                              <div className="wb-sp-row8" style={{ alignItems: 'center', paddingLeft: 8, padding: '2px 0 2px 8px' }}>
+                                <MuiCheckbox checked={cAll} indeterminate={cSome && !cAll} onChange={() => setKeys(ck, !cAll)} ariaLabel={country.name + ' checkbox'} />
+                                <FlagIcon code={country.id} size={20} />
+                                <span className="wb-sp-body2 wb-sp-semibold">{country.name}</span>
+                              </div>
+                              <div style={{ paddingLeft: 48, paddingBottom: 4 }}>
+                                {(country.idTypes || []).map((idt) => (
+                                  <div key={idt.id} className="wb-sp-row8" style={{ alignItems: 'flex-start', padding: '2px 0' }}>
+                                    <MuiCheckbox size="small" checked={isOn(local, idt.id)} onChange={() => setKeys([idt.id], !isOn(local, idt.id))} ariaLabel={idt.name + ' checkbox'} />
+                                    <div><div className="wb-sp-body2">{idt.name}</div><div className="wb-sp-caption wb-sp-secondary">{[idt.localName, idt.authority, idt.format, idt.notes].filter(Boolean).join(' · ')}</div></div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+              {!filtered.length ? <div className="wb-sp-body2 wb-sp-secondary" style={{ textAlign: 'center', padding: 32 }}>No countries match your search.</div> : null}
+            </div>
+          </div>
+        </MuiDialog>
+      </>
+    );
+  };
+
+  const resolveMinAge = (countryEntry, dataKey) => (countryEntry && countryEntry[dataKey] !== undefined ? countryEntry[dataKey] : null);
+  const computeOverallMinAge = (rules) => {
+    const ages = (rules || []).flatMap((r) => (r.categories || []).map((c) => c.minimumAge)).filter((a) => typeof a === 'number');
+    return ages.length ? Math.max(...ages) : null;
+  };
+  const AgeRestrictionCountryCategory = ({ value = [], onChange, onMinimumAgeChange, disabled }) => {
+    const AGE_CATEGORY_I18N = { 'online-gaming': 'stepConfigAgeCategoryOnlineGaming', 'alcohol-tobacco': 'stepConfigAgeCategoryAlcoholTobacco', 'adult-content': 'stepConfigAgeCategoryAdultContent' };
+    const [selectedCategoryIds, setSelectedCategoryIds] = useState(() => [...new Set(value.flatMap((v) => (v.categories || []).map((c) => c.id)))]);
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const currentCountries = value.map((v) => v.country);
+    const emit = (next) => { onChange(next); if (onMinimumAgeChange) onMinimumAgeChange(computeOverallMinAge(next)); };
+    const buildAndEmit = (countries, catIds) => {
+      emit(countries.map((countryName) => {
+        const entry = AGE_RESTRICTION_COUNTRY_DATA.find((c) => c.country === countryName);
+        const categories = catIds.map((catId) => { const cat = AGE_RESTRICTION_CATEGORIES.find((c) => c.id === catId); const minAge = resolveMinAge(entry, cat.dataKey); return minAge !== null ? { id: cat.id, label: cat.label, minimumAge: minAge } : null; }).filter(Boolean);
+        return { country: countryName, categories };
+      }));
+    };
+    const toggleCategory = (catId) => { const updated = selectedCategoryIds.includes(catId) ? selectedCategoryIds.filter((id) => id !== catId) : [...selectedCategoryIds, catId]; setSelectedCategoryIds(updated); buildAndEmit(currentCountries, updated); };
+    const toggleCountry = (name) => { const next = currentCountries.includes(name) ? currentCountries.filter((c) => c !== name) : [...currentCountries, name]; buildAndEmit(next, selectedCategoryIds); };
+    const overallMin = computeOverallMinAge(value);
+    const disabledCountries = disabled || selectedCategoryIds.length === 0;
+    const filtered = AGE_RESTRICTION_COUNTRY_DATA.filter((c) => c.country.toLowerCase().includes(search.toLowerCase()));
+    return (
+      <div className="wb-sp-stack16">
+        <div>
+          <span className="wb-sp-caption wb-sp-secondary">{t('stepConfigAgeSelectCategories', 'Select categories to enforce')}</span>
+          {AGE_RESTRICTION_CATEGORIES.map((cat) => (
+            <label key={cat.id} className={cx('wb-sp-checkrow', disabled && 'wb-sp-disabledrow')}>
+              <MuiCheckbox size="small" checked={selectedCategoryIds.includes(cat.id)} onChange={() => toggleCategory(cat.id)} disabled={disabled} ariaLabel={cat.label} />
+              <span className="wb-sp-body2">{t(AGE_CATEGORY_I18N[cat.id], cat.label)}</span>
+            </label>
+          ))}
+        </div>
+        <div className={cx('wb-sp-autocomplete', disabledCountries && 'wb-mf-disabled')}>
+          <div className="wb-sp-autocomplete-field" onClick={() => { if (!disabledCountries) setOpen((o) => !o); }}>
+            <span className="wb-sp-autocomplete-label">{t('stepConfigAgeSelectCountries', 'Select Countries')}</span>
+            <div className="wb-sp-chips" style={{ gap: 4, flex: 1 }}>
+              {value.map((v) => <MuiChip key={v.country} label={v.country} variant="soft" onDelete={disabledCountries ? undefined : () => toggleCountry(v.country)} />)}
+              <input className="wb-sp-autocomplete-input" value={search} disabled={disabledCountries} placeholder={selectedCategoryIds.length === 0 ? t('stepConfigAgeSelectCategoriesFirst', 'Select categories first…') : t('stepConfigAgeSearchCountries', 'Search countries…')} onChange={(e) => { setSearch(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} onClick={(e) => e.stopPropagation()} />
+            </div>
+            <Iconify icon="eva:arrow-ios-downward-fill" width={20} color="var(--wb-text-secondary)" />
+          </div>
+          {open && !disabledCountries ? (
+            <div className="wb-sp-autocomplete-menu">
+              {filtered.map((c) => (
+                <div key={c.country} className="wb-sp-autocomplete-option" onClick={() => toggleCountry(c.country)}>
+                  <MuiCheckbox size="small" checked={currentCountries.includes(c.country)} onChange={() => toggleCountry(c.country)} ariaLabel={c.country} />
+                  <span className="wb-sp-body2">{c.country}</span>
+                </div>
+              ))}
+              {!filtered.length ? <div className="wb-sp-body2 wb-sp-secondary" style={{ padding: 12 }}>No options</div> : null}
+            </div>
+          ) : null}
+        </div>
+        {overallMin !== null ? (
+          <div className="wb-sp-row8 wb-sp-minage">
+            <span className="wb-sp-body2" style={{ color: 'var(--wb-success-dark)', fontWeight: 500 }}>{t('stepConfigAgeMinimumAccepted', 'Minimum Accepted Age')}</span>
+            <MuiChip label={overallMin + '+'} variant="paper" />
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const JurisdictionPicker = ({ label, value, onChange }) => {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const byCode = useMemo(() => { const m = {}; JURISDICTIONS.forEach((j) => { m[j.code] = j; }); return m; }, []);
+    const codes = (Array.isArray(value) ? value : String(value || '').split(',')).map((s) => String(s).trim().toUpperCase()).filter(Boolean);
+    const selected = codes.map((code) => byCode[code] || { code, label: code, group: 'Other', countryCode: code.slice(0, 2) });
+    const q = search.toLowerCase();
+    const groups = {};
+    JURISDICTIONS.filter((j) => !q || j.label.toLowerCase().includes(q) || j.code.toLowerCase().includes(q)).forEach((j) => { (groups[j.group] = groups[j.group] || []).push(j); });
+    const toggle = (code) => onChange(codes.includes(code) ? codes.filter((c) => c !== code) : [...codes, code]);
+    return (
+      <div className="wb-sp-autocomplete">
+        <div className="wb-sp-autocomplete-field" onClick={() => setOpen((o) => !o)}>
+          <span className="wb-sp-autocomplete-label">{label}</span>
+          <div className="wb-sp-chips" style={{ gap: 4, flex: 1 }}>
+            {selected.map((opt) => <MuiChip key={opt.code} label={opt.label} variant="soft" icon={<FlagIcon code={opt.countryCode} size={16} />} onDelete={() => toggle(opt.code)} />)}
+            <input className="wb-sp-autocomplete-input" value={search} placeholder="Search countries or states…" onChange={(e) => { setSearch(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} onClick={(e) => e.stopPropagation()} />
+          </div>
+          <Iconify icon="eva:arrow-ios-downward-fill" width={20} color="var(--wb-text-secondary)" />
+        </div>
+        {open ? (
+          <div className="wb-sp-autocomplete-menu">
+            {Object.entries(groups).map(([group, list]) => (
+              <div key={group}>
+                <div className="wb-sp-autocomplete-group">{group}</div>
+                {list.map((j) => (
+                  <div key={j.code} className={cx('wb-sp-autocomplete-option', codes.includes(j.code) && 'wb-sp-autocomplete-option-sel')} onClick={() => toggle(j.code)}>
+                    <FlagIcon code={j.countryCode} size={22} /><span className="wb-sp-body2">{j.label}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const ProofCallQuestions = ({ step, group, prop, updateValue }) => {
+    const templateProp = (group.properties || []).find((p) => p.id === 'proofcall-template-type');
+    const templateType = (templateProp && templateProp.value) || 'employment';
+    const isCustom = templateType === 'custom';
+    const templateQuestions = PROOFCALL_QUESTION_TEMPLATES[templateType] || [];
+    const customQuestions = Array.isArray(prop.value) && prop.value.length > 0 ? prop.value : [{ text: '' }];
+    const maxQuestions = Number.isInteger(prop.maxQuestions) && prop.maxQuestions > 0 ? prop.maxQuestions : 10;
+    let totalSeconds = 25;
+    if (isCustom) {
+      const nonEmpty = customQuestions.filter((q) => q.text && q.text.trim());
+      nonEmpty.forEach((q) => { const wc = q.text.trim().split(/\s+/).length; totalSeconds += 8 + wc * 0.35 + 30 + Math.min(wc * 0.5, 25) + 8; });
+      if (nonEmpty.length === 0) totalSeconds = 0;
+    } else {
+      templateQuestions.forEach((q) => { const wc = q.split(/\s+/).length; totalSeconds += 8 + wc * 0.35 + 35 + 8; });
+    }
+    const estimatedMinutes = totalSeconds / 60;
+    const estimatedCost = estimatedMinutes * 0.5;
+    return (
+      <div className="wb-sp-stack12">
+        <div className="wb-sp-between" style={{ flexWrap: 'wrap', gap: 8 }}>
+          <span className="wb-sp-caption wb-sp-secondary">{isCustom ? customQuestions.filter((q) => q.text && q.text.trim()).length + '/' + maxQuestions + ' questions' : templateQuestions.length + ' questions'}</span>
+          {estimatedCost > 0 ? <span className="wb-sp-row4" style={{ alignItems: 'center' }}><Iconify icon="solar:dollar-bold" width={14} color="#22C55E" /><span className="wb-sp-caption" style={{ color: '#22C55E', fontWeight: 700 }}>Est. ${estimatedCost.toFixed(2)} (~{estimatedMinutes.toFixed(1)} min)</span></span> : null}
+        </div>
+        {!isCustom ? <span className="wb-sp-caption wb-sp-disabled" style={{ fontStyle: 'italic' }}>Switch to Custom to edit. Use [name] as a placeholder for the subject's name.</span> : null}
+        <div className="wb-sp-stack8">
+          {isCustom ? customQuestions.map((q, idx) => (
+            <MuiTextField key={idx} fullWidth size="small" multiline rows={2} placeholder={'Question ' + (idx + 1)} value={q.text || ''}
+              onChange={(v) => { const next = [...customQuestions]; next[idx] = { ...next[idx], text: v }; updateValue(next); }}
+              endAdornment={customQuestions.length > 1 ? <SmallIconButton icon="solar:close-circle-bold" width={18} danger label="Remove" onClick={() => updateValue(customQuestions.filter((_, i) => i !== idx))} style={{ pointerEvents: 'auto' }} /> : null} />
+          )) : templateQuestions.map((q, idx) => (
+            <div key={idx} className="wb-sp-tplq"><span className="wb-sp-body2 wb-sp-secondary" style={{ fontSize: '0.8rem' }}>{idx + 1}. {q}</span></div>
+          ))}
+        </div>
+        {isCustom && customQuestions.length < maxQuestions ? <GradientButton startIcon={<Iconify icon="solar:add-circle-bold" width={16} />} onClick={() => updateValue([...customQuestions, { text: '' }])} style={{ alignSelf: 'flex-start' }}>Add Question</GradientButton> : null}
+      </div>
+    );
+  };
+
+  const WeightDisplay = ({ step }) => {
+    const on = (gid, pid) => { const v = getPropValue(step, gid, pid); return v === undefined ? true : v; };
+    const diEnabled = on('bfp-device-integrity', 'device-integrity-enabled');
+    const msEnabled = on('bfp-media-source', 'media-source-enabled');
+    const envEnabled = on('bfp-environment-analysis', 'environment-enabled');
+    const base = { device: 0.15, media: 0.2, env: 0.15 };
+    const totalBg = (diEnabled ? base.device : 0) + (msEnabled ? base.media : 0) + (envEnabled ? base.env : 0);
+    const layers = [
+      { label: t('stepConfigLayerArMesh', 'AR Mesh'), weight: 1 - totalBg, color: '#1890FF' },
+      diEnabled && { label: t('stepConfigLayerDevice', 'Device'), weight: base.device, color: '#7635DC' },
+      msEnabled && { label: t('stepConfigLayerMedia', 'Media'), weight: base.media, color: '#FF5630' },
+      envEnabled && { label: t('stepConfigLayerEnvironment', 'Environment'), weight: base.env, color: '#FFAB00' },
+    ].filter(Boolean);
+    return (
+      <div className="wb-sp-weightbox">
+        <div className="wb-sp-caption wb-sp-secondary wb-sp-semibold" style={{ marginBottom: 8 }}>{t('stepConfigWeightAllocation', 'Weight Allocation')}</div>
+        <div className="wb-sp-stack6">
+          {layers.map((l) => (
+            <div key={l.label} className="wb-sp-row8" style={{ alignItems: 'center' }}>
+              <span className="wb-sp-dot" style={{ background: l.color }} />
+              <span className="wb-sp-caption" style={{ flex: 1, fontSize: '0.7rem' }}>{l.label}</span>
+              <span className="wb-sp-caption wb-sp-bold" style={{ fontSize: '0.7rem' }}>{Math.round(l.weight * 100)}%</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const DocUploadEditor = ({ step, group, prop, isDisabled, updateValue, patch }) => {
+    const optionalFlagsProp = (group.properties || []).find((p) => p.id === 'document-optional-flags');
+    const optionalFlags = (optionalFlagsProp && optionalFlagsProp.value) || {};
+    const minUploadsProp = (group.properties || []).find((p) => p.id === 'minimum-optional-uploads');
+    const minUploads = (minUploadsProp && minUploadsProp.value) || 0;
+    const optionalCount = Object.values(optionalFlags).filter(Boolean).length;
+    const setGroupValues = (values) => patch((s) => mapProps(s, group.groupId, (p) => (Object.prototype.hasOwnProperty.call(values, p.id) ? { ...p, value: values[p.id] } : p)));
+    const entries = Object.entries(prop.value || {});
+    return (
+      <div className="wb-sp-stack12">
+        <span className="wb-sp-caption wb-sp-secondary">{t('stepConfigDocsHint', 'Documents the applicant needs to upload')}</span>
+        {entries.map(([key, value]) => (
+          <div key={key} className="wb-sp-stack6">
+            <MuiTextField fullWidth size="small" placeholder={t('stepConfigDocPlaceholder', 'e.g., Articles of Incorporation')} value={value} disabled={isDisabled}
+              onChange={(v) => updateValue({ ...(prop.value || {}), [key]: v })}
+              startAdornment={<NumberBadge color="info"><Iconify icon="solar:document-bold" width={12} /></NumberBadge>}
+              endAdornment={<SmallIconButton icon="solar:close-circle-bold" width={18} danger disabled={isDisabled} label="Remove document" style={{ pointerEvents: 'auto' }} onClick={() => {
+                const remaining = entries.filter(([k]) => k !== key);
+                const newObj = {}; remaining.forEach(([, v], idx) => { newObj['document' + (idx + 1)] = v; });
+                const oldKeys = remaining.map(([k]) => k);
+                const newFlags = {}; oldKeys.forEach((ok, idx) => { if (optionalFlags[ok]) newFlags['document' + (idx + 1)] = true; });
+                const newOptCount = Object.values(newFlags).filter(Boolean).length;
+                patch((s) => {
+                  let next = mapProps(s, group.groupId, (p) => {
+                    if (p.id === prop.id) return { ...p, value: newObj };
+                    if (p.id === 'document-optional-flags') return { ...p, value: newFlags };
+                    if (p.id === 'minimum-optional-uploads' && (p.value || 0) > newOptCount) return { ...p, value: newOptCount };
+                    return p;
+                  });
+                  const ext = getProp(next, 'data-extraction-settings', 'data-extraction-config');
+                  if (ext && ext.value) {
+                    const newExt = {}; oldKeys.forEach((ok, idx) => { if (ext.value[ok]) newExt['document' + (idx + 1)] = ext.value[ok]; });
+                    next = mapProps(next, 'data-extraction-settings', (p) => (p.id === 'data-extraction-config' ? { ...p, value: newExt } : p));
+                  }
+                  return next;
+                });
+              }} />} />
+            <div className="wb-sp-reqopt">
+              <button type="button" className={cx('wb-sp-reqopt-btn', !optionalFlags[key] && 'wb-sp-reqopt-on')} disabled={isDisabled} onClick={() => { const nf = { ...optionalFlags }; delete nf[key]; const cnt = Object.values(nf).filter(Boolean).length; setGroupValues({ 'document-optional-flags': nf, ...(minUploads > cnt ? { 'minimum-optional-uploads': cnt } : {}) }); }}>{t('previewKybRequirementRequired', 'Required')}</button>
+              <button type="button" className={cx('wb-sp-reqopt-btn', optionalFlags[key] && 'wb-sp-reqopt-on')} disabled={isDisabled} onClick={() => setGroupValues({ 'document-optional-flags': { ...optionalFlags, [key]: true } })}>{t('previewKybRequirementOptional', 'Optional')}</button>
+            </div>
+          </div>
+        ))}
+        <GradientButton disabled={isDisabled} startIcon={<Iconify icon="solar:add-circle-bold" width={16} />} onClick={() => updateValue({ ...(prop.value || {}), ['document' + (entries.length + 1)]: '' })} style={{ alignSelf: 'flex-start' }}>{t('stepConfigAddDocument', 'Add Document')}</GradientButton>
+        {optionalCount > 0 ? (
+          <div className="wb-sp-stack6" style={{ marginTop: 8 }}>
+            <span className="wb-sp-caption wb-sp-secondary wb-sp-semibold">{t('stepConfigMinOptionalUploadsLabel', 'Minimum optional uploads required')}</span>
+            <div className="wb-sp-spinner">
+              <button type="button" className="wb-sp-spinner-btn" disabled={isDisabled || minUploads <= 0} onClick={() => setGroupValues({ 'minimum-optional-uploads': Math.max(0, minUploads - 1) })}><Iconify icon="eva:minus-outline" width={18} /></button>
+              <span className="wb-sp-spinner-val">{minUploads}</span>
+              <button type="button" className="wb-sp-spinner-btn" disabled={isDisabled || minUploads >= optionalCount} onClick={() => setGroupValues({ 'minimum-optional-uploads': Math.min(optionalCount, minUploads + 1) })}><Iconify icon="eva:plus-outline" width={18} /></button>
+            </div>
+            <span className="wb-sp-caption wb-sp-disabled">{t('stepConfigMinOptionalUploadsHint', 'How many optional documents must be uploaded (0 = no minimum)')}</span>
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const DataExtractionEditor = ({ step, prop, isDisabled, updateValue }) => {
+    const docList = getPropValue(step, 'document-upload-instructions', 'document-upload-list') || {};
+    const docEntries = Object.entries(docList).filter(([, name]) => name && name.trim());
+    const config = prop.value || {};
+    const update = (docKey, cfg) => updateValue({ ...config, [docKey]: cfg });
+    const live = new Set(docEntries.map(([k]) => k));
+    const allParams = [];
+    Object.entries(config).filter(([k]) => live.has(k)).forEach(([, cfg]) => { ((cfg && cfg.extractions) || []).forEach((ex) => { if (ex.parameter) allParams.push(ex.parameter); }); });
+    const duplicates = allParams.filter((p, i) => allParams.indexOf(p) !== i);
+    if (docEntries.length === 0) return <span className="wb-sp-caption wb-sp-disabled">Add documents above to configure data extraction.</span>;
+    return (
+      <div className="wb-sp-stack16">
+        {docEntries.map(([docKey, docName]) => {
+          const cfg = config[docKey] || { enabled: false, extractions: [] };
+          return (
+            <div key={docKey} className="wb-sp-extbox">
+              <div className="wb-sp-between"><span className="wb-sp-body2 wb-sp-semibold">{docName}</span><MuiSwitch size="small" checked={!!cfg.enabled} disabled={isDisabled} onChange={(v) => update(docKey, { ...cfg, enabled: v })} /></div>
+              {cfg.enabled ? (
+                <div className="wb-sp-stack8" style={{ marginTop: 12 }}>
+                  {(cfg.extractions || []).map((entry, idx) => {
+                    const isDup = duplicates.includes(entry.parameter);
+                    const isInvalid = entry.parameter && !/^[a-zA-Z0-9_]+$/.test(entry.parameter);
+                    return (
+                      <div key={idx} className="wb-sp-row8" style={{ alignItems: 'flex-start' }}>
+                        <div className="wb-sp-stack8" style={{ flex: 1 }}>
+                          <MuiTextField size="small" fullWidth placeholder="e.g. Final net pay amount" label="Prompt" value={entry.prompt || ''} disabled={isDisabled} onChange={(v) => { const ex = [...(cfg.extractions || [])]; ex[idx] = { ...ex[idx], prompt: v }; update(docKey, { ...cfg, extractions: ex }); }} />
+                          <MuiTextField size="small" fullWidth placeholder="e.g. netPay" label="Parameter" value={entry.parameter || ''} disabled={isDisabled} error={isDup || isInvalid} helperText={isDup ? 'Duplicate parameter' : isInvalid ? 'Letters, numbers, _ only' : ''} onChange={(v) => { const ex = [...(cfg.extractions || [])]; ex[idx] = { ...ex[idx], parameter: v }; update(docKey, { ...cfg, extractions: ex }); }} />
+                        </div>
+                        <SmallIconButton icon="solar:close-circle-bold" width={18} danger disabled={isDisabled} label="Remove" style={{ marginTop: 4 }} onClick={() => update(docKey, { ...cfg, extractions: (cfg.extractions || []).filter((_, i) => i !== idx) })} />
+                      </div>
+                    );
+                  })}
+                  <OutlinedSmall disabled={isDisabled} startIcon={<Iconify icon="solar:add-circle-bold" width={16} />} onClick={() => update(docKey, { ...cfg, extractions: [...(cfg.extractions || []), { prompt: '', parameter: '' }] })} style={{ alignSelf: 'flex-start' }}>Add extraction</OutlinedSmall>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const TextListEditor = ({ prop, isDisabled, updateValue }) => {
+    const list = Array.isArray(prop.value) ? prop.value : [];
+    return (
+      <div className="wb-sp-stack12">
+        <span className="wb-sp-caption wb-sp-secondary">{t('stepConfigPromptsHint', 'Actions for applicant to perform in their photo')}</span>
+        {list.map((item, index) => (
+          <MuiTextField key={index} fullWidth size="small" placeholder={t('stepConfigPromptPlaceholder', 'e.g., Hold two fingers up')} value={item.text || ''} disabled={isDisabled}
+            onChange={(v) => { const next = [...list]; next[index] = { ...next[index], text: v }; updateValue(next); }}
+            startAdornment={<NumberBadge color="primary" shape="round">{index + 1}</NumberBadge>}
+            endAdornment={<SmallIconButton icon="solar:close-circle-bold" width={18} danger disabled={isDisabled} label="Remove" style={{ pointerEvents: 'auto' }} onClick={() => updateValue(list.filter((_, i) => i !== index))} />} />
+        ))}
+        <GradientButton disabled={isDisabled} startIcon={<Iconify icon="solar:add-circle-bold" width={16} />} onClick={() => updateValue([...list, { text: '' }])} style={{ alignSelf: 'flex-start' }}>{t('stepConfigAddPrompt', 'Add Prompt')}</GradientButton>
+      </div>
+    );
+  };
+
+  const PanelHeader = ({ stepId, title, subtitleText }) => (
+    <div className="wb-sp-header">
+      <span className="wb-tile wb-tile-50" style={{ background: utils.getStepGradient(stepId) }}><StepIcon icon={utils.getStepIcon(stepId)} size={28} /></span>
+      <div>
+        <div className="wb-sp-subtitle2 wb-sp-secondary">{title}</div>
+        <div className="wb-sp-h6">{subtitleText || t('builderConfigureSettings', 'Configure settings')}</div>
+      </div>
     </div>
   );
 
-  const RightConfigPanel = () => {
-    const wf = useWorkflow() || {};
-    const selectors = wf.selectors || {};
-    const actions = wf.actions || {};
-    const step = selectors.selectedStep || null;
-    const [expanded, setExpanded] = useState(false);
+  const PHONE_INTEL_KEY = 'deepidv-wb-phone-intel-config-v1';
+  const PHONE_INTEL_DEFAULTS = {
+    version: 12, lastChangedBy: 'compliance@operator.com', lastChangedAt: '2026-08-20T14:20:00.000Z', pendingApproval: false,
+    preOtpGuard: { enabled: true, checks: { simSwap: true, callDivert: true, lineType: true }, simSwapStepUpHours: 72, simSwapFlagDays: 7, fallbackChannel: 'email' },
+    simpleBlocks: { phoneTrustCheck: { enabled: false, sensitivity: 'medium', actionOnTrip: 'step_up' }, carrierAgeGate: { enabled: false, threshold: 18 }, phoneOwnershipMatch: { enabled: false, strictness: 'medium' } },
+  };
+  const SENSITIVITY_OPTIONS = [{ value: 'low', label: 'Low', color: 'success', helper: 'Only very recent SIM changes.' }, { value: 'medium', label: 'Medium', color: 'warning', helper: 'Recent SIM changes or call forwarding.' }, { value: 'high', label: 'High', color: 'error', helper: 'Also unusual line types.' }];
+  const ACTION_ON_TRIP_OPTIONS = [{ value: 'flag', label: 'Flag' }, { value: 'step_up', label: 'Step-up' }];
+  const AGE_THRESHOLD_OPTIONS = [{ value: 18, label: '18', color: 'neutral' }, { value: 21, label: '21', color: 'neutral' }];
+  const STRICTNESS_OPTIONS = [{ value: 'relaxed', label: 'Relaxed', color: 'success' }, { value: 'medium', label: 'Medium', color: 'warning' }, { value: 'strict', label: 'Strict', color: 'error' }];
+  const FALLBACK_CHANNEL_OPTIONS = [{ value: 'email', label: 'Email' }, { value: 'authenticator', label: 'Authenticator app' }, { value: 'none', label: 'None' }];
+  const PRE_OTP_CHECKS = [{ id: 'simSwap', label: 'Was this SIM recently changed' }, { id: 'callDivert', label: 'Is this number forwarding calls' }, { id: 'lineType', label: 'Is this an unusual line type' }];
+  const COVERAGE_COMMANDS = [{ id: 'sim_swap', label: 'SIM change check' }, { id: 'kyc_match', label: 'Name and date of birth match' }];
+  const COVERAGE_STATES = { served: { label: 'Covered', color: 'success' }, not_covered: { label: 'Coming Soon', color: 'default' }, unknown: { label: 'Partial Coverage', color: 'warning' } };
+  const COVERAGE_COUNTRY_META = { EU: { name: 'EU', flag: 'eu' }, US: { name: 'US', flag: 'us' }, CAN: { name: 'CAN', flag: 'ca' }, BR: { name: 'BR', flag: 'br' }, JPN: { name: 'JPN', flag: 'jp' }, SK: { name: 'SK', flag: 'kr' }, NG: { name: 'Nigeria', flag: 'ng' }, KE: { name: 'Kenya', flag: 'ke' }, GH: { name: 'Ghana', flag: 'gh' } };
+  const MOCK_COVERAGE = [
+    { iso: 'EU', commands: { sim_swap: 'served', kyc_match: 'served' } }, { iso: 'US', commands: { sim_swap: 'served', kyc_match: 'served' } }, { iso: 'CAN', commands: { sim_swap: 'served', kyc_match: 'served' } },
+    { iso: 'BR', commands: { sim_swap: 'served', kyc_match: 'unknown' } }, { iso: 'JPN', commands: { sim_swap: 'served', kyc_match: 'served' } }, { iso: 'SK', commands: { sim_swap: 'served', kyc_match: 'served' } },
+    { iso: 'NG', commands: { sim_swap: 'served', kyc_match: 'not_covered' } }, { iso: 'KE', commands: { sim_swap: 'served', kyc_match: 'not_covered' } }, { iso: 'GH', commands: { sim_swap: 'served', kyc_match: 'not_covered' } },
+  ];
+  const readPhoneIntel = () => { try { const raw = window.localStorage.getItem(PHONE_INTEL_KEY); if (raw) return JSON.parse(raw); } catch (e) {} return PHONE_INTEL_DEFAULTS; };
+  const deepSet = (obj, path, value) => { const keys = path.split('.'); const out = { ...obj }; let cur = out; keys.forEach((k, i) => { if (i === keys.length - 1) cur[k] = value; else { cur[k] = { ...(cur[k] || {}) }; cur = cur[k]; } }); return out; };
 
-    const canExpand = !!(step && step.id === 'id-verification');
-    const effectiveExpanded = expanded && canExpand;
-    const width = effectiveExpanded ? WB.PANEL.WIDTH_EXPANDED : WB.PANEL.WIDTH;
+  const PhoneIntelForm = ({ stepId, title, children }) => {
+    const [saved, setSaved] = useState(readPhoneIntel);
+    const [draft, setDraft] = useState(saved);
+    const [pendingApproval, setPendingApproval] = useState(!!saved.pendingApproval);
+    const isDirty = JSON.stringify(draft) !== JSON.stringify(saved);
+    const save = () => {
+      const next = { ...draft, version: (saved.version || 0) + 1, pendingApproval: true, lastChangedBy: 'you@operator.com', lastChangedAt: new Date().toISOString() };
+      try { window.localStorage.setItem(PHONE_INTEL_KEY, JSON.stringify(next)); } catch (e) {}
+      setSaved(next); setDraft(next); setPendingApproval(true);
+    };
+    const api = { watch: (path) => deepGet(draft, path.split('.')), setValue: (path, value) => setDraft((d) => deepSet(d, path, value)) };
+    return (
+      <div className="wb-sp-stack20" style={{ paddingBottom: 32 }}>
+        {stepId ? <PanelHeader stepId={stepId} title={title} /> : null}
+        <div className="wb-sp-stack20" style={{ padding: '0 24px' }}>
+          <MuiAlert severity="info" variant="outlined">Mock mode: changes are kept for this session only (backend not connected).</MuiAlert>
+          {pendingApproval ? <MuiAlert severity="info" variant="outlined" icon={<Iconify icon="ph:hourglass-medium" width={22} />} action={<MuiChip label="pending approval" color="info" variant="soft" />}>{saved.version ? 'Version ' + saved.version + ' was submitted and is awaiting approval. ' : 'Changes were submitted and are awaiting approval. '}A new submission replaces the pending one.</MuiAlert> : null}
+          {typeof children === 'function' ? children(api) : children}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 8 }}>
+            <MuiButton variant="contained" disabled={!isDirty} onClick={save}>Save changes</MuiButton>
+          </div>
+        </div>
+      </div>
+    );
+  };
+  const EnableSwitch = ({ api, name, label, description }) => (
+    <div className="wb-sp-between" style={{ gap: 16 }}>
+      <div style={{ minWidth: 0 }}><div className="wb-sp-body2 wb-sp-semibold">{label}</div>{description ? <div className="wb-sp-caption wb-sp-secondary">{description}</div> : null}</div>
+      <MuiSwitch checked={!!api.watch(name)} onChange={(v) => api.setValue(name, v)} />
+    </div>
+  );
+  const FieldBlock = ({ label, description, children }) => (
+    <div><div className="wb-sp-body2 wb-sp-semibold" style={{ marginBottom: 4 }}>{label}</div>{description ? <div className="wb-sp-caption wb-sp-secondary" style={{ marginBottom: 8 }}>{description}</div> : null}{children}</div>
+  );
+  const BehaviorNote = ({ children }) => <div className="wb-sp-note"><Iconify icon="ph:info" width={16} style={{ marginTop: 2, flexShrink: 0 }} /><span className="wb-sp-caption">{children}</span></div>;
+  const SegmentedField = ({ api, name, options, ariaLabel }) => <MuiToggleGroup segmented value={api.watch(name)} onChange={(v) => api.setValue(name, v)} options={options} ariaLabel={ariaLabel} />;
 
-    useEffect(() => { if (!canExpand && expanded) setExpanded(false); }, [canExpand, expanded]);
+  const PhoneTrustCheckSection = ({ api }) => {
+    const sens = api.watch('simpleBlocks.phoneTrustCheck.sensitivity');
+    const helper = (SENSITIVITY_OPTIONS.find((o) => o.value === sens) || {}).helper;
+    return (
+      <div className="wb-sp-stack20">
+        <EnableSwitch api={api} name="simpleBlocks.phoneTrustCheck.enabled" label="Turn on phone trust check" description="Looks at recent SIM changes and call forwarding before a code is sent." />
+        <FieldBlock label="Sensitivity" description={helper}><SegmentedField api={api} name="simpleBlocks.phoneTrustCheck.sensitivity" options={SENSITIVITY_OPTIONS} ariaLabel="Sensitivity" /></FieldBlock>
+        <FieldBlock label="If it trips"><SegmentedField api={api} name="simpleBlocks.phoneTrustCheck.actionOnTrip" options={ACTION_ON_TRIP_OPTIONS} ariaLabel="Action if it trips" /></FieldBlock>
+      </div>
+    );
+  };
+  const CarrierAgeGateSection = ({ api }) => (
+    <div className="wb-sp-stack20">
+      <EnableSwitch api={api} name="simpleBlocks.carrierAgeGate.enabled" label="Turn on carrier age gate" description="Asks the carrier to confirm the person meets the minimum age." />
+      <FieldBlock label="Minimum age"><SegmentedField api={api} name="simpleBlocks.carrierAgeGate.threshold" options={AGE_THRESHOLD_OPTIONS} ariaLabel="Minimum age" /></FieldBlock>
+      <BehaviorNote>If the carrier cannot confirm age, the person continues to the standard age check.</BehaviorNote>
+    </div>
+  );
+  const PhoneOwnershipMatchSection = ({ api }) => (
+    <div className="wb-sp-stack20">
+      <EnableSwitch api={api} name="simpleBlocks.phoneOwnershipMatch.enabled" label="Turn on phone ownership match" description="Compares the name and date of birth on the phone subscription." />
+      <FieldBlock label="Strictness"><SegmentedField api={api} name="simpleBlocks.phoneOwnershipMatch.strictness" options={STRICTNESS_OPTIONS} ariaLabel="Strictness" /></FieldBlock>
+      <BehaviorNote>Checks the name and date of birth on the phone subscription. If the carrier holds no data, the person continues normally.</BehaviorNote>
+    </div>
+  );
+  const PreOtpGuardSection = ({ api }) => {
+    const [confirmNone, setConfirmNone] = useState(false);
+    const guardEnabled = !!api.watch('preOtpGuard.enabled');
+    const fallback = api.watch('preOtpGuard.fallbackChannel');
+    return (
+      <div className="wb-sp-stack20">
+        <EnableSwitch api={api} name="preOtpGuard.enabled" label="Turn on the pre-code guard" description="Runs carrier checks before a one-time code is sent." />
+        <FieldBlock label="Checks to run">
+          <div className="wb-sp-stack12" style={{ opacity: guardEnabled ? 1 : 0.5, pointerEvents: guardEnabled ? 'auto' : 'none' }}>
+            {PRE_OTP_CHECKS.map((c) => <EnableSwitch key={c.id} api={api} name={'preOtpGuard.checks.' + c.id} label={c.label} />)}
+          </div>
+        </FieldBlock>
+        <div className="wb-sp-row16">
+          <FieldBlock label="Step-up window (hours)"><MuiTextField size="small" type="number" value={api.watch('preOtpGuard.simSwapStepUpHours')} onChange={(v) => api.setValue('preOtpGuard.simSwapStepUpHours', Number(v))} inputProps={{ min: 1, max: 720 }} /></FieldBlock>
+          <FieldBlock label="Flag window (days)"><MuiTextField size="small" type="number" value={api.watch('preOtpGuard.simSwapFlagDays')} onChange={(v) => api.setValue('preOtpGuard.simSwapFlagDays', Number(v))} inputProps={{ min: 1, max: 90 }} /></FieldBlock>
+        </div>
+        <FieldBlock label="Fallback channel">
+          <MuiSelect size="small" value={fallback || ''} options={FALLBACK_CHANNEL_OPTIONS} style={{ maxWidth: 280, width: '100%' }} onChange={(v) => { if (v === 'none') setConfirmNone(true); else api.setValue('preOtpGuard.fallbackChannel', v); }} />
+        </FieldBlock>
+        <MuiDialog open={confirmNone} onClose={() => setConfirmNone(false)} maxWidth="xs" title="Turn off the fallback channel?"
+          actions={<><MuiButton variant="text" onClick={() => setConfirmNone(false)}>Keep current</MuiButton><MuiButton variant="contained" onClick={() => { api.setValue('preOtpGuard.fallbackChannel', 'none'); setConfirmNone(false); }}>Use None</MuiButton></>}>
+          <p className="wb-sp-body1 wb-sp-secondary">With no fallback channel, one-time codes are still sent to the phone even when a recent SIM change is detected.</p>
+        </MuiDialog>
+      </div>
+    );
+  };
+  const CostEstimate = ({ api }) => {
+    const guard = api.watch('preOtpGuard') || {};
+    const count = guard.enabled ? ['simSwap', 'callDivert', 'lineType'].filter((k) => guard.checks && guard.checks[k]).length : 0;
+    return (
+      <div className="wb-sp-neutralbox"><div className="wb-sp-subtitle2">Cost</div><div className="wb-sp-caption wb-sp-secondary" style={{ display: 'block', marginTop: 2 }}>Billing is per served command.</div><div className="wb-sp-body2" style={{ marginTop: 4 }}>Current guard configuration uses up to {count} command{count === 1 ? '' : 's'} per verification.</div></div>
+    );
+  };
+  const CoverageMatrix = () => (
+    <div style={{ overflowX: 'auto' }}>
+      <table className="wb-sp-covtable">
+        <thead><tr><th>Country</th>{COVERAGE_COMMANDS.map((c) => <th key={c.id} style={{ textAlign: 'center' }}>{c.label}</th>)}</tr></thead>
+        <tbody>
+          {MOCK_COVERAGE.map((country) => {
+            const meta = COVERAGE_COUNTRY_META[country.iso];
+            return (
+              <tr key={country.iso}>
+                <td><span className="wb-sp-row8" style={{ alignItems: 'center', fontWeight: 600 }}><FlagIcon code={(meta && meta.flag) || country.iso} size={22} /><span>{(meta && meta.name) || country.iso}</span></span></td>
+                {COVERAGE_COMMANDS.map((c) => { const cfg = COVERAGE_STATES[(country.commands || {})[c.id]] || COVERAGE_STATES.unknown; return <td key={c.id} style={{ textAlign: 'center' }}><MuiChip label={cfg.label} color={cfg.color} variant="soft" className="wb-sp-chip-xs" /></td>; })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className="wb-sp-caption wb-sp-secondary" style={{ marginTop: 8 }}>Coverage varies by country and supplier and can change without notice.</div>
+    </div>
+  );
+  const CarrierIntelligenceTab = () => (
+    <PhoneIntelForm>
+      {(api) => (
+        <>
+          <PreOtpGuardSection api={api} />
+          <CostEstimate api={api} />
+          <MuiDivider><span className="wb-sp-overline">Coverage</span></MuiDivider>
+          <CoverageMatrix />
+        </>
+      )}
+    </PhoneIntelForm>
+  );
+  const PhoneIntelBlock = ({ stepId }) => {
+    const titles = { 'phone-trust-check': 'Phone Trust Check', 'carrier-age-gate': 'Carrier Age Gate', 'phone-ownership-match': 'Phone Ownership Match' };
+    const Section = { 'phone-trust-check': PhoneTrustCheckSection, 'carrier-age-gate': CarrierAgeGateSection, 'phone-ownership-match': PhoneOwnershipMatchSection }[stepId];
+    if (!Section) return null;
+    return <PhoneIntelForm stepId={stepId} title={titles[stepId]}>{(api) => <Section api={api} />}</PhoneIntelForm>;
+  };
 
+  const PhoneVerificationSettings = ({ step, patch }) => {
+    const [tab, setTab] = useState('prompt');
+    const PROMPT_MAX = 60;
+    const value = ((step.propertyGroups || []).flatMap((g) => g.properties || []).find((p) => p.id === 'verification-prompt') || {}).value || '';
+    const update = (next) => patch((s) => ({ ...s, propertyGroups: (s.propertyGroups || []).map((g) => ({ ...g, properties: (g.properties || []).map((p) => (p.id === 'verification-prompt' ? { ...p, value: next } : p)) })) }));
+    return (
+      <div className="wb-sp-stack20" style={{ paddingBottom: 32 }}>
+        <PanelHeader stepId="phone-verification" title="Phone Verification" />
+        <MuiTabs value={tab} onChange={setTab} tabs={[{ value: 'prompt', label: 'Prompt' }, { value: 'carrier', label: 'Carrier intelligence' }]} style={{ padding: '0 24px' }} />
+        <div style={{ display: tab === 'prompt' ? 'block' : 'none' }}>
+          <div className="wb-sp-stack16" style={{ padding: '0 24px' }}>
+            <FieldBlock label="Verification prompt" description="The words the person says on the call.">
+              <MuiTextField fullWidth size="small" value={value} onChange={(v) => update(String(v).slice(0, PROMPT_MAX))} placeholder="Say your full name and today's date" helperText={value.length + '/' + PROMPT_MAX} />
+            </FieldBlock>
+          </div>
+        </div>
+        <div style={{ display: tab === 'carrier' ? 'block' : 'none' }}><CarrierIntelligenceTab /></div>
+      </div>
+    );
+  };
+
+  const StepSettingsPanel = ({ step, actions }) => {
     const key = stepKeyOf(step);
-    const onValue = useCallback((groupId, propId, value) => {
-      if (typeof actions.updatePropertyValue === 'function') actions.updatePropertyValue({ stepKey: key, groupId, propId, value });
-    }, [actions, key]);
-    const onValues = useCallback((groupId, values) => {
-      if (typeof actions.updatePropertyValues === 'function') actions.updatePropertyValues({ stepKey: key, groupId, values });
-    }, [actions, key]);
-    const onWeights = useCallback((groupId, changedId, value) => {
-      if (typeof actions.updateLinkedWeights === 'function') actions.updateLinkedWeights({ stepKey: key, groupId, changedId, value });
-    }, [actions, key]);
+    const stepRef = useRef(step);
+    stepRef.current = step;
+    const patch = useCallback((fn) => actions.patchStep({ stepKey: key, step: fn(stepRef.current) }), [actions, key]);
+    const updatePropertyValue = useCallback((groupId, propId, value) => actions.updatePropertyValue({ stepKey: key, groupId, propId, value }), [actions, key]);
+    const updatePropertyValues = useCallback((groupId, values) => actions.updatePropertyValues({ stepKey: key, groupId, values }), [actions, key]);
 
-    let body;
-    if (!step) {
-      body = (
-        <div className="wb-panel-empty" data-testid="wb-config-empty">
-          <LucideIcon name="settings" size={48} className="wb-muted" />
-          <div className="wb-panel-step">Configure Settings</div>
-          <div className="wb-muted" style={{ whiteSpace: 'pre-line' }}>{'Select a step in the workflow\nto configure how it runs.'}</div>
+    const isESignatureStep = step.id === 'e-signature';
+    const COMPAT = 'e-signature-settings';
+    const TPL_GROUP = 'esign-template';
+    const DOC_GROUP = 'esign-document-setup';
+    const SIG_GROUP = 'esign-signature-method';
+    const [templateOptions, setTemplateOptions] = useState([]);
+    const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+    const [templatesError, setTemplatesError] = useState('');
+    const loadWorkflowTemplates = useCallback(() => {
+      setIsLoadingTemplates(true); setTemplatesError('');
+      window.setTimeout(() => { setTemplateOptions(MOCK_ESIGN_TEMPLATES.map(mapTemplateOption)); setIsLoadingTemplates(false); }, 450);
+    }, []);
+    useEffect(() => { if (isESignatureStep) loadWorkflowTemplates(); }, [isESignatureStep, loadWorkflowTemplates]);
+
+    const selectedTemplateId = String(getPropValue(step, TPL_GROUP, 'template-id') || getPropValue(step, COMPAT, 'template-id') || '');
+    const includeSenderAsSigner = !!getPropValue(step, COMPAT, 'include-sender-as-signer');
+    const selectedTemplateOption = templateOptions.find((o) => o.value === selectedTemplateId) || null;
+    const selectedTemplateSignerCount = Number((selectedTemplateOption && selectedTemplateOption.workflowSignerCount) || getPropValue(step, COMPAT, 'template-signer-count') || 0) || 0;
+
+    const syncWorkflowTemplateSelection = useCallback((templateId, opts) => {
+      const clearManagedState = !!(opts && opts.clearManagedState);
+      const sel = templateOptions.find((o) => o.value === templateId);
+      const signerCount = Number((sel && sel.workflowSignerCount) || 0);
+      const templateName = (sel && sel.label) || '';
+      patch((s) => {
+        const currentSenderRole = getPropValue(s, COMPAT, 'sender-role') || '';
+        return {
+          ...s,
+          propertyGroups: (s.propertyGroups || []).map((group) => {
+            if (group.groupId === TPL_GROUP) return { ...group, properties: group.properties.map((p) => (p.id === 'template-id' ? { ...p, value: templateId } : p)) };
+            if (group.groupId === COMPAT) {
+              return { ...group, properties: group.properties.map((p) => {
+                switch (p.id) {
+                  case 'source-mode': return { ...p, value: 'template' };
+                  case 'template-id': return { ...p, value: templateId };
+                  case 'template-name': return { ...p, value: templateName };
+                  case 'template-signer-count': return { ...p, value: signerCount };
+                  case 'include-sender-as-signer': return { ...p, value: signerCount === 2 };
+                  case 'sender-role': return { ...p, value: signerCount === 2 ? currentSenderRole || 'signer_2' : '' };
+                  case 'workflow-template-managed': return clearManagedState ? { ...p, value: false } : p;
+                  case 'workflow-template-source-signature': return clearManagedState ? { ...p, value: '' } : p;
+                  default: return p;
+                }
+              }) };
+            }
+            return group;
+          }),
+        };
+      });
+    }, [templateOptions, patch]);
+
+    useEffect(() => {
+      if (!isESignatureStep || !selectedTemplateId || !selectedTemplateOption) return;
+      const cur = (gid, pid) => String(getPropValue(step, gid, pid) || '');
+      const nextIncludeSender = selectedTemplateSignerCount === 2;
+      const nextSenderRole = nextIncludeSender ? cur(COMPAT, 'sender-role') || 'signer_2' : '';
+      if (cur(COMPAT, 'template-id') !== selectedTemplateId || cur(TPL_GROUP, 'template-id') !== selectedTemplateId || cur(COMPAT, 'template-name') !== (selectedTemplateOption.label || '') || Number(getPropValue(step, COMPAT, 'template-signer-count') || 0) !== selectedTemplateSignerCount || includeSenderAsSigner !== nextIncludeSender || cur(COMPAT, 'sender-role') !== nextSenderRole) {
+        syncWorkflowTemplateSelection(selectedTemplateId);
+      }
+    }, [isESignatureStep, selectedTemplateId, selectedTemplateOption, selectedTemplateSignerCount, includeSenderAsSigner, step, syncWorkflowTemplateSelection]);
+
+    const clearWorkflowESignUploadedDocuments = () => { const docs = getPropValue(step, DOC_GROUP, 'documents') || {}; (docs.files || []).forEach((f) => { if (f && f.localFileId) esignLocalFiles.delete(f.localFileId); }); updatePropertyValue(DOC_GROUP, 'documents', { files: [] }); };
+    const syncTypedSignature = (allow) => patch((s) => ({ ...s, propertyGroups: (s.propertyGroups || []).map((g) => (g.groupId === COMPAT || g.groupId === SIG_GROUP ? { ...g, properties: g.properties.map((p) => (p.id === 'allow-typed-signature' ? { ...p, value: allow } : p)) } : g)) }));
+    const templateOptionsWithPlaceholder = [{ value: '', label: isLoadingTemplates ? 'Loading templates...' : 'Select a template', disabled: isLoadingTemplates }, ...templateOptions];
+
+    const updateLinkedWeights = (groupId, changedId, newValue) => {
+      const weightIds = ['edge-consistency-weight', 'lighting-coherence-weight', 'compression-artifact-weight'];
+      const otherIds = weightIds.filter((w) => w !== changedId);
+      patch((s) => ({
+        ...s,
+        propertyGroups: (s.propertyGroups || []).map((group) => {
+          if (group.groupId !== groupId) return group;
+          const oldOtherSum = group.properties.filter((p) => otherIds.includes(p.id)).reduce((acc, p) => acc + (p.value || 0), 0);
+          const remaining = 100 - newValue;
+          return { ...group, properties: group.properties.map((p) => {
+            if (p.id === changedId) return { ...p, value: newValue };
+            if (otherIds.includes(p.id)) { const ratio = oldOtherSum > 0 ? p.value / oldOtherSum : 1 / otherIds.length; return { ...p, value: Math.round((remaining * ratio) / 5) * 5 }; }
+            return p;
+          }) };
+        }),
+      }));
+    };
+
+    if (!(step.propertyGroups && step.propertyGroups.length > 0)) {
+      return (
+        <div className="wb-sp-noopts">
+          <StepIcon icon={step.icon || utils.getStepIcon(step.id)} size={48} color="var(--wb-text-disabled)" style={{ marginBottom: 16 }} />
+          <div className="wb-sp-subtitle1 wb-sp-semibold">{stepLabel(step)}</div>
+          <div className="wb-sp-body2 wb-sp-secondary" style={{ marginTop: 8 }}>{t('stepConfigNoOptions', 'There are no configuration options for this service.')}</div>
         </div>
       );
-    } else if (step.id === 'phone-verification') {
-      body = <PhoneVerificationSettings step={step} onValue={onValue} onValues={onValues} onWeights={onWeights} />;
-    } else if (PHONE_INTEL.indexOf(step.id) >= 0) {
-      body = <PhoneIntelBlock step={step} onValue={onValue} onValues={onValues} onWeights={onWeights} />;
-    } else {
-      body = <GenericSettings step={step} onValue={onValue} onValues={onValues} onWeights={onWeights} />;
     }
 
     return (
-      <aside
-        className="wb-panel"
-        data-testid="wb-config-panel"
-        data-expanded={effectiveExpanded ? 'true' : 'false'}
-        style={{ width, transition: 'width 0.25s ease' }}
-      >
-        {canExpand ? (
-          <button
-            type="button"
-            className="wb-panel-expand"
-            data-testid="wb-panel-expand"
-            aria-label={effectiveExpanded ? 'Collapse panel' : 'Expand panel'}
-            onClick={() => setExpanded((v) => !v)}
-          >
-            <LucideIcon name={effectiveExpanded ? 'chevron-right' : 'chevron-left'} size={16} />
-          </button>
+      <div className="wb-sp-stack24" style={{ paddingBottom: 96 }}>
+        <PanelHeader stepId={step.id} title={stepLabel(step)} />
+        <MuiDivider style={{ margin: 0 }} />
+        {stepUpNeedsEscalation(step) ? <MuiAlert severity="warning" variant="outlined" style={{ margin: '0 24px -8px' }}>{tPath(['stepConfig', 'stepUpNeedsEscalation'], 'Step-up only takes effect when an Escalation Type is set below — until then it behaves as Flag.')}</MuiAlert> : null}
+
+        {step.propertyGroups.map((group, groupIdx) => {
+          if (REMOVED.has(group.groupId)) return null;
+          const isAgeGroup = group.groupId === 'age-restriction-settings';
+          const visible = (group.properties || []).filter((p) => p.type !== 'hidden');
+          const ageMode = isAgeGroup ? ((group.properties.find((p) => p.id === 'age-restriction-mode') || {}).value || 'slider') : null;
+          if (group.parentToggle) {
+            const masterGroup = step.propertyGroups.find((g) => (g.properties || []).some((p) => p.id === group.parentToggle));
+            const master = masterGroup && masterGroup.properties.find((p) => p.id === group.parentToggle);
+            if (master && !master.value) return null;
+          }
+          if (!visible.length) return null;
+          return (
+            <div key={group.groupId} className="wb-sp-group" data-testid={'wb-group-' + group.groupId}>
+              {groupIdx > 0 ? <MuiDivider style={{ marginBottom: 8 }} /> : null}
+              <div className="wb-sp-stack4">
+                <div className="wb-sp-between">
+                  <div className="wb-sp-row8" style={{ alignItems: 'center' }}>
+                    {group.groupIcon ? <Iconify icon={group.groupIcon} width={20} color="var(--wb-text-secondary)" /> : null}
+                    <span className="wb-sp-subtitle1">{tGroup(step, group, 'groupName')}</span>
+                  </div>
+                  {isAgeGroup ? (
+                    <MuiToggleGroup value={ageMode} onChange={(m) => { if (m !== null) updatePropertyValue(group.groupId, 'age-restriction-mode', m); }} className="wb-sp-agetoggle" options={[{ value: 'slider', icon: <Iconify icon="uil:slider-h" width={18} /> }, { value: 'country', icon: <Iconify icon="mynaui:globe" width={18} /> }]} />
+                  ) : null}
+                </div>
+                <span className="wb-sp-caption wb-sp-secondary">{tGroup(step, group, 'groupTooltip')}</span>
+              </div>
+
+              {visible.map((prop) => {
+                if (isAgeGroup) {
+                  if (ageMode === 'slider' && prop.type === 'age-restriction-country-category') return null;
+                  if (ageMode === 'country' && prop.type === 'range') return null;
+                }
+                const requirementMet = (() => {
+                  if (!prop.requirement) return true;
+                  if (typeof prop.requirement === 'string') return (group.properties.find((p) => p.id === prop.requirement) || {}).value === true;
+                  if (typeof prop.requirement === 'object' && prop.requirement.id) {
+                    const ref = (group.properties.find((p) => p.id === prop.requirement.id) || {}).value;
+                    if ('notEquals' in prop.requirement) return ref !== prop.requirement.notEquals;
+                    if ('equals' in prop.requirement) return ref === prop.requirement.equals;
+                  }
+                  return true;
+                })();
+                const inverseHidden = prop.requirementInverse && (group.properties.find((p) => p.id === prop.requirementInverse) || {}).value === true;
+                if (inverseHidden) return null;
+                const isESignBoolean = isESignatureStep && group.groupId === COMPAT && prop.id === 'include-sender-as-signer';
+                const isESignSenderRoleSelect = isESignatureStep && group.groupId === COMPAT && prop.id === 'sender-role';
+                const isWorkflowESignTemplateField = isESignatureStep && group.groupId === TPL_GROUP && prop.id === 'template-id';
+                const isTypedSigToggle = isESignatureStep && group.groupId === SIG_GROUP && prop.id === 'allow-typed-signature';
+                const isLocked = !!prop.locked;
+                const isDisabled = isLocked || !!prop.disabled || !requirementMet || (isESignBoolean && selectedTemplateSignerCount !== 2) || (isESignSenderRoleSelect && (!includeSenderAsSigner || selectedTemplateSignerCount !== 2));
+                const boolValue = isDisabled && !isLocked && !isESignSenderRoleSelect && prop.type === 'boolean' ? false : prop.value;
+                if (isESignSenderRoleSelect && !includeSenderAsSigner) return null;
+                const updateValue = (v) => updatePropertyValue(group.groupId, prop.id, v);
+                const label = tProp(step, group, prop);
+
+                return (
+                  <div key={prop.id} style={{ opacity: isDisabled ? 0.5 : 1 }} data-testid={'wb-prop-' + prop.id}>
+                    {prop.type === 'boolean' ? (
+                      <div className="wb-sp-stack8">
+                        <div className="wb-sp-boolrow">
+                          <label className="wb-sp-boollabel">
+                            {prop.flag ? <span className="wb-sp-row8" style={{ alignItems: 'center' }}><FlagIcon code={prop.flag} size={20} round={false} /><span>{label}</span></span> : <span>{label}</span>}
+                          </label>
+                          <MuiSwitch checked={!!boolValue && !isDisabled} disabled={isDisabled} onChange={(v) => { if (isTypedSigToggle) syncTypedSignature(v); else updateValue(v); }} testId={'wb-switch-' + prop.id} />
+                        </div>
+                        {prop.sublabel ? <span className="wb-sp-caption wb-sp-secondary" style={{ marginLeft: 12, marginBottom: 4, lineHeight: 1.4 }}>{tProp(step, group, prop, 'sublabel')}</span> : null}
+                        {isESignBoolean && selectedTemplateSignerCount !== 2 ? <span className="wb-sp-caption wb-sp-secondary" style={{ padding: '0 4px' }}>{selectedTemplateSignerCount === 0 ? t('stepConfigESignSigner2NeededSelect') : selectedTemplateSignerCount === 1 ? t('stepConfigESignSigner1Only') : t('stepConfigESignMax2Signers')}</span> : null}
+                      </div>
+                    ) : null}
+                    {prop.type === 'text' ? <MuiTextField fullWidth size="small" label={label} multiline rows={1} value={prop.value || ''} disabled={isDisabled} onChange={updateValue} /> : null}
+                    {prop.type === 'select' ? (
+                      <MuiSelect fullWidth size="small" label={label} value={prop.value || ''} disabled={isDisabled}
+                        options={((isESignatureStep && group.groupId === COMPAT && prop.id === 'template-id') ? templateOptionsWithPlaceholder : prop.options || []).map((o) => ({ value: o.value, label: tOption(step, group, prop, o), disabled: o.disabled, flagSrc: o.flag ? 'https://hatscripts.github.io/circle-flags/flags/' + String(o.flag).toLowerCase() + '.svg' : undefined, hint: o.hint ? tOption(step, group, prop, o, 'hint') : undefined, cost: o.cost }))}
+                        onChange={(value) => {
+                          if (isESignatureStep && group.groupId === COMPAT && prop.id === 'template-id') {
+                            const sel = templateOptions.find((o) => o.value === value); const signerCount = Number((sel && sel.workflowSignerCount) || 0);
+                            updatePropertyValues(group.groupId, { 'source-mode': 'template', 'template-id': value, 'template-name': (sel && sel.label) || '', 'template-signer-count': signerCount, 'include-sender-as-signer': signerCount === 2, 'sender-role': signerCount === 2 ? getPropValue(step, group.groupId, 'sender-role') || 'signer_2' : '' });
+                            return;
+                          }
+                          updateValue(value);
+                        }} />
+                    ) : null}
+                    {group.groupId === 'deep-age-settings' && prop.id === 'method' && prop.value === 'parent-connect' ? <MuiAlert severity="warning" variant="outlined" style={{ marginTop: 12 }}>{t('stepConfigDeepAgeParentConnectWarning')}</MuiAlert> : null}
+                    {step.id === 'id-verification' && group.groupId === 'fraud-analysis-escalation' && prop.id === 'escalation-type' && prop.value && prop.value !== 'none' ? (
+                      <span className="wb-sp-caption wb-sp-secondary" style={{ display: 'block', marginLeft: 12, marginTop: 8, lineHeight: 1.4 }}>{tPath(['stepConfig', 'id-verification', 'fraud-analysis-escalation', 'extra-charge-warning'], 'Enabling an escalation step may add an additional charge to each session that triggers it.')}</span>
+                    ) : null}
+                    {prop.type === 'object' ? <CustomFormPages prop={prop} isDisabled={isDisabled} updateValue={updateValue} /> : null}
+                    {prop.type === 'doc-upload' ? <DocUploadEditor step={step} group={group} prop={prop} isDisabled={isDisabled} updateValue={updateValue} patch={patch} /> : null}
+                    {prop.type === 'data-extraction' ? <DataExtractionEditor step={step} prop={prop} isDisabled={isDisabled} updateValue={updateValue} /> : null}
+                    {prop.type === 'text-list' ? <TextListEditor prop={prop} isDisabled={isDisabled} updateValue={updateValue} /> : null}
+                    {prop.type === 'multiselect-table' ? (
+                      <div style={{ pointerEvents: isDisabled ? 'none' : 'auto' }}>
+                        <MultiSelectTable
+                          options={(prop.options || []).map((cat) => ({ ...cat, category: tPath(['stepConfig', step.id, group.groupId, prop.id, 'options', cat.id, 'category'], cat.category), description: tPath(['stepConfig', step.id, group.groupId, prop.id, 'options', cat.id, 'description'], cat.description), categoryOptions: (cat.categoryOptions || []).map((o) => ({ ...o, name: tPath(['stepConfig', step.id, group.groupId, prop.id, 'options', cat.id, 'categoryOptions', o.id, 'name'], o.name) })) }))}
+                          categoryLabel={tPath(['stepConfig', step.id, group.groupId, prop.id, 'categoryLabel'], prop.categoryLabel)} optionLabel={tPath(['stepConfig', step.id, group.groupId, prop.id, 'optionLabel'], prop.optionLabel)} values={prop.value || {}} onChange={updateValue} />
+                      </div>
+                    ) : null}
+                    {prop.type === 'country-id-table' ? (
+                      <div style={{ pointerEvents: isDisabled ? 'none' : 'auto' }}>
+                        <div className="wb-sp-stack4" style={{ marginBottom: 12, paddingTop: 12, borderTop: '1px dashed var(--wb-divider)' }}>
+                          <span className="wb-sp-subtitle2">{prop.label}</span>
+                          <span className="wb-sp-caption wb-sp-secondary">No country-specific IDs are accepted until you choose them. Click Edit to select which countries and individual IDs are valid.</span>
+                        </div>
+                        <CountryIdTable options={prop.options || []} value={prop.value || {}} categoryLabel={prop.categoryLabel} onChange={updateValue} />
+                      </div>
+                    ) : null}
+                    {prop.type === 'age-restriction-country-category' ? <AgeRestrictionCountryCategory value={prop.value || []} disabled={isDisabled} onChange={updateValue} onMinimumAgeChange={(minAge) => updatePropertyValue(group.groupId, 'country-category-minimum-age', minAge)} /> : null}
+                    {prop.type === 'slider' ? (
+                      <div className="wb-sp-stack8">
+                        <div className="wb-sp-between">
+                          {prop.label ? (
+                            <span className="wb-sp-row4" style={{ alignItems: 'center' }}>
+                              <span className="wb-sp-body2" style={{ fontWeight: 500 }}>{label}</span>
+                              {step.id === 'id-verification' && group.groupId === 'valid-id-types-settings' && prop.id === 'id-confidence-threshold' ? <span className="wb-tip" data-tip={tPath(['stepConfig', 'id-verification', 'valid-id-types-settings', 'id-confidence-threshold', 'caption'], '')} style={{ cursor: 'help' }}><Iconify icon="eva:info-outline" width={16} color="var(--wb-text-disabled)" /></span> : null}
+                            </span>
+                          ) : <span />}
+                          {prop.unit === '%' ? <span className="wb-sp-caption wb-sp-secondary">{prop.value}%</span> : null}
+                          {prop.unit !== '%' && (prop.step < 1 || prop.showValue) ? <span className="wb-sp-caption wb-sp-secondary">{prop.value}</span> : null}
+                        </div>
+                        <div style={{ pointerEvents: isDisabled ? 'none' : 'auto' }}>
+                          <MuiSlider value={prop.value} min={prop.min} max={prop.max} step={prop.step || 1} marks={prop.marks} disabled={isDisabled} ariaLabel={label}
+                            onChange={(nv) => { if (prop.linkedGroup === 'env-weights') updateLinkedWeights(group.groupId, prop.id, nv); else updateValue(nv); }} />
+                        </div>
+                      </div>
+                    ) : null}
+                    {prop.type === 'questionnaire-template-toggles' ? <QuestionnaireTemplateToggles prop={prop} onUpdate={updateValue} /> : null}
+                    {prop.type === 'esign-template-select' ? (
+                      <div>
+                        <MuiSelect fullWidth size="small" label={label} disabled={isDisabled || isLoadingTemplates}
+                          value={isWorkflowESignTemplateField ? selectedTemplateId : prop.value || ''}
+                          options={(isWorkflowESignTemplateField ? templateOptionsWithPlaceholder : prop.options || []).map((o) => ({ value: o.value, label: tOption(step, group, prop, o), disabled: o.disabled, hint: o.hint ? tOption(step, group, prop, o, 'hint') : undefined }))}
+                          onChange={(value) => {
+                            if (isWorkflowESignTemplateField) {
+                              const docs = getPropValue(step, DOC_GROUP, 'documents') || {};
+                              if (value && Array.isArray(docs.files) && docs.files.filter(Boolean).length > 0) clearWorkflowESignUploadedDocuments();
+                              syncWorkflowTemplateSelection(value, { clearManagedState: true });
+                              return;
+                            }
+                            updateValue(value);
+                          }} />
+                        {templatesError && isWorkflowESignTemplateField ? <span className="wb-sp-caption" style={{ color: 'var(--wb-error)', display: 'block', marginTop: 4 }}>{templatesError}</span> : null}
+                        {!isLoadingTemplates && isWorkflowESignTemplateField && templateOptions.length === 0 ? <span className="wb-sp-caption wb-sp-disabled" style={{ display: 'block', marginTop: 4 }}>{t('stepConfigESignCreateHint')}</span> : null}
+                        {isWorkflowESignTemplateField ? (
+                          <div className="wb-sp-stack12" style={{ marginTop: 12 }}>
+                            <MuiAlert severity="info" variant="outlined">{t('stepConfigESignTemplateInfo')}</MuiAlert>
+                            {selectedTemplateId && selectedTemplateSignerCount === 1 ? <MuiAlert severity="info" variant="soft">{t('stepConfigESignApplicantOnly')}</MuiAlert> : null}
+                            {selectedTemplateId && selectedTemplateSignerCount === 2 ? <MuiAlert severity={includeSenderAsSigner ? 'success' : 'warning'} variant="soft">{includeSenderAsSigner ? t('stepConfigESignSenderAssignRole') : t('stepConfigESignEnableIncludeSender')}</MuiAlert> : null}
+                            {selectedTemplateId && selectedTemplateSignerCount > 2 ? <MuiAlert severity="error" variant="soft">{t('stepConfigESignMax2SignersPerTemplate')}</MuiAlert> : null}
+                            <div className="wb-sp-stack10">
+                              <a className="wb-mbtn wb-mbtn-sm wb-sp-soft wb-sp-soft-primary wb-sp-esign-link" href={ADMIN_CONSOLE + '/e-signature/templates/new?source=workflow-builder&signerCount=1'} target="_blank" rel="noopener noreferrer"><span className="wb-mbtn-start"><Iconify icon="solar:add-circle-bold" width={16} /></span><span>{t('stepConfigESignCreateUploadTemplate', 'Create / Upload Template')}</span></a>
+                              <a className="wb-mbtn wb-mbtn-sm wb-mbtn-outlined wb-sp-esign-link wb-sp-esign-link-outlined" href={ADMIN_CONSOLE + '/e-signature/templates'} target="_blank" rel="noopener noreferrer"><span className="wb-mbtn-start"><Iconify icon="solar:documents-bold" width={16} /></span><span>{t('stepConfigESignManageTemplates', 'Manage Templates')}</span></a>
+                              <MuiButton variant="outlined" className="wb-mbtn-sm wb-sp-esign-link wb-sp-esign-link-refresh" disabled={isLoadingTemplates} loading={isLoadingTemplates} startIcon={isLoadingTemplates ? null : <Iconify icon="solar:refresh-linear" width={16} />} onClick={loadWorkflowTemplates}>{t('stepConfigESignRefreshTemplates', 'Refresh Templates')}</MuiButton>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {prop.type === 'esign-document-setup' ? <ESignDocumentSetup prop={prop} isDisabled={isDisabled} onUpdate={updateValue} /> : null}
+                    {prop.type === 'proofcall-questions' ? <ProofCallQuestions step={step} group={group} prop={prop} updateValue={updateValue} /> : null}
+                    {prop.type === 'education-institution-picker' ? <EducationInstitutionPicker value={prop.value || {}} onUpdate={updateValue} /> : null}
+                    {prop.type === 'country-customize' ? (((group.properties.find((p) => p.id === 'accept-all-countries') || {}).value) ? null : <CountryCustomizeButton value={prop.value || {}} countries={prop.countries || []} onChange={updateValue} />) : null}
+                    {prop.type === 'jurisdiction-picker' ? <JurisdictionPicker label={label} value={prop.value} onChange={updateValue} /> : null}
+                    {prop.type === 'weight-display' ? <WeightDisplay step={step} /> : null}
+                    {prop.type === 'range' ? (
+                      <div className="wb-sp-stack8" style={{ pointerEvents: isDisabled ? 'none' : 'auto' }}>
+                        {prop.label ? <span className="wb-sp-body2" style={{ fontWeight: 500 }}>{label}</span> : null}
+                        {(() => {
+                          const rangeValue = Array.isArray(prop.value) ? prop.value : [(prop.value && prop.value.lower !== undefined ? prop.value.lower : prop.min), (prop.value && prop.value.upper !== undefined ? prop.value.upper : prop.max)];
+                          const lowColor = prop.lowerColor || '#EF4444';
+                          const midColor = prop.middleColor || '#22C55E';
+                          const highColor = prop.upperColor || '#EF4444';
+                          const hasCustom = !!prop.middleColor;
+                          const lowPct = ((rangeValue[0] - prop.min) / (prop.max - prop.min)) * 100;
+                          const highPct = ((rangeValue[1] - prop.min) / (prop.max - prop.min)) * 100;
+                          const rail = hasCustom ? 'linear-gradient(to right, ' + lowColor + ' ' + lowPct + '%, ' + midColor + ' ' + lowPct + '%, ' + midColor + ' ' + highPct + '%, ' + highColor + ' ' + highPct + '%)' : 'linear-gradient(to right, #FF5630 ' + lowPct + '%, ' + midColor + ' ' + lowPct + '%, ' + midColor + ' ' + highPct + '%, #FF5630 ' + highPct + '%)';
+                          const rgba = (hex, a) => { const h = hex.replace('#', ''); const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16); return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')'; };
+                          return (
+                            <>
+                              <MuiRangeSlider value={rangeValue} min={prop.min} max={prop.max} step={1} color={midColor} railBackground={rail} onChange={updateValue} />
+                              <div className="wb-sp-stack8">
+                                <div className="wb-sp-rangerow" style={{ background: rgba(lowColor, 0.1) }}><span className="wb-sp-body2" style={{ color: lowColor, fontWeight: 500 }}>&bull; {prop.lowerLabel ? tProp(step, group, prop, 'lowerLabel') : t('stepConfigRangeTooLow', 'Too low')}</span><MuiChip label={'< ' + rangeValue[0]} variant="paper" /></div>
+                                <div className="wb-sp-rangerow" style={{ background: rgba(midColor, 0.1) }}><span className="wb-sp-body2" style={{ color: midColor, fontWeight: 500 }}>&bull; {prop.middleLabel ? tProp(step, group, prop, 'middleLabel') : t('stepConfigRangeValid', 'Valid')}</span><MuiChip label={rangeValue[0] + ' - ' + rangeValue[1]} variant="paper" /></div>
+                                <div className="wb-sp-rangerow" style={{ background: rgba(highColor, 0.1) }}><span className="wb-sp-body2" style={{ color: highColor, fontWeight: 500 }}>&bull; {prop.upperLabel ? tProp(step, group, prop, 'upperLabel') : t('stepConfigRangeTooHigh', 'Too high')}</span><MuiChip label={'> ' + rangeValue[1]} variant="paper" /></div>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const RightConfigPanel = ({ selectedStep, dimmed, expanded, onExpandedChange }) => {
+    const { actions, selectors } = useWorkflow();
+    const step = selectedStep === undefined ? selectors.selectedStep : selectedStep;
+    const isIdVerification = !!(step && step.id === 'id-verification');
+    const effectiveExpanded = !!expanded && isIdVerification;
+    const isPhoneIntel = !!(step && PHONE_INTEL_BLOCK_IDS.includes(step.id));
+    const isPhoneVerification = !!(step && step.id === 'phone-verification');
+    const key = stepKeyOf(step);
+    const patch = (fn) => actions.patchStep({ stepKey: key, step: fn(step) });
+    return (
+      <aside className="wb-panel wb-sp" data-testid="wb-config-panel" data-expanded={effectiveExpanded ? 'true' : 'false'} style={{ width: effectiveExpanded ? (WB.PANEL && WB.PANEL.WIDTH_EXPANDED) || 600 : (WB.PANEL && WB.PANEL.WIDTH) || 350 }}>
+        {isIdVerification ? (
+          <div className="wb-sp-expand" role="button" tabIndex={0} data-testid="wb-panel-expand" aria-label={effectiveExpanded ? 'Collapse panel' : 'Expand panel'} onClick={() => onExpandedChange && onExpandedChange(!expanded)}>
+            <Iconify icon={effectiveExpanded ? 'eva:chevron-right-fill' : 'eva:chevron-left-fill'} width={18} />
+          </div>
         ) : null}
-        <div className="wb-panel-body">
-          {step ? <StepHeader step={step} /> : null}
-          {body}
+        <div className="wb-sp-body">
+          {step && isPhoneVerification ? <PhoneVerificationSettings step={step} patch={patch} /> : null}
+          {step && isPhoneIntel && !isPhoneVerification ? <PhoneIntelBlock stepId={step.id} /> : null}
+          {step && !isPhoneIntel && !isPhoneVerification ? <StepSettingsPanel key={key} step={step} actions={actions} /> : null}
+          {!step ? (
+            <div className="wb-sp-empty" data-testid="wb-config-empty">
+              <Iconify icon="ph:gear" width={48} color="var(--wb-text-disabled)" style={{ marginBottom: 16 }} />
+              <div className="wb-sp-subtitle1 wb-sp-secondary">{t('builderConfigureSettings', 'Configure settings')}</div>
+              <div className="wb-sp-body2 wb-sp-disabled" style={{ whiteSpace: 'pre-line' }}>{t('builderConfigureSettingsHint', 'Add and select a service to\nconfigure settings')}</div>
+            </div>
+          ) : null}
         </div>
       </aside>
     );
   };
 
-  return { RightConfigPanel };
+  return { RightConfigPanel, StepSettingsPanel };
 };
-
