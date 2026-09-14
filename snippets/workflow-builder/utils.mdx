@@ -277,7 +277,7 @@ export const makeUtils = (deps) => {
   };
 
   const getAvailableServiceData = (availableServices) =>
-    CATALOG.filter((s) => s && !HIDDEN_STEPS.includes(s.id) && !s.advancedOnly && isWorkflowStepAvailable(s.id, availableServices));
+    CATALOG.filter((s) => s && !HIDDEN_STEPS.includes(s.id) && !s.advancedOnly && !isStepGated(s, { whiteLabelConfigured: false }) && isWorkflowStepAvailable(s.id, availableServices));
 
   const groupsOf = (step) => (step && Array.isArray(step.propertyGroups) ? step.propertyGroups : []);
   const propsOf = (group) => (group && Array.isArray(group.properties) ? group.properties : []);

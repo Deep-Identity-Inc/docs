@@ -3,7 +3,7 @@ export const makeApp = ({ WB, WB_CSS, ui, utils, geometry, store, palette, listM
   const { Palette } = palette;
   const { ListCanvas, useListDnd } = listMode;
   const { RightConfigPanel } = configPanel;
-  const { ToastProvider, FeatureLockedDialog, StepIcon, MuiButton, MuiIconButton, MuiTextField, MuiSelect } = ui;
+  const { ToastProvider, StepIcon, MuiButton, MuiIconButton, MuiTextField, MuiSelect } = ui;
   const { DndProvider } = dnd;
   const SaveFlow = (saveDialog && saveDialog.SaveFlow) || (() => null);
   const I18N = WB.I18N || {};
@@ -56,7 +56,6 @@ export const makeApp = ({ WB, WB_CSS, ui, utils, geometry, store, palette, listM
 
     const [fromScratch, setFromScratch] = useState(fromScratchProp);
     const [panelExpanded, setPanelExpanded] = useState(false);
-    const [gatedService, setGatedService] = useState(null);
     const [saveRequest, setSaveRequest] = useState(null);
     const [headerH, setHeaderH] = useState(112);
 
@@ -73,13 +72,12 @@ export const makeApp = ({ WB, WB_CSS, ui, utils, geometry, store, palette, listM
       return () => window.removeEventListener('resize', measure);
     }, []);
 
-    const handleGatedAttempt = useCallback((service) => setGatedService(service || null), []);
 
     const selectedStep = selectors.selectedStep;
     const isIdVerification = !!(selectedStep && selectedStep.id === 'id-verification');
     const rightPanelWidth = panelExpanded && isIdVerification ? PANEL_W_EXP : PANEL_W;
 
-    const listDnd = useListDnd({ onGated: handleGatedAttempt });
+    const listDnd = useListDnd({});
 
     const costLabel = '$' + Number(selectors.cost || 0).toFixed(2) + ' / session';
 
@@ -89,7 +87,8 @@ export const makeApp = ({ WB, WB_CSS, ui, utils, geometry, store, palette, listM
       actions.applyTemplate({ templateId });
     };
 
-    const templateOptions = (WB.WORKFLOW_TEMPLATES || []).map((template) => ({
+    const availableIds = useMemo(() => new Set(utils.getAvailableServiceData().map((s) => s.id)), []);
+    const templateOptions = (WB.WORKFLOW_TEMPLATES || []).filter((template) => (template.steps || []).every((st) => availableIds.has(typeof st === 'string' ? st : st && st.id))).map((template) => ({
       value: template.id,
       label: (I18N.templates && I18N.templates[template.id] && I18N.templates[template.id].label) || template.label,
       icon: <StepIcon icon={template.icon} size={20} color={templateIconColor(template)} />,
@@ -180,7 +179,6 @@ export const makeApp = ({ WB, WB_CSS, ui, utils, geometry, store, palette, listM
         <Styles />
         {header}
         {body}
-        <FeatureLockedDialog open={!!gatedService} onClose={() => setGatedService(null)} feature={gatedService ? gatedService.label : ''} />
         <SaveFlow request={saveRequest} onDone={() => setSaveRequest(null)} />
       </div>
     );
