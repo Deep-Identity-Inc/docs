@@ -1,0 +1,59 @@
+---
+title: Overview
+description: Passive phone checks answered directly by the applicant's mobile carrier
+---
+
+The carrier intelligence checks ask the applicant's **mobile carrier** about a phone number and return a normalized answer. Nothing is sent to the applicant, there is no code to type, and the carrier never discloses the underlying record. Each check is a synchronous `POST /v1/screening/*` call that needs only an API key and a phone number.
+
+| Check | Endpoint | Question answered |
+| --- | --- | --- |
+| [Phone Trust](/api-reference/carrier-intelligence/phone-trust) | `POST /v1/screening/phone-trust` | Has the SIM been swapped recently, or is call forwarding active? |
+| [Carrier Age Gate](/api-reference/carrier-intelligence/carrier-age-gate) | `POST /v1/screening/carrier-age-gate` | Is the account holder 18 or over? |
+| [Phone Ownership](/api-reference/carrier-intelligence/phone-ownership) | `POST /v1/screening/phone-ownership` | Does this name (and optional address / date of birth) match the subscriber on record? |
+
+All three checks:
+
+- Are **standalone** by default. No workflow or session is required; each call is filed as a completed silent-screening record for audit and billed on success.
+- Can be **attached to a verification session** by passing `sessionId`. The result is then written to that session's `analysis_data.phone_checks` and shows up on [Retrieve Session](/api-reference/sessions/retrieve-session#carrier-intelligence-data) and in the console's Carrier Intelligence tab. In this mode `phone` (and, for ownership, the name) default to the session applicant.
+- Are also available as **passive workflow steps** that run automatically when a session is created, so the same results appear under `phone_checks` whether the check ran at creation or on demand.
+- Accept `application/json` bodies using **camelCase** field names, like the other screening endpoints.
+- Are **passive**. They never block, fail, or change a session's status on their own. Read the outcome and act on it in your own flow.
+
+## Outcomes and coverage
+
+Every check reports `NO_DATA` when the carrier holds no servable data for the number. This is the normal answer where the carrier route is not yet live, and it never counts against the applicant: Phone Trust does not trip, Carrier Age Gate does not fail, Phone Ownership does not mismatch.
+
+| Region | Coverage today |
+| --- | --- |
+| United Kingdom | Live data on all three checks |
+| United States, Canada | `NO_DATA` on all three checks |
+
+Treat `NO_DATA` as "no signal", not as a failure, and design your flow so it degrades gracefully.
+
+## Billing
+
+- **Standalone** calls are billed once per successful call, per check.
+- **Session-attached** calls are billed once per successful call, per check, unless the session's workflow already contains the matching passive step. In that case the check was billed at session creation and the on-demand call is free.
+- A `503` from the carrier provider is never billed. Retry later.
+
+## Errors
+
+| Status | Meaning |
+| --- | --- |
+| `400` | The body failed validation, or `sessionId` was given without `phone` and the session applicant has no phone on file (or, for ownership, no usable name) |
+| `401` | API key is invalid |
+| `402` | Insufficient balance for this check |
+| `403` | API key is missing, or the session belongs to another organization |
+| `404` | `sessionId` does not exist |
+| `503` | The carrier data provider is temporarily unavailable. Nothing was billed |
+
+## Example: gate a login on a phone number
+
+```bash
+curl -X POST https://api.deepidv.com/v1/screening/phone-trust \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{ "phone": "+447425604497", "sensitivity": "medium" }'
+```
+
+If `tripped` is `true`, route the user to a step-up before granting access. If every signal is `NO_DATA`, proceed as normal.

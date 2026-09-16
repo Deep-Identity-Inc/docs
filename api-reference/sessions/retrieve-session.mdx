@@ -221,6 +221,7 @@ Reason codes:
 | `vpn_detection_data` | object | iGaming VPN / anonymizer result |
 | `injection_detection_data` | object | iGaming injection detection result |
 | `anti_cheat_data` | object | iGaming anti-cheat result — richer than the redacted API response |
+| `phone_checks` | object | Carrier intelligence results (see [Carrier intelligence data](#carrier-intelligence-data)) |
 
 ### iGaming check data
 
@@ -234,6 +235,18 @@ Each [iGaming check](/api-reference/igaming/overview) writes its result here whe
 | `anti_cheat_data` | `verdict`, `action`, `dedup_action`, `matched_session_id`, `similarity`, `face_id`, `threshold`, `links[]` (`session_id`, `score`, `matched_signals`), `multi_account`, `multi_account_action`, `link_sensitivity`, `timestamp`. On `SELF_EXCLUSION`: `verdict`, `action`, `reason` (`identity` or `face`), `matched_session_id`, `threshold`, `timestamp` |
 
 A check whose action was `block` also sets the session's top-level `status` to `FAILED`.
+
+### Carrier intelligence data
+
+`phone_checks` holds the results of the carrier checks, whether they ran as passive workflow steps at session creation or were attached to the session by a standalone call with `sessionId` ([Phone Trust](/api-reference/carrier-intelligence/phone-trust), [Carrier Age Gate](/api-reference/carrier-intelligence/carrier-age-gate), [Phone Ownership](/api-reference/carrier-intelligence/phone-ownership)). Keys are snake_case in this response.
+
+| Object | Fields |
+| --- | --- |
+| `phone_checks.trust` | `status_message`, `sim_swapped_risk` (`NO_DATA` / `LOW_RISK` / `MEDIUM_RISK` / `HIGH_RISK`), `sim_changed_date`, `forwarding_risk` (`NO_DATA` / `NO_RISK` / `HIGH_RISK`), `sensitivity`, `action` (`flag` or `step_up`), `tripped`, `trip_reasons[]`, `checked_at`, `correlation_id`. `sms_verification` is present when the applicant-facing SMS code step ran |
+| `phone_checks.age_gate` | `status_message`, `age_verified` (`VERIFIED` / `NOT_VERIFIED` / `NO_DATA`), `carrier_threshold`, `required_age`, `outcome` (`PASS` / `FAIL` / `NO_DATA`), `action`, `tripped`, `trip_reasons[]`, `checked_at`, `correlation_id` |
+| `phone_checks.ownership` | `status_message`, `name_score`, `first_name_score`, `last_name_score`, `dob_score`, `address_score`, `outcome` (`MATCH` / `NO_MATCH` / `NO_DATA`), `strictness`, `threshold`, `action`, `challenge_source` (`invite-name` for the passive step, `api` for a standalone call), `tripped`, `trip_reasons[]`, `checked_at`, `correlation_id` |
+
+Carrier checks never change the session's top-level `status` on their own.
 
 ### `id_analysis_data` object
 

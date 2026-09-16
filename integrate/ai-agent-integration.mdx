@@ -196,6 +196,16 @@ Current workflow step IDs exposed through MCP:
 | `run_adverse_media_check`  | Queue an asynchronous adverse-media screening and return a `job_id`.         |
 | `get_async_job`            | Poll an async adverse-media job until it reaches `ready` or `failed`.        |
 
+### Carrier Intelligence
+
+Passive checks answered by the applicant's mobile carrier. Each takes a `phone` (or a `session_id` to attach the result to an existing verification session) and returns synchronously. See the [Carrier Intelligence API reference](/api-reference/carrier-intelligence/overview).
+
+| Tool                         | What it does                                                                        |
+| ---------------------------- | ----------------------------------------------------------------------------------- |
+| `run_phone_trust_check`      | Ask the carrier for recent SIM-swap and call-forwarding signals; returns `tripped`. |
+| `run_carrier_age_gate_check` | Ask the carrier whether the account holder is 18 or over.                           |
+| `run_phone_ownership_check`  | Ask the carrier how well a name (and optional address / DOB) matches the subscriber on record. |
+
 <Note>
   Some tools are read-only, while others are state-changing and may consume
   credits or trigger applicant delivery flows. Your client may ask for

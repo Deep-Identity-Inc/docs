@@ -17,6 +17,318 @@ components:
       description: Per-organization API key. Issued via the deepidv dashboard. Send on
         every request.
   schemas:
+    PhoneTrustRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+          pattern: ^\+?[0-9()\-\s.]{7,20}$
+          example: "+447425604497"
+          description: Mobile number in E.164 format (+ and country code). Bare 10-digit
+            North American numbers are treated as +1. Required unless
+            `sessionId` is given, in which case it defaults to the session
+            applicant's phone.
+        sessionId:
+          type: string
+          format: uuid
+          description: Optional verification session to attach the result to. The result
+            is written to that session's `analysis_data.phone_checks.trust`
+            instead of creating a standalone screening record. The session must
+            belong to your organization. A repeat call overwrites the previous
+            result (any SMS verification state on it is preserved).
+        sensitivity:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+          description: What trips the check. low = a SIM swap in the last 72 hours only;
+            medium (default) and high = also a SIM swap in the last 30 days or
+            active unconditional call forwarding.
+        email:
+          type: string
+          example: applicant@example.com
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 255
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 255
+    PhoneTrustResponse:
+      type: object
+      properties:
+        tripped:
+          type: boolean
+          description: True when the signals below exceed the chosen sensitivity. The
+            check never blocks; act on this in your own flow.
+        tripReasons:
+          type: array
+          items:
+            type: string
+            enum:
+              - SIM_SWAP_HIGH_RISK
+              - SIM_SWAP_MEDIUM_RISK
+              - CALL_FORWARDING_ACTIVE
+        simSwappedRisk:
+          type: string
+          enum:
+            - NO_DATA
+            - LOW_RISK
+            - MEDIUM_RISK
+            - HIGH_RISK
+          description: HIGH_RISK = SIM changed in the last 72 hours; MEDIUM_RISK = in the
+            last 30 days; LOW_RISK = no recent change; NO_DATA = the carrier
+            holds no servable data (normal where the carrier route is not live).
+        simChangedDate:
+          type: string
+          format: date-time
+          description: When the carrier last recorded a SIM change, if reported.
+        forwardingRisk:
+          type: string
+          enum:
+            - NO_DATA
+            - NO_RISK
+            - HIGH_RISK
+          description: HIGH_RISK = unconditional call forwarding is active on the line.
+        sensitivity:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+        statusMessage:
+          type: string
+          example: Response from one supplier
+        checkedAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          description: Provider correlation id — quote it in support requests.
+        sessionId:
+          type: string
+          description: Present when the result was attached to a verification session via
+            `sessionId`.
+      required:
+        - tripped
+        - tripReasons
+        - simSwappedRisk
+        - forwardingRisk
+        - sensitivity
+        - statusMessage
+        - checkedAt
+      description: "Result of a phone trust check: recent SIM-swap and call-forwarding
+        signals from the mobile carrier, with a `tripped` verdict for the
+        requested sensitivity. Passive — no SMS code is sent."
+    CarrierAgeGateRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+          pattern: ^\+?[0-9()\-\s.]{7,20}$
+          example: "+447425604497"
+          description: Mobile number in E.164 format (+ and country code). Bare 10-digit
+            North American numbers are treated as +1. Required unless
+            `sessionId` is given, in which case it defaults to the session
+            applicant's phone.
+        sessionId:
+          type: string
+          format: uuid
+          description: Optional verification session to attach the result to. The result
+            is written to that session's `analysis_data.phone_checks.age_gate`
+            (visible on GET /v1/verification/sessions/{id}) instead of creating
+            a standalone screening record. The session must belong to your
+            organization. A repeat call overwrites the previous result.
+        email:
+          type: string
+          example: applicant@example.com
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 255
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 255
+    CarrierAgeGateResponse:
+      type: object
+      properties:
+        outcome:
+          type: string
+          enum:
+            - PASS
+            - FAIL
+            - NO_DATA
+          description: PASS = the carrier confirms the subscriber is at least
+            `requiredAge`; FAIL = the carrier reports they are under it; NO_DATA
+            = the carrier holds no servable data for this number (normal where
+            the carrier route is not live).
+        ageVerified:
+          type: string
+          enum:
+            - VERIFIED
+            - NOT_VERIFIED
+            - NO_DATA
+        requiredAge:
+          type: integer
+          example: 18
+        carrierThreshold:
+          type: integer
+          description: The age threshold the carrier applied, when reported.
+        statusMessage:
+          type: string
+          example: Response from one supplier
+        checkedAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          description: Provider correlation id — quote it in support requests.
+        sessionId:
+          type: string
+          description: Present when the result was attached to a verification session via
+            `sessionId`.
+      required:
+        - outcome
+        - ageVerified
+        - requiredAge
+        - statusMessage
+        - checkedAt
+      description: Result of a carrier age gate check. The mobile carrier confirms
+        whether the subscriber is over the legal age threshold (18 on all
+        current routes) without disclosing the actual age.
+    PhoneOwnershipRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+          pattern: ^\+?[0-9()\-\s.]{7,20}$
+          example: "+447425604497"
+          description: Mobile number in E.164 format (+ and country code). Bare 10-digit
+            North American numbers are treated as +1. Required unless
+            `sessionId` is given, in which case it defaults to the session
+            applicant's phone.
+        sessionId:
+          type: string
+          format: uuid
+          description: Optional verification session to attach the result to. The result
+            is written to that session's `analysis_data.phone_checks.ownership`
+            instead of creating a standalone screening record. The session must
+            belong to your organization. A repeat call overwrites the previous
+            result.
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: John
+          description: Name to match against the carrier's subscriber record. At least one
+            of firstName/lastName is required unless `sessionId` is given (then
+            the session applicant's name is used).
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: Smith
+        address:
+          type: string
+          minLength: 1
+          maxLength: 500
+          example: 23 Omnia Street, London, EC1A 1BB, GB
+          description: Optional free-text address. When given, `addressScore` in the
+            response is meaningful; it never changes the outcome.
+        dateOfBirth:
+          type: string
+          format: date
+          example: 1990-01-15
+          description: Optional date of birth (YYYY-MM-DD). Reported as `dobScore`; never
+            changes the outcome.
+        email:
+          type: string
+          example: applicant@example.com
+        strictness:
+          type: string
+          enum:
+            - relaxed
+            - medium
+            - strict
+          description: "Minimum carrier name score to count as a MATCH: relaxed 50, medium
+            70 (default), strict 90."
+    PhoneOwnershipResponse:
+      type: object
+      properties:
+        outcome:
+          type: string
+          enum:
+            - MATCH
+            - NO_MATCH
+            - NO_DATA
+          description: MATCH = carrier name score ≥ threshold; NO_MATCH = below it;
+            NO_DATA = the carrier holds no servable subscriber data for this
+            number (normal where the carrier route is not live).
+        nameScore:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        firstNameScore:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        lastNameScore:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        dobScore:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        addressScore:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        strictness:
+          type: string
+          enum:
+            - relaxed
+            - medium
+            - strict
+        threshold:
+          type: integer
+          example: 70
+        statusMessage:
+          type: string
+          example: Response from one supplier
+        checkedAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          description: Provider correlation id — quote it in support requests.
+        sessionId:
+          type: string
+          description: Present when the result was attached to a verification session via
+            `sessionId`.
+      required:
+        - outcome
+        - strictness
+        - threshold
+        - statusMessage
+        - checkedAt
+      description: Result of a phone ownership match. The mobile carrier scores how
+        well the supplied name (and optional address / date of birth) matches
+        the subscriber on record, without disclosing the record itself. Only the
+        name score decides the outcome.
     AdverseMediaResponse:
       type: object
       properties:
@@ -3648,6 +3960,226 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "500":
           description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/screening/phone-trust:
+    post:
+      tags:
+        - Screening
+      summary: Run a phone trust check
+      description: "Asks the subscriber's mobile carrier for account-takeover signals
+        on a phone number — a recent SIM swap and active unconditional call
+        forwarding — and returns synchronously with a `tripped` verdict for the
+        requested `sensitivity` (low = SIM swap in the last 72 hours only;
+        medium, the default, and high = also a SIM swap in the last 30 days or
+        active call forwarding). This is passive: no SMS code is sent to the
+        subscriber and the check never blocks anything on its own. NO_DATA on a
+        signal means the carrier holds no servable data for that number — the
+        normal answer where the carrier route is not yet live, e.g. US and
+        Canada today; UK numbers return real data. By default the check is filed
+        as a completed silent-screening session for audit and billed on success.
+        Pass `sessionId` to attach the result to an existing verification
+        session instead — it is written to that session's
+        `analysis_data.phone_checks.trust` (any SMS verification state already
+        there is preserved), `phone` defaults to the session applicant's number,
+        and no second charge is taken when the session's workflow already
+        includes the phone trust step."
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhoneTrustRequest"
+      responses:
+        "200":
+          description: Phone trust check result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhoneTrustResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: The carrier data provider is temporarily unavailable. Nothing was
+            billed; retry later.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/screening/carrier-age-gate:
+    post:
+      tags:
+        - Screening
+      summary: Run a carrier age gate check
+      description: "Asks the subscriber's mobile carrier whether the holder of a phone
+        number is over the legal age threshold (18 on all current routes) and
+        returns synchronously. `outcome` is PASS (carrier confirms 18+), FAIL
+        (carrier reports under 18) or NO_DATA (the carrier holds no servable
+        data for this number — the normal answer where the carrier route is not
+        yet live, e.g. US and Canada today; UK numbers return real data). The
+        actual age is never disclosed. No workflow or session is required: by
+        default the check is filed as a completed silent-screening session for
+        audit and billed on success. Pass `sessionId` to attach the result to an
+        existing verification session instead — it is written to that session's
+        `analysis_data.phone_checks.age_gate`, `phone` defaults to the session
+        applicant's number, and no second charge is taken when the session's
+        workflow already includes the carrier age gate step."
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CarrierAgeGateRequest"
+      responses:
+        "200":
+          description: Carrier age gate result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CarrierAgeGateResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: The carrier data provider is temporarily unavailable. Nothing was
+            billed; retry later.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/screening/phone-ownership:
+    post:
+      tags:
+        - Screening
+      summary: Run a phone ownership match
+      description: Asks the subscriber's mobile carrier how well a name (and
+        optionally an address and date of birth) matches the account holder on
+        record for a phone number, and returns synchronously. `outcome` is MATCH
+        (carrier name score at or above the strictness threshold — relaxed 50 /
+        medium 70 / strict 90), NO_MATCH (below it) or NO_DATA (the carrier
+        holds no servable subscriber data for this number — the normal answer
+        where the carrier route is not yet live, e.g. US and Canada today; UK
+        numbers return real data). Address and date-of-birth scores are
+        informational and never change the outcome. The subscriber record itself
+        is never disclosed. By default the check is filed as a completed
+        silent-screening session for audit and billed on success. Pass
+        `sessionId` to attach the result to an existing verification session
+        instead — it is written to that session's
+        `analysis_data.phone_checks.ownership`, `phone` and the name default to
+        the session applicant, and no second charge is taken when the session's
+        workflow already includes the phone ownership step.
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhoneOwnershipRequest"
+      responses:
+        "200":
+          description: Phone ownership match result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhoneOwnershipResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: The carrier data provider is temporarily unavailable. Nothing was
+            billed; retry later.
           content:
             application/json:
               schema:

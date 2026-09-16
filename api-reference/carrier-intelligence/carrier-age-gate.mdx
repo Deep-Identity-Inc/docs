@@ -1,0 +1,146 @@
+---
+title: Carrier Age Gate
+description: Confirm with the mobile carrier that a phone number's account holder is 18 or over
+api: POST /v1/screening/carrier-age-gate
+---
+
+```
+POST /v1/screening/carrier-age-gate
+```
+
+Asks the subscriber's mobile carrier whether the account holder of a phone number is over the legal age threshold and returns synchronously. The threshold is set by the carrier and is 18 on all current routes. The actual age is never disclosed.
+
+<Note>
+Carrier coverage varies by country. Where the carrier route is not live the outcome is `NO_DATA`. UK numbers return live data today; US and Canadian numbers return `NO_DATA`.
+</Note>
+
+## Request
+
+### Headers
+
+| Header         | Required | Description        |
+| -------------- | -------- | ------------------ |
+| `x-api-key`    | Yes      | Your API key       |
+| `Content-Type` | Yes      | `application/json` |
+
+### Body parameters
+
+| Parameter   | Type   | Required | Description |
+| ----------- | ------ | -------- | ----------- |
+| `phone`     | string | Yes\*    | Mobile number in E.164 format (`+` and country code). Bare 10-digit North American numbers are treated as `+1`. |
+| `sessionId` | string | No       | Attach the result to an existing verification session instead of creating a standalone screening record. See [Attaching to a session](#attaching-to-a-session). |
+| `email`     | string | No       | Applicant email for the screening record. A placeholder is synthesized when omitted. |
+| `firstName` | string | No       | Applicant first name for the screening record (1–255 chars). |
+| `lastName`  | string | No       | Applicant last name for the screening record (1–255 chars). |
+
+\* Required unless `sessionId` is given, in which case it defaults to the session applicant's phone.
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.deepidv.com/v1/screening/carrier-age-gate \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "phone": "+447425604497"
+  }'
+```
+
+```javascript Node.js
+const response = await fetch("https://api.deepidv.com/v1/screening/carrier-age-gate", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "x-api-key": "YOUR_API_KEY",
+  },
+  body: JSON.stringify({
+    phone: "+447425604497",
+  }),
+});
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://api.deepidv.com/v1/screening/carrier-age-gate",
+    headers={
+        "Content-Type": "application/json",
+        "x-api-key": "YOUR_API_KEY",
+    },
+    json={
+        "phone": "+447425604497",
+    },
+)
+```
+
+</CodeGroup>
+
+## Response
+
+### 200 — Success
+
+| Field              | Type    | Description |
+| ------------------ | ------- | ----------- |
+| `outcome`          | string  | `PASS` (carrier confirms at least `requiredAge`), `FAIL` (carrier reports under it) or `NO_DATA` (carrier holds no servable data for this number) |
+| `ageVerified`      | string  | `VERIFIED`, `NOT_VERIFIED` or `NO_DATA` |
+| `requiredAge`      | integer | The age the outcome is measured against. Always `18` today |
+| `carrierThreshold` | integer | The threshold the carrier applied, when reported |
+| `statusMessage`    | string  | Carrier status text |
+| `checkedAt`        | string  | ISO 8601 timestamp of the check |
+| `correlationId`    | string  | Provider correlation id. Quote it in support requests |
+| `sessionId`        | string  | Present when the result was attached to a verification session |
+
+### Error responses
+
+| Status                    | Description |
+| ------------------------- | ----------- |
+| `400 Bad Request`         | Request body failed schema validation, or `sessionId` was given without `phone` and the session applicant has no phone on file |
+| `401 Unauthorized`        | API key is invalid |
+| `402 Payment Required`    | Insufficient balance for this check |
+| `403 Forbidden`           | API key is missing, or the session belongs to another organization |
+| `404 Not Found`           | `sessionId` does not exist |
+| `503 Service Unavailable` | The carrier data provider is temporarily unavailable. Nothing was billed; retry later |
+| `500 Server Error`        | Unexpected server error |
+
+<ResponseExample>
+```json 200
+{
+  "outcome": "PASS",
+  "ageVerified": "VERIFIED",
+  "requiredAge": 18,
+  "carrierThreshold": 18,
+  "statusMessage": "Response from one supplier",
+  "checkedAt": "2026-09-16T15:54:51.509Z",
+  "correlationId": "b86b6f5e-e12c-42d6-8b64-ebb7e7456a2b"
+}
+```
+
+```json 200 (no data)
+{
+  "outcome": "NO_DATA",
+  "ageVerified": "NO_DATA",
+  "requiredAge": 18,
+  "statusMessage": "No commands available in country [CA]",
+  "checkedAt": "2026-09-16T15:55:00.280Z",
+  "correlationId": "8a7ce168-11cc-4a7f-a6e8-661a96dc37c2"
+}
+```
+</ResponseExample>
+
+## Attaching to a session
+
+By default each call is filed as a completed **silent-screening** session for audit and billed on success. Pass `sessionId` to attach the result to one of your existing verification sessions instead:
+
+- The result is written to that session's `analysis_data.phone_checks.age_gate`, visible on [Retrieve Session](/api-reference/sessions/retrieve-session) and in the console's Carrier Intelligence tab.
+- `phone` may be omitted; it defaults to the session applicant's phone.
+- A repeat call overwrites the previous result.
+- If the session's workflow already contains the Carrier Age Gate step, no second charge is taken because the passive step billed at session creation.
+
+## Related
+
+- [Phone Trust](/api-reference/carrier-intelligence/phone-trust)
+- [Phone Ownership](/api-reference/carrier-intelligence/phone-ownership)
