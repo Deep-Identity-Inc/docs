@@ -115,6 +115,15 @@
             ]
           },
           {
+            "group": "Carrier Intelligence",
+            "pages": [
+              "api-reference/carrier-intelligence/overview",
+              "api-reference/carrier-intelligence/phone-trust",
+              "api-reference/carrier-intelligence/carrier-age-gate",
+              "api-reference/carrier-intelligence/phone-ownership"
+            ]
+          },
+          {
             "group": "Async Jobs",
             "pages": ["api-reference/async-jobs/get-async-job"]
           },
