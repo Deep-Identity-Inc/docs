@@ -1,0 +1,129 @@
+---
+title: Workflow Runner overview
+description: Run verification workflows from your own application without the hosted applicant UI
+---
+
+The Workflow Runner is the headless execution API for workflows created with [Create Workflow](/api-reference/workflows/create-workflow). Your application renders each step, collects the required input, submits it, and decides when to poll or continue.
+
+Use the Runner when you need to keep the applicant inside your own mobile or web experience. Use the hosted [Create Session](/api-reference/sessions/create-session) flow when DeepIDV should render the workflow, send invitations, and return a `session_url`.
+
+| Capability | Workflow Runner | Hosted session |
+|---|---|---|
+| Applicant UI | Your application | DeepIDV Verify |
+| Session endpoint | `POST /v1/workflows/{workflow_id}/sessions` | `POST /v1/sessions` |
+| Step execution | Submit each step through the API | Handled by DeepIDV Verify |
+| Resume after interruption | Read the Runner state and continue | Reopen the hosted session URL |
+| E-signature | Not supported | Supported |
+
+<Warning>
+  Keep your `x-api-key` on a trusted server. Do not call the Runner directly from browser or mobile code with a long-lived API key. Your backend should authenticate your client and proxy the required operations.
+</Warning>
+
+## Endpoint map
+
+| Order | Endpoint | Purpose |
+|---|---|---|
+| 1 | [`POST /v1/workflows`](/api-reference/workflows/create-workflow) | Create the reusable workflow definition |
+| 2 | [`POST /v1/workflows/{workflow_id}/sessions`](/api-reference/workflow-runner/create-workflow-session) | Create one headless run and receive the ordered steps and requirements |
+| Optional | [`POST /v1/sessions/{session_id}/workflow/start`](/api-reference/workflow-runner/start-workflow) | Validate an unstarted session before the first submission |
+| Any time | [`GET /v1/sessions/{session_id}/workflow`](/api-reference/workflow-runner/get-workflow-state) | Read or resume the current execution state |
+| As needed | [`POST /v1/sessions/{session_id}/uploads`](/api-reference/workflow-runner/create-session-uploads) | Mint session-scoped upload URLs for ID and selfie captures |
+| Repeat | [`POST /v1/sessions/{session_id}/steps/{step_id}`](/api-reference/workflow-runner/submit-workflow-step) | Submit the current step's data or action |
+| After completion | [`GET /v1/sessions/{id}`](/api-reference/sessions/retrieve-session) | Retrieve the complete verification record and analysis results |
+
+## Execution loop
+
+1. Create a headless workflow session and store its `session_id`.
+2. Read `steps[current_step]` and render the fields described by `requirements`.
+3. Upload required media, if any, and submit the current `step_id`.
+4. Inspect `step_status` and `current_step` in the response.
+5. If the step is still `IN_PROGRESS`, follow its next action or poll after the returned requirement's suggested interval.
+6. If `current_step` advances, render the next step. When it becomes `null`, the run has finished or the session is terminal.
+
+<Info>
+  Steps must be submitted in order. Do not calculate the next step locally: always use `current_step` from the latest response or from Get Workflow State.
+</Info>
+
+## Execution patterns
+
+| Pattern | What your client submits | Examples |
+|---|---|---|
+| `client-submit` | Applicant data or session-owned upload keys | `ID_VERIFICATION`, `CREDIT_CHECK`, `CUSTOM_FORM` |
+| `server-auto` | An empty JSON object; the server reads session data | `PHONE_TRUST_CHECK`, `PHONE_OWNERSHIP_MATCH`, `AI_BANK_STATEMENT_ANALYSIS` |
+| `multi-phase` | `action: start`, then one or more `action: complete` calls | `FACE_LIVENESS`, `PHONE_VERIFICATION`, `PROOFCALL` |
+| `presentation` | Consent or acknowledgement collected by your UI | `CONSENT`, `WHITE_LABEL` |
+
+The session's `requirements` object is authoritative. Workflow configuration can change required fields, upload slots, prerequisites, and the actions available for a step.
+
+## Minimal end-to-end example
+
+This example runs a workflow containing a server-side phone check followed by applicant consent. Replace the placeholder IDs with values returned by the preceding calls.
+
+### 1. Create the workflow
+
+```bash
+curl -X POST https://api.deepidv.com/v1/workflows \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Phone trust and consent",
+    "steps": [
+      { "id": "PHONE_TRUST_CHECK" },
+      { "id": "CONSENT" }
+    ]
+  }'
+```
+
+### 2. Create a headless session
+
+```bash
+curl -X POST https://api.deepidv.com/v1/workflows/WORKFLOW_ID/sessions \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "first_name": "Jane",
+    "last_name": "Doe",
+    "email": "jane.doe@example.com",
+    "phone": "+14155552671",
+    "external_id": "customer-123"
+  }'
+```
+
+The response starts with `current_step: 0`. The first step's requirements show that the phone and identity are read from the session.
+
+### 3. Run the server-auto step
+
+```bash
+curl -X POST https://api.deepidv.com/v1/sessions/SESSION_ID/steps/PHONE_TRUST_CHECK \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+On completion, the response advances `current_step` to `1` and includes a `phone_trust_check` result object.
+
+### 4. Submit consent
+
+```bash
+curl -X POST https://api.deepidv.com/v1/sessions/SESSION_ID/steps/CONSENT \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "accepted": true,
+    "legal_name": "Jane Doe"
+  }'
+```
+
+A completed run returns `current_step: null` and `session_progress: "COMPLETED"`. Retrieve the session record to consume the final results.
+
+## Resume and retry safely
+
+- Call Get Workflow State whenever local state may be stale, such as after an app restart or network timeout.
+- A `409` with a `*_RESULT_NOT_READY` reason means the asynchronous operation is still running. Wait for the step's `poll_interval_seconds`, then submit `action: complete` again.
+- A completed blocking check can return `200` with a non-null `failure_reason`. Use the returned `attempts_remaining` and `current_step`; do not treat every `200` as a pass.
+- A submission timeout is ambiguous. Read the workflow state before retrying so you do not submit a step that has already advanced.
+- Stop submitting when `current_step` is `null` or the session has a terminal status.
+
+## Supported scope
+
+The Runner supports 25 production workflow steps. `E_SIGNATURE` can be created for hosted workflows but cannot be executed headlessly. Repeated step IDs and advanced branching workflows are not supported.

@@ -7,6 +7,7 @@ const saveDialogSource = fs.readFileSync('snippets/workflow-builder/save-dialog.
 const openapiSource = fs.readFileSync('assets/openapi.yaml', 'utf8');
 const createWorkflowReferenceSource = fs.readFileSync('api-reference/workflows/create-workflow.mdx', 'utf8');
 const runnerReferenceSource = fs.readFileSync('api-reference/workflow-runner/create-workflow-session.mdx', 'utf8');
+const runnerOverviewSource = fs.readFileSync('api-reference/workflow-runner/overview.mdx', 'utf8');
 
 const contractEntries = [...contractSource.matchAll(/'([^']+)': \{ apiId: '([A-Z_]+)' \}/g)];
 const builderIds = contractEntries.map((match) => match[1]);
@@ -125,6 +126,39 @@ const missingRunnerIds = runnerIds.filter((id) => !runnerStepIds.includes(id));
 const extraRunnerIds = runnerStepIds.filter((id) => !runnerIds.includes(id));
 if (missingRunnerIds.length || extraRunnerIds.length) {
   throw new Error(`Builder/Runner drift. Missing from spec: ${missingRunnerIds.join(', ') || 'none'}. Extra in spec: ${extraRunnerIds.join(', ') || 'none'}.`);
+}
+
+const runnerEndpointDocs = [
+  ['POST /v1/workflows/{workflow_id}/sessions', 'api-reference/workflow-runner/create-workflow-session.mdx'],
+  ['GET /v1/sessions/{session_id}/workflow', 'api-reference/workflow-runner/get-workflow-state.mdx'],
+  ['POST /v1/sessions/{session_id}/workflow/start', 'api-reference/workflow-runner/start-workflow.mdx'],
+  ['POST /v1/sessions/{session_id}/uploads', 'api-reference/workflow-runner/create-session-uploads.mdx'],
+  ['POST /v1/sessions/{session_id}/steps/{step_id}', 'api-reference/workflow-runner/submit-workflow-step.mdx'],
+];
+for (const [endpoint, file] of runnerEndpointDocs) {
+  if (!fs.readFileSync(file, 'utf8').includes(`api: ${endpoint}`)) {
+    throw new Error(`Missing Workflow Runner endpoint reference for ${endpoint}`);
+  }
+  if (!runnerOverviewSource.includes(`\`${endpoint}\``)) {
+    throw new Error(`Workflow Runner overview is missing ${endpoint}`);
+  }
+}
+
+const requirementsStart = openapiSource.indexOf('    WorkflowStepRequirements:');
+const requirementsEnd = openapiSource.indexOf('    IdVerificationRequirements:', requirementsStart);
+const requirementsSource = openapiSource.slice(requirementsStart, requirementsEnd);
+for (const hiddenRequirement of ['IpCheckRequirements', 'InjectionDetectionRequirements', 'AntiCheatRequirements']) {
+  if (requirementsSource.includes(hiddenRequirement)) {
+    throw new Error(`${hiddenRequirement} must remain outside the public Runner requirements union`);
+  }
+}
+const submitResponseStart = openapiSource.indexOf('    SubmitWorkflowStepResponse:');
+const submitResponseEnd = openapiSource.indexOf('    FaceLivenessStartResult:', submitResponseStart);
+const submitResponseSource = openapiSource.slice(submitResponseStart, submitResponseEnd);
+for (const resultKey of ['phone_verification:', 'proof_call:']) {
+  if (!submitResponseSource.includes(resultKey)) {
+    throw new Error(`Workflow Runner response schema is missing ${resultKey}`);
+  }
 }
 
 for (const deferred of [

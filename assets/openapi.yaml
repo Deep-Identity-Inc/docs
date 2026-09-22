@@ -2561,9 +2561,6 @@ components:
         - $ref: "#/components/schemas/FaceLivenessRequirements"
         - $ref: "#/components/schemas/AgeEstimationRequirements"
         - $ref: "#/components/schemas/ScreeningRequirements"
-        - $ref: "#/components/schemas/IpCheckRequirements"
-        - $ref: "#/components/schemas/InjectionDetectionRequirements"
-        - $ref: "#/components/schemas/AntiCheatRequirements"
         - $ref: "#/components/schemas/SessionPhoneScreeningRequirements"
         - $ref: "#/components/schemas/PhoneVerificationRequirements"
         - $ref: "#/components/schemas/ProofCallRequirements"
@@ -2695,52 +2692,6 @@ components:
                 - complete
       required:
         - identity_fields
-        - optional_fields
-    IpCheckRequirements:
-      type: object
-      properties:
-        input_fields:
-          type: array
-          prefixItems:
-            - type: string
-              enum:
-                - ip_address
-      required:
-        - input_fields
-    InjectionDetectionRequirements:
-      type: object
-      properties:
-        signal_fields:
-          type: array
-          prefixItems:
-            - type: string
-              enum:
-                - device_integrity
-            - type: string
-              enum:
-                - media_source
-            - type: string
-              enum:
-                - frame_timing
-      required:
-        - signal_fields
-    AntiCheatRequirements:
-      type: object
-      properties:
-        input_fields:
-          type: array
-          prefixItems:
-            - type: string
-              enum:
-                - image
-        optional_fields:
-          type: array
-          prefixItems:
-            - type: string
-              enum:
-                - device_fingerprint
-      required:
-        - input_fields
         - optional_fields
     SessionPhoneScreeningRequirements:
       type: object
@@ -3217,6 +3168,66 @@ components:
             - status
             - documents_received
           description: KYB-only accepted-data acknowledgement.
+        phone_verification:
+          type: object
+          properties:
+            status:
+              type: string
+              description: Normalized call state, such as pending, in-progress, or completed.
+            passed:
+              type: boolean
+              description: Present after completion; true when the spoken phrase matched.
+            reused:
+              type: boolean
+              description: Present on start; true when an existing in-progress call was
+                reused.
+          required:
+            - status
+          description: PHONE_VERIFICATION-only call state. Start returns the operation
+            state; complete adds pass/fail.
+        proof_call:
+          type: object
+          properties:
+            status:
+              type: string
+            operation_id:
+              type: string
+              description: Opaque ProofCall operation id returned by the start action.
+            verdict:
+              type: string
+              enum:
+                - pass
+                - threshold
+                - fail
+            references:
+              type: array
+              items:
+                type: object
+                properties:
+                  referenceIndex:
+                    type: integer
+                    minimum: 0
+                  answeredQuestions:
+                    type: integer
+                    minimum: 0
+                  totalQuestions:
+                    type: integer
+                    minimum: 0
+                  verdict:
+                    type: string
+                    enum:
+                      - pass
+                      - threshold
+                      - fail
+                required:
+                  - referenceIndex
+                  - answeredQuestions
+                  - totalQuestions
+                  - verdict
+          required:
+            - status
+          description: PROOFCALL-only state. Start returns an operation id; complete
+            returns the overall and per-reference verdicts.
       required:
         - step_id
         - step_status

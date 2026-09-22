@@ -151,6 +151,45 @@ The examples below show two representative requirement shapes. For every other s
 | `challenge_type` | string | The liveness challenge method to run, e.g. `FaceMovementChallenge` |
 | `confidence_threshold` | number | Minimum liveness confidence score (0-100) required to pass |
 
+#### Server-auto phone requirements
+
+`PHONE_TRUST_CHECK`, `CARRIER_AGE_GATE`, and `PHONE_OWNERSHIP_MATCH` return the session fields they consume and an empty `submission_fields` array. Submit `{}` when one of these steps becomes current.
+
+```json
+{
+  "session_fields": ["phone", "first_name", "last_name"],
+  "submission_fields": []
+}
+```
+
+#### PHONE_VERIFICATION requirements
+
+```json
+{
+  "actions": ["start", "complete"],
+  "session_fields": ["phone"],
+  "asynchronous": true,
+  "poll_interval_seconds": 5
+}
+```
+
+Call `start` once to place the verification call. Then call `complete` after at least `poll_interval_seconds`; a `409` with `PHONE_VERIFICATION_RESULT_NOT_READY` means you should continue polling.
+
+#### PROOFCALL requirements
+
+```json
+{
+  "actions": ["start", "complete"],
+  "input_fields": ["references"],
+  "minimum_references": 1,
+  "maximum_references": 3,
+  "asynchronous": true,
+  "poll_interval_seconds": 30
+}
+```
+
+Supply the references with the `start` action. Subsequent `complete` submissions do not repeat them.
+
 ### Error responses
 
 | Status | Description |
@@ -198,6 +237,38 @@ The examples below show two representative requirement shapes. For every other s
       "requirements": {
         "challenge_type": "FaceMovementChallenge",
         "confidence_threshold": 70
+      }
+    }
+  ],
+  "current_step": 0
+}
+```
+
+```json 200 — Asynchronous call workflow
+{
+  "session_id": "80e801af-991b-425c-96fc-f5e07d794253",
+  "expires_at": "2026-09-09T14:00:00.000Z",
+  "steps": [
+    {
+      "step_id": "PHONE_VERIFICATION",
+      "status": "PENDING",
+      "requirements": {
+        "actions": ["start", "complete"],
+        "session_fields": ["phone"],
+        "asynchronous": true,
+        "poll_interval_seconds": 5
+      }
+    },
+    {
+      "step_id": "PROOFCALL",
+      "status": "PENDING",
+      "requirements": {
+        "actions": ["start", "complete"],
+        "input_fields": ["references"],
+        "minimum_references": 1,
+        "maximum_references": 3,
+        "asynchronous": true,
+        "poll_interval_seconds": 30
       }
     }
   ],
