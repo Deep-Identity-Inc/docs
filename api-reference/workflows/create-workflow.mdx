@@ -10,7 +10,11 @@ POST /v1/workflows
 
 Creates a new workflow for your organization. Workflows define the ordered sequence of verification steps that applicants must complete.
 
-Currently supported steps: `ID_VERIFICATION`, `FACE_LIVENESS`, `AGE_ESTIMATION`, `PEP_SANCTIONS`, `ADVERSE_MEDIA`, `IP_JURISDICTION`, `VPN_DETECTION`, `INJECTION_DETECTION`, `ANTI_CHEAT`.
+Use the [Workflow Builder](/workflow-builder) to arrange and configure a standard linear workflow, then copy, download, or send the generated request. The builder uses the same step identifiers and configuration fields as this endpoint.
+
+<Note>
+  A workflow contains 1–10 unique steps. Repeated step IDs and advanced branching workflows are not supported. Passport NFC Scanner, E-signature, and Crypto Wallet Screening are not part of the OpenAPI contract yet.
+</Note>
 
 ## Request
 
@@ -35,17 +39,39 @@ Currently supported steps: `ID_VERIFICATION`, `FACE_LIVENESS`, `AGE_ESTIMATION`,
 |---------|-------------|
 | `ID_VERIFICATION` | Government ID scanning and validation |
 | `FACE_LIVENESS` | Active anti-spoofing liveness detection |
+| `FACE_LIVENESS_CONSENT_SETTINGS` | Collect consent before face-liveness capture |
 | `AGE_ESTIMATION` | Biometric age estimation |
+| `DEEPFAKE_DETECTION` | Guided media capture and synthetic-media risk analysis |
+| `DEEP_AGE` | Additional age assurance using a configured challenge method |
+| `ADDRESS_VERIFICATION` | Knowledge-based address verification |
+| `BACKGROUND_CHECK` | Canadian background screening |
+| `CREDIT_CHECK` | Canadian consumer credit screening |
+| `KYB` | Business verification and screening |
+| `TITLE_SEARCH` | US property title search |
 | `PEP_SANCTIONS` | Politically exposed persons & sanctions screening |
 | `ADVERSE_MEDIA` | Negative press and media mention detection |
 | `IP_JURISDICTION` | iGaming: block/allow by the applicant's resolved country + datacenter-IP handling |
 | `VPN_DETECTION` | iGaming: detect VPN / Tor / datacenter (anonymizer) connections |
 | `INJECTION_DETECTION` | iGaming: detect injected media, virtual cameras, and emulators |
 | `ANTI_CHEAT` | iGaming: biometric duplicate detection, multi-accounting linkage, and self-exclusion |
+| `CUSTOM_PROMPT` | Present one or more custom applicant prompts |
+| `CONSENT` | Present consent text and optionally require a signature |
+| `BANK_STATEMENT_UPLOAD` | Collect bank statements and configure analysis types |
+| `AI_BANK_STATEMENT_ANALYSIS` | Analyze a previously collected bank statement |
+| `DOCUMENT_UPLOAD` | Collect configured documents and optional extracted fields |
+| `CUSTOM_FORM` | Collect custom or questionnaire-template fields |
+| `WHITE_LABEL` | Apply the organization's hosted-flow branding |
+| `PHONE_TRUST_CHECK` | Screen carrier trust signals such as recent SIM changes |
+| `CARRIER_AGE_GATE` | Ask the carrier to confirm the applicant meets the age threshold |
+| `PHONE_OWNERSHIP_MATCH` | Compare applicant details with the carrier subscriber record |
+| `PHONE_VERIFICATION` | Verify a spoken phrase during a phone call |
+| `PROOFCALL` | Call supplied references and collect configured answers |
 
 ### Step Configuration
 
-Each step accepts optional configuration. If omitted, sensible defaults are applied.
+Each step accepts the configuration object shown in the generated request schema. If you omit optional fields, the API applies the same defaults as the standard Backoffice builder. The sections below call out common configurations; use the OpenAPI schema on this page as the exhaustive field reference.
+
+The API also validates cross-step requirements. For example, `AI_BANK_STATEMENT_ANALYSIS` requires an earlier `BANK_STATEMENT_UPLOAD` step, and `BACKGROUND_CHECK`, `CREDIT_CHECK`, and `TITLE_SEARCH` require an earlier `ID_VERIFICATION` step. The [Workflow Builder](/workflow-builder) adds coupled prerequisites automatically.
 
 #### ID_VERIFICATION config
 

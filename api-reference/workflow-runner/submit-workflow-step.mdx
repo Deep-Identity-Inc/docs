@@ -8,7 +8,7 @@ api: POST /v1/sessions/{session_id}/steps/{step_id}
 POST /v1/sessions/{session_id}/steps/{step_id}
 ```
 
-Submits the data for one workflow step and executes it synchronously. The request body's shape is **config-driven** — it depends on both `step_id` and the settings configured on that step within the workflow — see [Step submission schemas](#step-submission-schemas) below.
+Submits an action or data for one workflow step. The request body's shape is **config-driven** — it depends on `step_id`, its current phase, and the settings configured on the workflow. Asynchronous and multi-phase steps can return an in-progress state instead of completing synchronously.
 
 Steps must be submitted **in order**: the `step_id` in the URL must match the session's `current_step` (as returned by [Create Workflow Session](/api-reference/workflow-runner/create-workflow-session) or [Get Workflow State](/api-reference/workflow-runner/get-workflow-state)), and that step must be `PENDING` or `IN_PROGRESS`.
 
@@ -25,11 +25,13 @@ Steps must be submitted **in order**: the `step_id` in the URL must match the se
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `session_id` | string (uuid) | Yes | The session to submit a step for |
-| `step_id` | string | Yes | `ID_VERIFICATION` or `FACE_LIVENESS` — must match the session's current step |
+| `step_id` | string | Yes | A supported workflow step ID — must match the session's current step |
 
 ### Body parameters
 
-The request body depends on `step_id`:
+The generated OpenAPI request schema lists every supported step submission. Use the current step's `requirements` from [Create Workflow Session](/api-reference/workflow-runner/create-workflow-session) or [Get Workflow State](/api-reference/workflow-runner/get-workflow-state) to select the correct body.
+
+The hand-written examples below cover two representative capture flows:
 
 | `step_id` | Body schema |
 |---|---|
@@ -187,9 +189,9 @@ The response is a common envelope for both step types; FACE_LIVENESS additionall
 
 | Field | Type | Present when | Description |
 |---|---|---|---|
-| `step_id` | string | always | `ID_VERIFICATION` or `FACE_LIVENESS` |
+| `step_id` | string | always | The submitted workflow step ID |
 | `step_status` | string | always | `PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, or `SKIPPED` |
-| `failure_reason` | string \| null | always | Reason the step failed this attempt, or `null`. See [ID_VERIFICATION failure reasons](#id_verification-failure-reasons) and [FACE_LIVENESS failure reasons](#face_liveness-failure-reasons) |
+| `failure_reason` | string \| null | always | Step-specific reason the attempt failed, or `null`. The sections below list the ID verification and face-liveness values |
 | `current_step` | integer \| null | always | 0-based index of the next step to submit. `null` once the run has finished |
 | `attempts_remaining` | number \| null | always | Session-wide failure budget remaining. `null` when the workflow has no failure limit configured |
 | `session_status` | string | always | Session status: `PENDING`, `SUBMITTED`, `VERIFIED`, `REJECTED`, `VOIDED`, `EXPIRED`, or `FAILED` |
@@ -255,7 +257,7 @@ The response is a common envelope for both step types; FACE_LIVENESS additionall
 | `400` | Invalid `session_id`/`step_id` path parameters, the request body fails the step's schema, or an upload key in the body doesn't belong to this session |
 | `401` | Invalid or missing API key |
 | `403` | The session belongs to a different organization |
-| `404` | Session not found, `step_id` isn't `ID_VERIFICATION`/`FACE_LIVENESS`, the step isn't part of this session's workflow, or no workflow execution state exists for this session |
+| `404` | Session or step not found, the step isn't part of this session's workflow, or no workflow execution state exists for this session |
 | `409` | The session is terminal, the step is out of order or not in a submittable state, a concurrent submission conflict occurred, or (`FACE_LIVENESS` only) `complete` was called before `start` or before the result was ready |
 | `429` | Too many requests |
 | `501` | This step type isn't runnable through the API yet |

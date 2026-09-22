@@ -24,7 +24,16 @@ export const WB_LOCAL = {
     'custom-prompt',
   ],
 
-  HIDDEN_STEP_IDS: ['crypto-wallet-screening', 'phone-trust-check', 'carrier-age-gate', 'phone-ownership-match', 'e-signature'],
+  HIDDEN_STEP_IDS: [
+    'passport-nfc-scanner',
+    'crypto-wallet-screening',
+    'vpn-check',
+    'ip-geo-check',
+    'criminal-background-check',
+    'vulnerable-sector-check',
+    'financial-crime-check',
+    'education-confirmation',
+  ],
 
   STEP_COST_OVERRIDES: { 'deepfake-detection': 0.6, 'e-signature': 0.25 },
 
@@ -45,14 +54,44 @@ export const WB_LOCAL = {
   },
 
   IS_DEV: false,
+
+  OPENAPI_PROPERTY_GROUPS: {
+    'phone-trust-check': [{
+      groupId: 'phone-trust-settings',
+      groupName: 'Phone trust settings',
+      properties: [
+        { id: 'sensitivity', label: 'Sensitivity', type: 'select', options: [{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }], value: 'medium' },
+        { id: 'action-on-trip', label: 'Action on match', type: 'select', options: [{ value: 'flag', label: 'Flag' }, { value: 'step_up', label: 'Step up' }], value: 'flag' },
+      ],
+    }],
+    'carrier-age-gate': [{
+      groupId: 'carrier-age-settings',
+      groupName: 'Carrier age settings',
+      properties: [
+        { id: 'minimum-age', label: 'Minimum age', type: 'select', options: [{ value: 18, label: '18' }], value: 18 },
+        { id: 'action-on-trip', label: 'Action when age cannot be confirmed', type: 'select', options: [{ value: 'flag', label: 'Flag' }, { value: 'step_up', label: 'Step up' }], value: 'flag' },
+      ],
+    }],
+    'phone-ownership-match': [{
+      groupId: 'phone-ownership-settings',
+      groupName: 'Phone ownership settings',
+      properties: [
+        { id: 'strictness', label: 'Strictness', type: 'select', options: [{ value: 'relaxed', label: 'Relaxed' }, { value: 'medium', label: 'Medium' }, { value: 'strict', label: 'Strict' }], value: 'medium' },
+        { id: 'action-on-trip', label: 'Action on mismatch', type: 'select', options: [{ value: 'flag', label: 'Flag' }, { value: 'step_up', label: 'Step up' }], value: 'flag' },
+      ],
+    }],
+  },
 };
 
-export const makeWB = (generated) => {
+export const makeWB = (generated, localConfig) => {
   const g = generated || {};
+  const local = localConfig || {};
+  const propertyGroups = local.OPENAPI_PROPERTY_GROUPS || {};
   const stepUp = (list) => (Array.isArray(list) ? list : []);
+  const workflowSteps = stepUp(g.WORKFLOW_STEPS_OPTIONS).map((step) => propertyGroups[step.id] ? { ...step, propertyGroups: propertyGroups[step.id] } : step);
   return {
-    ...WB_LOCAL,
-    WORKFLOW_STEPS_OPTIONS: stepUp(g.WORKFLOW_STEPS_OPTIONS),
+    ...local,
+    WORKFLOW_STEPS_OPTIONS: workflowSteps,
     WORKFLOW_STEPS_DISABLED: g.WORKFLOW_STEPS_DISABLED || {},
     WORKFLOW_MIN_STEPS: g.WORKFLOW_MIN_STEPS || 1,
     BOTTOM_PINNED_STEPS: stepUp(g.BOTTOM_PINNED_STEP_IDS),
@@ -83,7 +122,7 @@ export const makeWB = (generated) => {
       MAX_SIGNERS: g.ESIGN_MAX_SIGNERS || 15,
     },
     PROOFCALL_QUESTION_TEMPLATES: g.PROOFCALL_QUESTION_TEMPLATES || {},
-    CANVAS: { ...WB_LOCAL.CANVAS_EXTRA, ...(g.CANVAS || {}) },
+    CANVAS: { ...(local.CANVAS_EXTRA || {}), ...(g.CANVAS || {}) },
     WORKFLOW_TEMPLATES: stepUp(g.WORKFLOW_TEMPLATES),
     WORKFLOW_TEMPLATE_COLORS: g.WORKFLOW_TEMPLATE_COLORS || {},
     QUESTIONNAIRE_TEMPLATES: g.QUESTIONNAIRE_TEMPLATES || {},
@@ -96,6 +135,9 @@ export const makeWB = (generated) => {
     JURISDICTIONS: stepUp(g.JURISDICTIONS),
     COUNTRY_ID_TYPES_OPTIONS: stepUp(g.COUNTRY_ID_TYPES_OPTIONS),
     COUNTRY_ID_TYPES_DEFAULT_VALUE: g.COUNTRY_ID_TYPES_DEFAULT_VALUE || {},
+    OPENAPI_WORKFLOW_STEPS: g.OPENAPI_WORKFLOW_STEPS || {},
+    OPENAPI_WORKFLOW_STEP_IDS: stepUp(g.OPENAPI_WORKFLOW_STEP_IDS),
+    WORKFLOW_RUNNER_STEP_IDS: stepUp(g.WORKFLOW_RUNNER_STEP_IDS),
     I18N: g.I18N_EN || {},
   };
 };

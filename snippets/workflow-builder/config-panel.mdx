@@ -5,7 +5,7 @@ export const makeConfigPanel = ({ WB, utils, store, ui, mui }) => {
   const I18N = WB.I18N || {};
   const REMOVED = new Set(WB.REMOVED_PROPERTY_GROUPS || ['id-classification-settings']);
   const STEP_UP_GUARD_STEPS = WB.STEP_UP_GUARD_STEPS || ['ip-jurisdiction', 'vpn-detection', 'injection-detection'];
-  const PHONE_INTEL_BLOCK_IDS = ['phone-trust-check', 'carrier-age-gate', 'phone-ownership-match'];
+  const PHONE_INTEL_BLOCK_IDS = [];
   const CUSTOM_FORM_FIELD_TYPES = WB.CUSTOM_FORM_FIELD_TYPES || [];
   const CUSTOM_FORM_FIELD_TYPE_DEFAULT = WB.CUSTOM_FORM_FIELD_TYPE_DEFAULT || 'short-text';
   const CUSTOM_FORM_MAX_OPTIONS = WB.MAX_OPTIONS || 10;
@@ -1274,6 +1274,7 @@ export const makeConfigPanel = ({ WB, utils, store, ui, mui }) => {
 
         {step.propertyGroups.map((group, groupIdx) => {
           if (REMOVED.has(group.groupId)) return null;
+          if (isESignatureStep && group.groupId === DOC_GROUP) return null;
           const isAgeGroup = group.groupId === 'age-restriction-settings';
           const visible = (group.properties || []).filter((p) => p.type !== 'hidden');
           const ageMode = isAgeGroup ? ((group.properties.find((p) => p.id === 'age-restriction-mode') || {}).value || 'slider') : null;

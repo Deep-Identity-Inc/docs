@@ -67,22 +67,14 @@ export const makeSaveDialog = ({ WB, utils, store, ui, mui }) => {
         const documentsValue = getPropValue('esign-document-setup', 'documents') || {};
         const files = Array.isArray(documentsValue.files) ? documentsValue.files.filter(Boolean) : [];
         const hasTemplate = !!(templateId && String(templateId).trim() !== '');
-        if ((!templateId || String(templateId).trim() === '') && files.length === 0) errors.push('Step "' + step.label + '": select an existing DeepSign template or upload at least one PDF in Document Setup before saving');
-        if (hasTemplate && files.length > 0) errors.push('Step "' + step.label + '": choose either a DeepSign template or uploaded workflow documents, not both');
+        if (!hasTemplate) errors.push('Step "' + step.label + '": select an existing DeepSign template before saving');
+        if (files.length > 0) errors.push('Step "' + step.label + '": uploaded workflow documents are not supported by the public API; use an existing DeepSign template');
         if (templateId) {
           if (!Number.isFinite(templateSignerCount) || templateSignerCount < 1) errors.push('Step "' + step.label + '" (E-Signature Internal Settings): selected DeepSign template is missing signer metadata');
           else if (templateSignerCount > 2) errors.push('Step "' + step.label + '" (E-Signature Internal Settings): workflow e-sign supports a maximum of 2 signer roles per template');
           else if (templateSignerCount === 1 && includeSenderAsSigner) errors.push('Step "' + step.label + '" (E-Signature Internal Settings): sender signing requires a DeepSign template with 2 signer roles');
           else if (templateSignerCount === 2 && !includeSenderAsSigner) errors.push('Step "' + step.label + '" (E-Signature Internal Settings): templates with 2 signer roles require "Include sender as signer" to be enabled');
           else if (templateSignerCount === 2 && includeSenderAsSigner && !senderRole) errors.push('Step "' + step.label + '" (E-Signature Internal Settings): Sender assigned to is required when the sender is included as a signer');
-        }
-        if (!hasTemplate && files.length > 0) {
-          if (files.length > 25) errors.push('Step "' + step.label + '" (Document Setup): workflow e-sign supports a maximum of 25 uploaded documents');
-          const invalid = files.find((f) => { const name = String(f.name || ''); const type = String(f.type || ''); return type && type !== 'application/pdf' && !/\.pdf$/i.test(name); });
-          if (invalid) errors.push('Step "' + step.label + '" (Document Setup): workflow e-sign document setup currently supports PDF documents only');
-          const allFields = files.flatMap((f) => (Array.isArray(f.fields) ? f.fields : []));
-          if (allFields.length === 0) errors.push('Step "' + step.label + '" (Document Setup): add at least one applicant field before saving');
-          else if (!allFields.some((f) => f && f.role !== 'sender')) errors.push('Step "' + step.label + '" (Document Setup): at least one field must be assigned to the applicant');
         }
       }
       const hasEnabledQuestionnaireTemplate = step.propertyGroups.some((g) => (g.properties || []).some((p) => p.type === 'questionnaire-template-toggles' && p.value && typeof p.value === 'object' && Object.values(p.value).some((tpl) => tpl && tpl.enabled === true)));
@@ -157,73 +149,208 @@ export const makeSaveDialog = ({ WB, utils, store, ui, mui }) => {
         });
       });
     });
+    const unsupported = actualSteps.filter((step) => !PUBLIC_STEP_IDS[step.id]);
+    if (unsupported.length) errors.push('This workflow contains steps that the OpenAPI does not support: ' + unsupported.map(stepLabel).join(', ') + '. Remove them before generating a request.');
+    if (actualSteps.length > 10) errors.push('The OpenAPI accepts at most 10 workflow steps. Remove ' + (actualSteps.length - 10) + ' step(s) before generating a request.');
+    const seenApiIds = new Set();
+    actualSteps.forEach((step) => {
+      const apiId = PUBLIC_STEP_IDS[step.id];
+      if (apiId && seenApiIds.has(apiId)) errors.push('The OpenAPI does not allow repeated steps. Remove the duplicate ' + stepLabel(step) + ' step.');
+      if (apiId) seenApiIds.add(apiId);
+    });
     return errors;
   };
 
-  const PUBLIC_STEP_IDS = {
-    'id-verification': 'ID_VERIFICATION', 'face-liveness': 'FACE_LIVENESS', 'age-estimation': 'AGE_ESTIMATION', 'pep-sanctions': 'PEP_SANCTIONS', 'adverse-media': 'ADVERSE_MEDIA',
-    'ip-jurisdiction': 'IP_JURISDICTION', 'vpn-detection': 'VPN_DETECTION', 'injection-detection': 'INJECTION_DETECTION', 'anti-cheat': 'ANTI_CHEAT',
-  };
-  const ALLOWED_KEYS = {
-    ID_VERIFICATION: ['minimum_age', 'maximum_age', 'expiry_date_years', 'require_secondary_id', 'require_tertiary_id', 'face_front_photo_only', 'require_front_only', 'enable_fraud_analysis', 'escalation_type', 'escalation_risk_threshold'],
-    FACE_LIVENESS: ['confidence_threshold'],
-    AGE_ESTIMATION: ['minimum_age'],
-    PEP_SANCTIONS: [], ADVERSE_MEDIA: [],
-    IP_JURISDICTION: ['allowed_jurisdictions', 'blocked_jurisdictions', 'out_of_jurisdiction_action', 'datacenter_ip_action', 'trusted_ip_list', 'escalation_type'],
-    VPN_DETECTION: ['vpn_enabled', 'vpn_action', 'datacenter_enabled', 'datacenter_action', 'tor_enabled', 'tor_action', 'trusted_ip_list', 'trusted_asn_list', 'confidence_threshold', 'escalation_type'],
-    INJECTION_DETECTION: ['action_on_detection', 'automation_handling', 'confidence_threshold', 'escalation_type'],
-    ANTI_CHEAT: ['duplicate_enabled', 'match_threshold', 'action_on_duplicate', 'multi_account_enabled', 'signal_ip_enabled', 'signal_ip_weight', 'signal_biometric_enabled', 'signal_biometric_weight', 'signal_document_enabled', 'signal_document_weight', 'signal_namedob_enabled', 'signal_namedob_weight', 'signal_device_enabled', 'signal_device_weight', 'link_sensitivity', 'action_on_multi_account', 'self_exclusion_enabled'],
-  };
-  const RUNNER_STEPS = ['ID_VERIFICATION', 'FACE_LIVENESS'];
+  const PUBLIC_STEP_IDS = Object.fromEntries(
+    Object.entries(WB.OPENAPI_WORKFLOW_STEPS || {}).map(([builderId, contract]) => [builderId, contract.apiId]),
+  );
+  const RUNNER_STEPS = new Set(WB.WORKFLOW_RUNNER_STEP_IDS || []);
   const snake = (s) => String(s).replace(/-/g, '_');
   const flatProps = (step) => (step.propertyGroups || []).flatMap((g) => (g.properties || []).map((p) => ({ ...p, groupId: g.groupId })));
   const findVal = (props, id) => { const p = props.find((x) => x.id === id); return p ? p.value : undefined; };
   const listify = (v) => (Array.isArray(v) ? v : String(v || '').split(/[\n,]/).map((s) => s.trim()).filter(Boolean));
+  const asNumber = (value) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : undefined;
+  };
+  const assign = (target, key, value) => { if (value !== undefined && value !== null) target[key] = value; };
+  const copyProps = (props, keys) => {
+    const config = {};
+    keys.forEach((key) => {
+      let value = findVal(props, key.replace(/_/g, '-'));
+      if (/_list$/.test(key) || /_jurisdictions$/.test(key)) value = listify(value);
+      assign(config, key, value);
+    });
+    return config;
+  };
+  const ageConfig = (props) => {
+    const config = {};
+    assign(config, 'age_restriction_mode', findVal(props, 'age-restriction-mode'));
+    const age = findVal(props, 'minimum-age');
+    if (Array.isArray(age)) { assign(config, 'minimum_age', asNumber(age[0])); assign(config, 'maximum_age', asNumber(age[1])); }
+    else if (age && typeof age === 'object') { assign(config, 'minimum_age', asNumber(age.lower)); assign(config, 'maximum_age', asNumber(age.upper)); }
+    assign(config, 'country_category_restrictions', findVal(props, 'country-category-restrictions'));
+    assign(config, 'country_category_minimum_age', asNumber(findVal(props, 'country-category-minimum-age')));
+    return config;
+  };
+  const normalizeFormField = (field) => {
+    if (!field || typeof field !== 'object') return null;
+    const options = Array.isArray(field.options) ? field.options : field.options && typeof field.options === 'object' ? Object.values(field.options) : undefined;
+    return {
+      label: field.label || '',
+      type: field.type || 'short-text',
+      ...(options ? { options: options.filter((option) => typeof option === 'string' && option.trim()) } : {}),
+      ...(typeof field.required === 'boolean' ? { required: field.required } : {}),
+      ...(typeof field.helpText === 'string' ? { help_text: field.helpText } : {}),
+      ...(field.conditional ? { conditional: field.conditional } : {}),
+    };
+  };
+  const buildCustomFormConfig = (props) => {
+    const config = {};
+    const templateState = findVal(props, 'questionnaire-templates') || {};
+    const questionnaireFields = [];
+    Object.entries(templateState).forEach(([templateId, state]) => {
+      if (!state || state.enabled !== true) return;
+      const template = (WB.QUESTIONNAIRE_TEMPLATES || {})[templateId];
+      if (!template) return;
+      (template.sections || []).forEach((section) => {
+        const sectionState = (state.sections || {})[section.id];
+        if (!sectionState || sectionState.enabled !== true) return;
+        (sectionState.questions || section.questions || []).forEach((question) => {
+          const normalized = normalizeFormField({ ...question, label: question.text, options: (WB.OPTION_MARKERS || {})[question.options] || question.options });
+          if (normalized) questionnaireFields.push({ key: question.id, template_id: templateId, section_id: section.id, ...normalized });
+        });
+      });
+    });
+    if (questionnaireFields.length) config.questionnaire_fields = questionnaireFields;
+    const rawFields = findVal(props, 'form-fields-list') || {};
+    const legacyFlat = Object.values(rawFields).some((value) => value && typeof value === 'object' && 'label' in value);
+    const pages = legacyFlat ? { page1: { fields: rawFields } } : rawFields;
+    const fields = {};
+    Object.values(pages).forEach((page) => Object.entries((page && page.fields) || {}).forEach(([key, field]) => {
+      const normalized = normalizeFormField(typeof field === 'string' ? { label: field } : field);
+      if (normalized) fields[key] = normalized;
+    }));
+    if (Object.keys(fields).length) config.fields = fields;
+    return config;
+  };
 
   const buildStepConfig = (step, apiId) => {
     const props = flatProps(step);
-    const cfg = {};
+    let cfg = {};
     if (apiId === 'ID_VERIFICATION') {
-      const age = findVal(props, 'minimum-age');
-      if (Array.isArray(age)) { cfg.minimum_age = age[0]; cfg.maximum_age = age[1]; }
-      else if (age && typeof age === 'object') { if (age.lower !== undefined) cfg.minimum_age = age.lower; if (age.upper !== undefined) cfg.maximum_age = age.upper; }
+      cfg = ageConfig(props);
       const expiry = findVal(props, 'expiry-date'); if (expiry !== undefined) cfg.expiry_date_years = expiry;
-      ['require-secondary-id', 'require-tertiary-id', 'face-front-photo-only', 'require-front-only', 'enable-fraud-analysis', 'escalation-type', 'escalation-risk-threshold'].forEach((id) => { const v = findVal(props, id); if (v !== undefined) cfg[snake(id)] = v; });
+      ['require-secondary-id', 'require-tertiary-id', 'face-front-photo-only', 'require-front-only', 'enable-fraud-analysis', 'escalation-type', 'escalation-risk-threshold', 'accept-all-countries', 'valid-countries', 'valid-states', 'id-confidence-threshold-enabled', 'id-confidence-threshold', 'valid-id-types', 'valid-id-types-by-country', 'reverify-by-attestation-enabled', 'reverify-min-confidence'].forEach((id) => assign(cfg, snake(id), findVal(props, id)));
       if (cfg.escalation_type && cfg.escalation_type !== 'none') cfg.enable_fraud_analysis = true;
     } else if (apiId === 'FACE_LIVENESS') {
-      const v = findVal(props, 'confidence-threshold'); if (v !== undefined) cfg.confidence_threshold = v;
+      assign(cfg, 'confidence_threshold', asNumber(findVal(props, 'confidence-threshold')));
     } else if (apiId === 'AGE_ESTIMATION') {
-      const age = findVal(props, 'minimum-age');
-      if (Array.isArray(age)) cfg.minimum_age = age[0]; else if (age && typeof age === 'object' && age.lower !== undefined) cfg.minimum_age = age.lower;
-    } else {
-      props.forEach((p) => {
-        if (p.type === 'hidden' || p.type === 'weight-display') return;
-        const key = snake(p.id);
-        if (!(ALLOWED_KEYS[apiId] || []).includes(key)) return;
-        let v = p.value;
-        if (/_list$/.test(key) || /_jurisdictions$/.test(key)) v = listify(v);
-        cfg[key] = v;
+      cfg = ageConfig(props);
+    } else if (apiId === 'FACE_LIVENESS_CONSENT_SETTINGS') {
+      assign(cfg, 'face_liveness', findVal(props, 'face-liveness'));
+      assign(cfg, 'require_signature', findVal(props, 'face-liveness-require-signature'));
+    } else if (apiId === 'DEEPFAKE_DETECTION') {
+      cfg = copyProps(props, ['mesh_visuals', 'use_custom_word', 'challenge_word', 'confidence_threshold', 'bfp_enabled', 'device_integrity_enabled', 'block_emulators', 'block_headless_browsers', 'soft_signal_sensitivity', 'media_source_enabled', 'block_virtual_cameras', 'enable_challenge_response', 'frame_timing_sensitivity', 'challenge_pass_threshold', 'environment_enabled', 'edge_consistency_weight', 'lighting_coherence_weight', 'compression_artifact_weight']);
+      if (!cfg.challenge_word) delete cfg.challenge_word;
+    } else if (apiId === 'DEEP_AGE') {
+      assign(cfg, 'method', findVal(props, 'method'));
+    } else if (apiId === 'ADDRESS_VERIFICATION') {
+      assign(cfg, 'num_questions', asNumber(findVal(props, 'num-questions')));
+      assign(cfg, 'enable_address_escalation', findVal(props, 'enable-address-escalation'));
+    } else if (apiId === 'BACKGROUND_CHECK') {
+      assign(cfg, 'country', findVal(props, 'background-check-country'));
+    } else if (apiId === 'CREDIT_CHECK') {
+      assign(cfg, 'type', findVal(props, 'credit-check-type'));
+      assign(cfg, 'inquiry_type', findVal(props, 'credit-check-inquiry-type'));
+      assign(cfg, 'country', findVal(props, 'credit-check-country'));
+    } else if (apiId === 'KYB') {
+      ['government-registries', 'sanctions-lists', 'pep-databases', 'escalate-pep-hit', 'escalate-sanctions-match', 'escalate-adverse-media'].forEach((id) => assign(cfg, snake(id), findVal(props, 'kyb-' + id)));
+      const documents = {};
+      ['certificate-incorporation', 'good-standing', 'shareholder-register', 'board-resolutions', 'ubo-declaration', 'financial-statements'].forEach((id) => assign(documents, snake(id), findVal(props, 'kyb-doc-' + id)));
+      if (Object.keys(documents).length) cfg.documents = documents;
+    } else if (apiId === 'TITLE_SEARCH') {
+      assign(cfg, 'country', findVal(props, 'title-search-country'));
+      assign(cfg, 'enhanced_title_search', findVal(props, 'enhanced-title-search'));
+      const storedFields = findVal(props, 'location-info-fields') || {};
+      const locationFields = { subdivision: 'Subdivision', latitude: 'Latitude', longitude: 'Longitude', county_fips: 'CountyFips', township_range_section: 'TownshipRangeSection', municipality_township: 'MunicipalityTownship', census_tract: 'CensusTract', census_block: 'CensusBlock', tract_number: 'TractNumber', legal_book_page: 'LegalBookPage', legal_lot: 'LegalLot', legal_block: 'LegalBlock', map_reference_one: 'MapReferenceOne', map_reference_two: 'MapReferenceTwo', neighborhood_name: 'NeighborhoodName' };
+      cfg.location_info_fields = Object.fromEntries(Object.entries(locationFields).flatMap(([key, stored]) => typeof storedFields[stored] === 'boolean' ? [[key, storedFields[stored]]] : []));
+    } else if (apiId === 'CUSTOM_PROMPT') {
+      const prompts = findVal(props, 'custom-prompts-list');
+      if (Array.isArray(prompts)) cfg.prompts = prompts.filter((prompt) => prompt && typeof prompt.text === 'string' && prompt.text.trim()).map((prompt) => ({ text: prompt.text.trim() }));
+    } else if (apiId === 'CONSENT') {
+      assign(cfg, 'consent_text', findVal(props, 'consent-text'));
+      assign(cfg, 'require_signature', findVal(props, 'require-signature'));
+    } else if (apiId === 'BANK_STATEMENT_UPLOAD') {
+      cfg = copyProps(props, ['account_type', 'statement_period', 'country']);
+      cfg.analysis_types = copyProps(props, ['transaction_categorization', 'net_worth_assessment', 'mortgage_qualification_report', 'tenant_financial_screening', 'fraud_anomaly_detection']);
+    } else if (apiId === 'DOCUMENT_UPLOAD') {
+      const uploads = findVal(props, 'document-upload-list') || {};
+      const optional = findVal(props, 'document-optional-flags') || {};
+      const extractionConfig = findVal(props, 'data-extraction-config') || {};
+      cfg.documents = Object.entries(uploads).map(([id, description]) => {
+        const extraction = extractionConfig[id];
+        return { id, description, ...(optional[id] === true ? { optional: true } : {}), ...(extraction && extraction.enabled && Array.isArray(extraction.extractions) ? { extractions: extraction.extractions } : {}) };
       });
+      assign(cfg, 'minimum_optional_uploads', asNumber(findVal(props, 'minimum-optional-uploads')));
+      assign(cfg, 'enable_document_risk_analysis', findVal(props, 'enable-document-risk-analysis'));
+      assign(cfg, 'document_risk_threshold', asNumber(findVal(props, 'document-risk-threshold')));
+    } else if (apiId === 'CUSTOM_FORM') {
+      cfg = buildCustomFormConfig(props);
+    } else if (apiId === 'PHONE_TRUST_CHECK') {
+      cfg = copyProps(props, ['sensitivity', 'action_on_trip']);
+    } else if (apiId === 'CARRIER_AGE_GATE') {
+      cfg = copyProps(props, ['minimum_age', 'action_on_trip']);
+      if (cfg.minimum_age !== undefined) cfg.minimum_age = asNumber(cfg.minimum_age);
+    } else if (apiId === 'PHONE_OWNERSHIP_MATCH') {
+      cfg = copyProps(props, ['strictness', 'action_on_trip']);
+    } else if (apiId === 'PHONE_VERIFICATION') {
+      const prompt = findVal(props, 'verification-prompt');
+      if (typeof prompt === 'string' && prompt.trim()) cfg.verification_prompt = prompt.trim();
+    } else if (apiId === 'PROOFCALL') {
+      assign(cfg, 'template_type', findVal(props, 'proofcall-template-type'));
+      const questions = findVal(props, 'proofcall-questions');
+      if (Array.isArray(questions) && questions.length) cfg.questions = questions.map((question) => typeof question === 'string' ? question : question.text).filter(Boolean);
+      assign(cfg, 'voice_id', findVal(props, 'proofcall-voice-id'));
+      assign(cfg, 'max_retries', asNumber(findVal(props, 'proofcall-max-retries')));
+    } else if (apiId === 'E_SIGNATURE') {
+      const templateId = findVal(props, 'template-id');
+      const templateName = findVal(props, 'template-name');
+      const senderRole = findVal(props, 'sender-role');
+      assign(cfg, 'template_id', typeof templateId === 'string' ? templateId.trim() : templateId);
+      if (typeof templateName === 'string' && templateName.trim()) cfg.template_name = templateName.trim();
+      assign(cfg, 'template_signer_count', asNumber(findVal(props, 'template-signer-count')));
+      assign(cfg, 'include_sender_as_signer', findVal(props, 'include-sender-as-signer'));
+      if (typeof senderRole === 'string' && senderRole.trim()) cfg.sender_role = senderRole.trim();
+      assign(cfg, 'allow_typed_signature', findVal(props, 'allow-typed-signature'));
+    } else {
+      const simpleKeys = {
+        IP_JURISDICTION: ['allowed_jurisdictions', 'blocked_jurisdictions', 'out_of_jurisdiction_action', 'datacenter_ip_action', 'trusted_ip_list', 'escalation_type'],
+        VPN_DETECTION: ['vpn_enabled', 'vpn_action', 'datacenter_enabled', 'datacenter_action', 'tor_enabled', 'tor_action', 'trusted_ip_list', 'trusted_asn_list', 'confidence_threshold', 'escalation_type'],
+        INJECTION_DETECTION: ['action_on_detection', 'automation_handling', 'confidence_threshold', 'escalation_type'],
+        ANTI_CHEAT: ['duplicate_enabled', 'match_threshold', 'action_on_duplicate', 'multi_account_enabled', 'signal_ip_enabled', 'signal_ip_weight', 'signal_biometric_enabled', 'signal_biometric_weight', 'signal_document_enabled', 'signal_document_weight', 'signal_namedob_enabled', 'signal_namedob_weight', 'signal_device_enabled', 'signal_device_weight', 'link_sensitivity', 'action_on_multi_account', 'self_exclusion_enabled'],
+      };
+      cfg = copyProps(props, simpleKeys[apiId] || []);
     }
-    const allowed = ALLOWED_KEYS[apiId] || [];
-    const out = {};
-    allowed.forEach((k) => { if (cfg[k] !== undefined && cfg[k] !== null) out[k] = cfg[k]; });
-    return out;
+    return cfg;
   };
 
   const buildPublicWorkflowPayload = (name, orderedSteps) => {
     const steps = [];
     const unsupported = [];
+    const duplicates = [];
     const seen = new Set();
     orderedSteps.forEach((step) => {
+      if ((WB.SYSTEM_STEPS || []).includes(step.id)) return;
       const apiId = PUBLIC_STEP_IDS[step.id];
       if (!apiId) { unsupported.push(step); return; }
-      if (seen.has(apiId)) return;
+      if (seen.has(apiId)) duplicates.push(step);
       seen.add(apiId);
       const config = buildStepConfig(step, apiId);
       steps.push(Object.keys(config).length ? { id: apiId, config } : { id: apiId });
     });
-    return { payload: { name, steps: steps.slice(0, 10) }, unsupported, truncated: steps.length > 10 };
+    return { payload: { name, steps }, unsupported, duplicates, tooMany: steps.length > 10, valid: unsupported.length === 0 && duplicates.length === 0 && steps.length > 0 && steps.length <= 10 };
   };
 
   const json = (v) => JSON.stringify(v, null, 2);
@@ -277,8 +404,14 @@ export const makeSaveDialog = ({ WB, utils, store, ui, mui }) => {
 
   const TS_TYPES = [
     'type WorkflowStepId =',
-    '  | "ID_VERIFICATION" | "FACE_LIVENESS" | "AGE_ESTIMATION" | "PEP_SANCTIONS" | "ADVERSE_MEDIA"',
-    '  | "IP_JURISDICTION" | "VPN_DETECTION" | "INJECTION_DETECTION" | "ANTI_CHEAT";',
+    '  | "ID_VERIFICATION" | "FACE_LIVENESS" | "FACE_LIVENESS_CONSENT_SETTINGS"',
+    '  | "AGE_ESTIMATION" | "DEEPFAKE_DETECTION" | "DEEP_AGE" | "ADDRESS_VERIFICATION"',
+    '  | "BACKGROUND_CHECK" | "CREDIT_CHECK" | "KYB" | "TITLE_SEARCH"',
+    '  | "PEP_SANCTIONS" | "ADVERSE_MEDIA" | "IP_JURISDICTION" | "VPN_DETECTION"',
+    '  | "INJECTION_DETECTION" | "ANTI_CHEAT" | "CUSTOM_PROMPT" | "CONSENT"',
+    '  | "BANK_STATEMENT_UPLOAD" | "AI_BANK_STATEMENT_ANALYSIS" | "DOCUMENT_UPLOAD"',
+    '  | "CUSTOM_FORM" | "WHITE_LABEL" | "PHONE_TRUST_CHECK" | "CARRIER_AGE_GATE"',
+    '  | "PHONE_OWNERSHIP_MATCH" | "PHONE_VERIFICATION" | "PROOFCALL";',
     '',
     'type EnforcementAction = "block" | "flag" | "step-up" | "allow";',
     '',
@@ -395,12 +528,14 @@ export const makeSaveDialog = ({ WB, utils, store, ui, mui }) => {
     const [tab, setTab] = useState('create');
     const built = useMemo(() => buildPublicWorkflowPayload(name, orderedSteps), [name, orderedSteps]);
     const publicIds = built.payload.steps.map((s) => s.id);
-    const runnerOk = publicIds.length > 0 && publicIds.every((id) => RUNNER_STEPS.includes(id));
+    const runnerOk = built.valid && publicIds.every((id) => RUNNER_STEPS.has(id));
+    const runnerUnsupported = built.valid ? publicIds.filter((id) => !RUNNER_STEPS.has(id)) : [];
     const [apiKey, setApiKey] = useState('');
     const [sending, setSending] = useState(false);
     const [sendResult, setSendResult] = useState(null);
     useEffect(() => { if (open) { setTab('create'); setSendResult(null); } }, [open]);
     const sendToApi = () => {
+      if (!built.valid) { setSendResult({ ok: false, status: 0, body: 'Fix the workflow contract errors before sending it.' }); return; }
       if (!apiKey.trim()) { setSendResult({ ok: false, status: 0, body: 'Enter an API key first.' }); return; }
       setSending(true); setSendResult(null);
       fetch(API_BASE + '/v1/workflows', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey.trim() }, body: JSON.stringify(built.payload) })
@@ -408,6 +543,7 @@ export const makeSaveDialog = ({ WB, utils, store, ui, mui }) => {
         .catch((err) => { setSending(false); setSendResult({ ok: false, status: 0, body: String(err && err.message) }); });
     };
     const download = () => {
+      if (!built.valid) return;
       try {
         const blob = new Blob([json(built.payload)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -429,7 +565,7 @@ export const makeSaveDialog = ({ WB, utils, store, ui, mui }) => {
             <SmallIconButton icon="mingcute:close-line" width={20} label="Close" onClick={onClose} testId="wb-integration-close" />
           </div>
         )}
-        actions={<><MuiButton variant="text" onClick={onClose}>Close</MuiButton><MuiButton variant="outlined" onClick={() => { try { navigator.clipboard.writeText(json(built.payload)); } catch (e) {} }} testId="wb-save-copy">Copy payload</MuiButton><MuiButton variant="contained" gradient onClick={download} testId="wb-save-download">Download JSON</MuiButton></>}>
+        actions={<><MuiButton variant="text" onClick={onClose}>Close</MuiButton><MuiButton variant="outlined" disabled={!built.valid} onClick={() => { try { navigator.clipboard.writeText(json(built.payload)); } catch (e) {} }} testId="wb-save-copy">Copy payload</MuiButton><MuiButton variant="contained" gradient disabled={!built.valid} onClick={download} testId="wb-save-download">Download JSON</MuiButton></>}>
         <MuiTabs value={tab} onChange={setTab} tabs={tabs} style={{ marginBottom: 16, gap: 24 }} />
         {tab === 'create' ? (
           <div className="wb-sd-stack16">
@@ -439,12 +575,13 @@ export const makeSaveDialog = ({ WB, utils, store, ui, mui }) => {
               <MuiAlert severity="warning" variant="outlined" testId="wb-unsupported-alert">
                 <div className="wb-sd-semibold">{built.unsupported.length === 1 ? '1 step is not available via the public API yet' : built.unsupported.length + ' steps are not available via the public API yet'}</div>
                 <div className="wb-sd-chips">{built.unsupported.map((s) => <MuiChip key={keyOf(s)} label={stepLabel(s)} variant="soft" color="warning" icon={<StepIcon icon={utils.getStepIcon(s.id)} size={14} color="currentColor" />} />)}</div>
-                <div className="wb-sd-caption" style={{ marginTop: 6 }}>They were left out of the payload. Add them to this workflow in the Admin Console (app.deepidv.com) and they will run in hosted sessions.</div>
+                <div className="wb-sd-caption" style={{ marginTop: 6 }}>The builder will not generate or send a partial request. Remove these steps before continuing.</div>
               </MuiAlert>
             ) : null}
-            {built.truncated ? <MuiAlert severity="warning" variant="outlined">The public API accepts at most 10 steps; the payload was trimmed to the first 10.</MuiAlert> : null}
+            {built.duplicates.length ? <MuiAlert severity="error" variant="outlined">Repeated step IDs are not accepted by the public API. Remove the duplicate {built.duplicates.map(stepLabel).join(', ')} step(s) before continuing.</MuiAlert> : null}
+            {built.tooMany ? <MuiAlert severity="error" variant="outlined">The public API accepts at most 10 steps. The builder will not trim the workflow; remove the extra steps before continuing.</MuiAlert> : null}
             {!built.payload.steps.length ? <MuiAlert severity="error" variant="outlined">None of the steps in this workflow can be created through the public API yet.</MuiAlert> : null}
-            <CodeGroup method="POST" path="/v1/workflows" body={built.payload} testId="wb-save-json" />
+            {built.valid ? <CodeGroup method="POST" path="/v1/workflows" body={built.payload} testId="wb-save-json" /> : null}
             <details className="wb-sd-details">
               <summary>Response (201 Created)</summary>
               <FieldTable rows={[['workflow.id', 'string', 'Use this as workflow_id when creating sessions'], ['workflow.name', 'string', 'Workflow name'], ['workflow.status', 'string', 'Always active for new workflows'], ['workflow.organization_id', 'string', 'Your organization id'], ['workflow.steps[]', 'array', 'Steps with resolved configuration (db ids such as id-verification, snake_case config)'], ['workflow.created_at / updated_at', 'string', 'ISO 8601 timestamps']]} />
@@ -454,7 +591,7 @@ export const makeSaveDialog = ({ WB, utils, store, ui, mui }) => {
               <div className="wb-sd-semibold wb-sd-body2">Try it with your API key (optional)</div>
               <div className="wb-sd-row8">
                 <MuiTextField fullWidth size="small" type="password" placeholder="x-api-key" value={apiKey} onChange={setApiKey} testId="wb-api-key" />
-                <MuiButton variant="outlined" onClick={sendToApi} disabled={sending} testId="wb-send-api">{sending ? 'Sending...' : 'Send'}</MuiButton>
+                <MuiButton variant="outlined" onClick={sendToApi} disabled={sending || !built.valid} testId="wb-send-api">{sending ? 'Sending...' : 'Send'}</MuiButton>
               </div>
               <div className="wb-sd-caption wb-sd-muted">POSTs the payload above straight from your browser. The key is never stored.</div>
               {sendResult ? <MuiAlert severity={sendResult.ok ? 'success' : 'error'} variant="soft"><div className="wb-sd-semibold">HTTP {sendResult.status}</div><pre className="wb-sd-pre wb-sd-pre-inline">{sendResult.body}</pre></MuiAlert> : null}
@@ -476,12 +613,14 @@ export const makeSaveDialog = ({ WB, utils, store, ui, mui }) => {
             </div>
             <div className="wb-sd-card">
               <div className="wb-sd-cardhead"><MuiChip label="Headless" color="info" variant="soft" /><span className="wb-sd-semibold">Drive the steps yourself with the Workflow Runner API</span></div>
-              {runnerOk ? <MuiAlert severity="success" variant="soft">This workflow only uses ID_VERIFICATION / FACE_LIVENESS, so it can run through the Workflow Runner.</MuiAlert> : <MuiAlert severity="info" variant="outlined">The Workflow Runner currently supports workflows made only of ID_VERIFICATION and FACE_LIVENESS. This workflow includes other steps, so use the hosted flow above for it.</MuiAlert>}
-              <Endpoint method="POST" path={'/v1/workflows/{workflow_id}/sessions'} href="/api-reference/workflow-runner/create-workflow-session" />
-              <p className="wb-sd-body2 wb-sd-muted">Creates a session without sending invites and returns the ordered <code>steps[]</code> with each step's <code>requirements</code> and <code>current_step</code>.</p>
-              <CodeGroup method="POST" path="/v1/workflows/{workflow_id}/sessions" body={runnerBody} />
-              <Endpoint method="POST" path={'/v1/sessions/{session_id}/steps/{step_id}'} href="/api-reference/workflow-runner/submit-workflow-step"><span className="wb-sd-caption wb-sd-muted">Submit steps in order (uploads come from Create Session Uploads).</span></Endpoint>
-              <Endpoint method="GET" path={'/v1/sessions/{session_id}/workflow'} href="/api-reference/workflow-runner/get-workflow-state"><span className="wb-sd-caption wb-sd-muted">Read every step's status and what to submit next.</span></Endpoint>
+              {runnerOk ? <MuiAlert severity="success" variant="soft">Every step in this workflow is supported by the Workflow Runner.</MuiAlert> : runnerUnsupported.length ? <MuiAlert severity="warning" variant="outlined">This workflow contains {runnerUnsupported.join(', ')}. Create it through the OpenAPI, then start it with the hosted <code>POST /v1/sessions</code> flow; these steps are not supported by the Workflow Runner.</MuiAlert> : <MuiAlert severity="info" variant="outlined">Fix the workflow contract errors above before running it through the Workflow Runner.</MuiAlert>}
+              {runnerOk ? <>
+                <Endpoint method="POST" path={'/v1/workflows/{workflow_id}/sessions'} href="/api-reference/workflow-runner/create-workflow-session" />
+                <p className="wb-sd-body2 wb-sd-muted">Creates a session without sending invites and returns the ordered <code>steps[]</code> with each step's <code>requirements</code> and <code>current_step</code>.</p>
+                <CodeGroup method="POST" path="/v1/workflows/{workflow_id}/sessions" body={runnerBody} />
+                <Endpoint method="POST" path={'/v1/sessions/{session_id}/steps/{step_id}'} href="/api-reference/workflow-runner/submit-workflow-step"><span className="wb-sd-caption wb-sd-muted">Submit steps in order. Use each step's returned requirements to construct the request and follow any listed actions.</span></Endpoint>
+                <Endpoint method="GET" path={'/v1/sessions/{session_id}/workflow'} href="/api-reference/workflow-runner/get-workflow-state"><span className="wb-sd-caption wb-sd-muted">Read every step's status and what to submit next.</span></Endpoint>
+              </> : null}
             </div>
           </div>
         ) : null}
