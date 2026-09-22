@@ -324,14 +324,6 @@ export const makeSaveDialog = ({ WB, utils, store, ui, mui }) => {
       assign(cfg, 'include_sender_as_signer', findVal(props, 'include-sender-as-signer'));
       if (typeof senderRole === 'string' && senderRole.trim()) cfg.sender_role = senderRole.trim();
       assign(cfg, 'allow_typed_signature', findVal(props, 'allow-typed-signature'));
-    } else {
-      const simpleKeys = {
-        IP_JURISDICTION: ['allowed_jurisdictions', 'blocked_jurisdictions', 'out_of_jurisdiction_action', 'datacenter_ip_action', 'trusted_ip_list', 'escalation_type'],
-        VPN_DETECTION: ['vpn_enabled', 'vpn_action', 'datacenter_enabled', 'datacenter_action', 'tor_enabled', 'tor_action', 'trusted_ip_list', 'trusted_asn_list', 'confidence_threshold', 'escalation_type'],
-        INJECTION_DETECTION: ['action_on_detection', 'automation_handling', 'confidence_threshold', 'escalation_type'],
-        ANTI_CHEAT: ['duplicate_enabled', 'match_threshold', 'action_on_duplicate', 'multi_account_enabled', 'signal_ip_enabled', 'signal_ip_weight', 'signal_biometric_enabled', 'signal_biometric_weight', 'signal_document_enabled', 'signal_document_weight', 'signal_namedob_enabled', 'signal_namedob_weight', 'signal_device_enabled', 'signal_device_weight', 'link_sensitivity', 'action_on_multi_account', 'self_exclusion_enabled'],
-      };
-      cfg = copyProps(props, simpleKeys[apiId] || []);
     }
     return cfg;
   };
@@ -407,13 +399,10 @@ export const makeSaveDialog = ({ WB, utils, store, ui, mui }) => {
     '  | "ID_VERIFICATION" | "FACE_LIVENESS" | "FACE_LIVENESS_CONSENT_SETTINGS"',
     '  | "AGE_ESTIMATION" | "DEEPFAKE_DETECTION" | "DEEP_AGE" | "ADDRESS_VERIFICATION"',
     '  | "BACKGROUND_CHECK" | "CREDIT_CHECK" | "KYB" | "TITLE_SEARCH"',
-    '  | "PEP_SANCTIONS" | "ADVERSE_MEDIA" | "IP_JURISDICTION" | "VPN_DETECTION"',
-    '  | "INJECTION_DETECTION" | "ANTI_CHEAT" | "CUSTOM_PROMPT" | "CONSENT"',
+    '  | "PEP_SANCTIONS" | "ADVERSE_MEDIA" | "CUSTOM_PROMPT" | "CONSENT"',
     '  | "BANK_STATEMENT_UPLOAD" | "AI_BANK_STATEMENT_ANALYSIS" | "DOCUMENT_UPLOAD"',
     '  | "CUSTOM_FORM" | "WHITE_LABEL" | "PHONE_TRUST_CHECK" | "CARRIER_AGE_GATE"',
-    '  | "PHONE_OWNERSHIP_MATCH" | "PHONE_VERIFICATION" | "PROOFCALL";',
-    '',
-    'type EnforcementAction = "block" | "flag" | "step-up" | "allow";',
+    '  | "PHONE_OWNERSHIP_MATCH" | "PHONE_VERIFICATION" | "PROOFCALL" | "E_SIGNATURE";',
     '',
     'interface IdVerificationConfig {',
     '  minimum_age?: number;            // 1-100, default 18',
@@ -429,37 +418,6 @@ export const makeSaveDialog = ({ WB, utils, store, ui, mui }) => {
     '}',
     'interface FaceLivenessConfig { confidence_threshold?: number; } // 1-100, default 70',
     'interface AgeEstimationConfig { minimum_age?: number; }        // 1-100, default 18',
-    'interface IpJurisdictionConfig {',
-    '  allowed_jurisdictions?: string[]; // ISO 3166 codes, e.g. "CA", "US-WA"',
-    '  blocked_jurisdictions?: string[];',
-    '  out_of_jurisdiction_action?: EnforcementAction; // default "block"',
-    '  datacenter_ip_action?: EnforcementAction;       // default "flag"',
-    '  trusted_ip_list?: string[];                     // CIDR ranges or ASNs',
-    '  escalation_type?: string;                       // default "none"',
-    '}',
-    'interface VpnDetectionConfig {',
-    '  vpn_enabled?: boolean; vpn_action?: EnforcementAction;',
-    '  datacenter_enabled?: boolean; datacenter_action?: EnforcementAction;',
-    '  tor_enabled?: boolean; tor_action?: EnforcementAction;',
-    '  trusted_ip_list?: string[]; trusted_asn_list?: string[];',
-    '  confidence_threshold?: number; escalation_type?: string;',
-    '}',
-    'interface InjectionDetectionConfig {',
-    '  action_on_detection?: "block" | "flag" | "step-up" | "rechallenge" | "allow";',
-    '  automation_handling?: "block" | "flag" | "step-up" | "ignore";',
-    '  confidence_threshold?: number; escalation_type?: string;',
-    '}',
-    'interface AntiCheatConfig {',
-    '  duplicate_enabled?: boolean; match_threshold?: number; action_on_duplicate?: "flag" | "manual-review" | "block" | "allow";',
-    '  multi_account_enabled?: boolean; link_sensitivity?: number; action_on_multi_account?: "flag" | "manual-review" | "block" | "allow";',
-    '  signal_ip_enabled?: boolean; signal_ip_weight?: number;',
-    '  signal_biometric_enabled?: boolean; signal_biometric_weight?: number;',
-    '  signal_document_enabled?: boolean; signal_document_weight?: number;',
-    '  signal_namedob_enabled?: boolean; signal_namedob_weight?: number;',
-    '  signal_device_enabled?: boolean; signal_device_weight?: number;',
-    '  self_exclusion_enabled?: boolean;',
-    '}',
-    '',
     'interface CreateWorkflowRequest {',
     '  name: string;                       // 1-255 characters',
     '  steps: Array<{ id: WorkflowStepId; config?: object }>; // 1-10 unique steps, in order',

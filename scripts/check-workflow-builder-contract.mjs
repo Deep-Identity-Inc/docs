@@ -5,6 +5,7 @@ const catalogSource = fs.readFileSync('snippets/workflow-builder/generated/catal
 const constantsSource = fs.readFileSync('snippets/workflow-builder/constants.mdx', 'utf8');
 const saveDialogSource = fs.readFileSync('snippets/workflow-builder/save-dialog.mdx', 'utf8');
 const openapiSource = fs.readFileSync('assets/openapi.yaml', 'utf8');
+const createWorkflowReferenceSource = fs.readFileSync('api-reference/workflows/create-workflow.mdx', 'utf8');
 
 const contractEntries = [...contractSource.matchAll(/'([^']+)': \{ apiId: '([A-Z_]+)' \}/g)];
 const builderIds = contractEntries.map((match) => match[1]);
@@ -134,6 +135,14 @@ for (const deferred of [
   'anti-cheat',
 ]) {
   if (builderIds.includes(deferred)) throw new Error(`${deferred} must remain outside the OpenAPI workflow contract`);
+}
+for (const hiddenApiId of ['IP_JURISDICTION', 'VPN_DETECTION', 'INJECTION_DETECTION', 'ANTI_CHEAT']) {
+  if (createWorkflowReferenceSource.includes(hiddenApiId)) {
+    throw new Error(`${hiddenApiId} must remain hidden from the Create Workflow reference page`);
+  }
+  if (saveDialogSource.includes(hiddenApiId)) {
+    throw new Error(`${hiddenApiId} must remain hidden from the Workflow Builder integration output`);
+  }
 }
 if (runnerIds.includes('E_SIGNATURE')) throw new Error('E_SIGNATURE must remain outside the Workflow Runner contract');
 
