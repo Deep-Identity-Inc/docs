@@ -14,8 +14,8 @@ const exportedIds = [...exportedIdsSource.matchAll(/'([A-Z][A-Z_]+)'/g)].map((ma
 const runnerIdsSource = contractSource.match(/WORKFLOW_RUNNER_STEP_IDS\s*=\s*\[([\s\S]*?)\];/)?.[1] || '';
 const runnerIds = [...runnerIdsSource.matchAll(/'([A-Z][A-Z_]+)'/g)].map((match) => match[1]);
 
-if (apiIds.length !== 30) {
-  throw new Error(`Expected 30 OpenAPI workflow steps, found ${apiIds.length}`);
+if (apiIds.length !== 26) {
+  throw new Error(`Expected 26 production OpenAPI workflow steps, found ${apiIds.length}`);
 }
 if (new Set(builderIds).size !== builderIds.length || new Set(apiIds).size !== apiIds.length) {
   throw new Error('Workflow builder contract contains duplicate step IDs');
@@ -125,7 +125,14 @@ if (missingRunnerIds.length || extraRunnerIds.length) {
   throw new Error(`Builder/Runner drift. Missing from spec: ${missingRunnerIds.join(', ') || 'none'}. Extra in spec: ${extraRunnerIds.join(', ') || 'none'}.`);
 }
 
-for (const deferred of ['passport-nfc-scanner', 'crypto-wallet-screening']) {
+for (const deferred of [
+  'passport-nfc-scanner',
+  'crypto-wallet-screening',
+  'ip-jurisdiction',
+  'vpn-detection',
+  'injection-detection',
+  'anti-cheat',
+]) {
   if (builderIds.includes(deferred)) throw new Error(`${deferred} must remain outside the OpenAPI workflow contract`);
 }
 if (runnerIds.includes('E_SIGNATURE')) throw new Error('E_SIGNATURE must remain outside the Workflow Runner contract');
