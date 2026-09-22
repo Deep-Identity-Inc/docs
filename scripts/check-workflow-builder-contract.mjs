@@ -8,6 +8,7 @@ const openapiSource = fs.readFileSync('assets/openapi.yaml', 'utf8');
 const createWorkflowReferenceSource = fs.readFileSync('api-reference/workflows/create-workflow.mdx', 'utf8');
 const runnerReferenceSource = fs.readFileSync('api-reference/workflow-runner/create-workflow-session.mdx', 'utf8');
 const runnerOverviewSource = fs.readFileSync('api-reference/workflow-runner/overview.mdx', 'utf8');
+const uploadReferenceSource = fs.readFileSync('api-reference/workflow-runner/create-session-uploads.mdx', 'utf8');
 
 const contractEntries = [...contractSource.matchAll(/'([^']+)': \{ apiId: '([A-Z_]+)' \}/g)];
 const builderIds = contractEntries.map((match) => match[1]);
@@ -158,6 +159,23 @@ const submitResponseSource = openapiSource.slice(submitResponseStart, submitResp
 for (const resultKey of ['phone_verification:', 'proof_call:']) {
   if (!submitResponseSource.includes(resultKey)) {
     throw new Error(`Workflow Runner response schema is missing ${resultKey}`);
+  }
+}
+for (const uploadContractMarker of ['DynamicSessionUploadFile:', 'LegacySessionUploadFile:', 'slot:']) {
+  if (!openapiSource.includes(uploadContractMarker)) {
+    throw new Error(`Session upload contract is missing ${uploadContractMarker}`);
+  }
+}
+for (const documentedUploadStep of [
+  'CUSTOM_PROMPT',
+  'DOCUMENT_UPLOAD',
+  'CUSTOM_FORM',
+  'CONSENT',
+  'FACE_LIVENESS_CONSENT_SETTINGS',
+  'KYB',
+]) {
+  if (!uploadReferenceSource.includes(`\`${documentedUploadStep}\``)) {
+    throw new Error(`Session upload reference is missing ${documentedUploadStep}`);
   }
 }
 

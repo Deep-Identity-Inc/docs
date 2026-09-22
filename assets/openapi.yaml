@@ -1365,6 +1365,10 @@ components:
           type: string
           description: S3 object key under the sessions upload bucket. Echo this key in
             the step submission `uploads` map.
+        slot:
+          type: string
+          description: Logical slot to use as the key in the step submission.
+          example: employment_letter
         upload_type:
           type: string
           enum:
@@ -1375,12 +1379,13 @@ components:
             - tertiary_id_front
             - tertiary_id_back
             - selfie_front
+          description: Echoed for legacy `upload_type` requests. Omitted for dynamic slots.
         upload_url:
           type: string
           description: S3 presigned PUT URL. Send the file as the request body.
       required:
         - file_key
-        - upload_type
+        - slot
         - upload_url
     SessionUploadsRequest:
       type: object
@@ -1395,14 +1400,20 @@ components:
       required:
         - files
     SessionUploadFile:
+      anyOf:
+        - $ref: "#/components/schemas/LegacySessionUploadFile"
+        - $ref: "#/components/schemas/DynamicSessionUploadFile"
+      description: File to upload. Provide either the legacy `upload_type` field or
+        the current workflow requirement's dynamic `slot`, never both.
+    LegacySessionUploadFile:
       type: object
       properties:
         file_name:
           type: string
           minLength: 1
           example: front.jpg
-          description: Original file name. Its extension is used when building the S3
-            object key (`{timestamp}-{upload_type}.{ext}`).
+          description: Original file name. Its extension is used when building the
+            session-scoped S3 object key.
         content_type:
           type: string
           minLength: 1
@@ -1419,12 +1430,42 @@ components:
             - tertiary_id_front
             - tertiary_id_back
             - selfie_front
-          description: Hosted-flow Uploads slot this file will occupy on the session record.
+          description: Legacy ID/selfie upload slot. Use `slot` for config-driven workflow
+            uploads.
           example: id_front
       required:
         - file_name
         - content_type
         - upload_type
+      additionalProperties: false
+    DynamicSessionUploadFile:
+      type: object
+      properties:
+        file_name:
+          type: string
+          minLength: 1
+          example: front.jpg
+          description: Original file name. Its extension is used when building the
+            session-scoped S3 object key.
+        content_type:
+          type: string
+          minLength: 1
+          example: image/jpeg
+          description: MIME type of the file. Signed into the presigned URL — the PUT must
+            send the same Content-Type header.
+        slot:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Logical upload slot returned in the current workflow step's
+            requirements, such as `custom-prompts-list_0`, `signature_upload`,
+            or a configured document id.
+          example: employment_letter
+      required:
+        - file_name
+        - content_type
+        - slot
+      additionalProperties: false
     ListWorkflowsResponse:
       type: object
       properties:
@@ -6935,13 +6976,13 @@ paths:
       tags:
         - Sessions
       summary: Generate session-scoped presigned upload URLs
-      description: Issues S3 presigned PUT URLs into the sessions upload bucket using
-        the hosted-flow key scheme
-        `{organizationId}/{sessionId}/{timestamp}-{fileName}`. Echo the returned
-        `file_key` values in a subsequent step submission. Unlike `POST
-        /v1/upload/presign`, keys are session-linked so the backoffice can
-        render uploads. Keys are recorded on the session's Uploads map at step
-        submission, not at presign time.
+      description: Issues S3 presigned PUT URLs into the sessions upload bucket. Use
+        legacy `upload_type` for ID/selfie captures or the config-driven `slot`
+        returned by the current Runner step's requirements. Dynamic slots are
+        validated against the current step. Echo each returned `file_key` under
+        its `slot` in the step submission. Unlike `POST /v1/upload/presign`,
+        keys are session-linked so the backoffice can render uploads. Keys are
+        recorded on the session at step submission, not at presign time.
       security: *a2
       parameters:
         - schema:

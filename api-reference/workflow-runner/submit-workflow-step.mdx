@@ -59,6 +59,8 @@ The generated OpenAPI request schema lists every supported step submission. Use 
 
 The detailed examples below cover upload, presentation, server-auto, and multi-phase execution. For larger schemas such as `CREDIT_CHECK`, `KYB`, `CUSTOM_FORM`, and `DEEPFAKE_DETECTION`, use the generated request schema on this page together with the current step's `requirements`.
 
+For config-driven files, pass the requirement's exact slot to [Create Session Uploads](/api-reference/workflow-runner/create-session-uploads), upload the file, then use the returned `file_key` in the step body.
+
 ## Step submission schemas
 
 ### ID_VERIFICATION
@@ -236,7 +238,7 @@ curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d7
 
 ### CONSENT
 
-When `accepted` is `true`, `legal_name` is required. If the workflow configuration requires a signature, upload it first and include its session-owned key as `signature_upload`. A declined consent completes the attempt with `failure_reason: "CONSENT_DECLINED"`.
+When `accepted` is `true`, `legal_name` is required. If the workflow configuration requires a signature, request an upload URL with `slot: "signature_upload"`, upload it, and include its session-owned key as `signature_upload`. A declined consent completes the attempt with `failure_reason: "CONSENT_DECLINED"`.
 
 ```bash
 curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/CONSENT \
