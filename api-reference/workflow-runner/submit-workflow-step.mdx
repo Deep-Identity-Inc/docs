@@ -183,7 +183,7 @@ complete = requests.post(base, headers=headers, json={"action": "complete"}).jso
 
 ## Response
 
-The response is a common envelope for both step types; FACE_LIVENESS additionally includes a `liveness` object.
+The response uses a common envelope for every supported step. Individual executors can add step-specific result fields; for example, `FACE_LIVENESS` adds a `liveness` object.
 
 ### 200 — Success
 

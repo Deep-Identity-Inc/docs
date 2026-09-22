@@ -6,6 +6,7 @@ const constantsSource = fs.readFileSync('snippets/workflow-builder/constants.mdx
 const saveDialogSource = fs.readFileSync('snippets/workflow-builder/save-dialog.mdx', 'utf8');
 const openapiSource = fs.readFileSync('assets/openapi.yaml', 'utf8');
 const createWorkflowReferenceSource = fs.readFileSync('api-reference/workflows/create-workflow.mdx', 'utf8');
+const runnerReferenceSource = fs.readFileSync('api-reference/workflow-runner/create-workflow-session.mdx', 'utf8');
 
 const contractEntries = [...contractSource.matchAll(/'([^']+)': \{ apiId: '([A-Z_]+)' \}/g)];
 const builderIds = contractEntries.map((match) => match[1]);
@@ -143,7 +144,18 @@ for (const hiddenApiId of ['IP_JURISDICTION', 'VPN_DETECTION', 'INJECTION_DETECT
   if (saveDialogSource.includes(hiddenApiId)) {
     throw new Error(`${hiddenApiId} must remain hidden from the Workflow Builder integration output`);
   }
+  if (runnerReferenceSource.includes(hiddenApiId)) {
+    throw new Error(`${hiddenApiId} must remain hidden from the Workflow Runner reference`);
+  }
 }
 if (runnerIds.includes('E_SIGNATURE')) throw new Error('E_SIGNATURE must remain outside the Workflow Runner contract');
+if (!runnerReferenceSource.includes(`Runner supports ${runnerIds.length} of the ${apiIds.length} steps`)) {
+  throw new Error('Workflow Runner reference must state the current Create/Runner support boundary');
+}
+for (const runnerId of runnerIds) {
+  if (!runnerReferenceSource.includes(`\`${runnerId}\``)) {
+    throw new Error(`${runnerId} is missing from the Workflow Runner reference`);
+  }
+}
 
 console.log(`Workflow Builder contract matches ${apiIds.length} Create Workflow steps and ${runnerIds.length} Runner steps.`);

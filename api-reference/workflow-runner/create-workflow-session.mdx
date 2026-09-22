@@ -11,7 +11,7 @@ POST /v1/workflows/{workflow_id}/sessions
 Creates a new session scoped to a workflow and returns the ordered list of steps the session must complete, along with each step's requirements. Unlike [Create Session](/api-reference/sessions/create-session), this endpoint does not send an invite email or SMS and does not return a hosted `session_url` — it's designed for headless integrations (mobile/web SDKs) that drive the session directly through [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step).
 
 <Info>
-  The Runner supports every step accepted by [Create Workflow](/api-reference/workflows/create-workflow). Read each returned step's `requirements` instead of hard-coding a two-step flow.
+  The Runner supports 25 of the 26 steps accepted by [Create Workflow](/api-reference/workflows/create-workflow). `E_SIGNATURE` is hosted-only and cannot be executed through the headless Runner. Read each returned step's `requirements` instead of hard-coding a two-step flow.
 </Info>
 
 ## Request
@@ -121,11 +121,11 @@ session = response.json()
 
 ### Available steps
 
-The Runner handles the 29 workflow steps in four ways:
+The Runner handles its 25 supported workflow steps in four ways:
 
 | Behavior | Step IDs | Client behavior |
 |---|---|---|
-| `client-submit` | `ID_VERIFICATION`, `AGE_ESTIMATION`, `CREDIT_CHECK`, `KYB`, `TITLE_SEARCH`, `PEP_SANCTIONS`, `IP_JURISDICTION`, `VPN_DETECTION`, `INJECTION_DETECTION`, `ANTI_CHEAT`, `CUSTOM_PROMPT`, `DOCUMENT_UPLOAD`, `CUSTOM_FORM` | Collect the fields or uploads described by `requirements`, then submit the current step |
+| `client-submit` | `ID_VERIFICATION`, `AGE_ESTIMATION`, `CREDIT_CHECK`, `KYB`, `TITLE_SEARCH`, `PEP_SANCTIONS`, `CUSTOM_PROMPT`, `DOCUMENT_UPLOAD`, `CUSTOM_FORM` | Collect the fields or uploads described by `requirements`, then submit the current step |
 | `server-auto` | `AI_BANK_STATEMENT_ANALYSIS`, `PHONE_TRUST_CHECK`, `CARRIER_AGE_GATE`, `PHONE_OWNERSHIP_MATCH` | Submit the current step to ask the server to perform the check; poll when the response reports that work is still pending |
 | `multi-phase` | `FACE_LIVENESS`, `DEEPFAKE_DETECTION`, `DEEP_AGE`, `ADDRESS_VERIFICATION`, `BACKGROUND_CHECK`, `ADVERSE_MEDIA`, `BANK_STATEMENT_UPLOAD`, `PHONE_VERIFICATION`, `PROOFCALL` | Follow the `actions` listed in `requirements` and read the updated requirements after each phase |
 | `presentation` | `FACE_LIVENESS_CONSENT_SETTINGS`, `CONSENT`, `WHITE_LABEL` | Present the returned content or branding, collect any required acknowledgement, and submit it |
@@ -155,7 +155,7 @@ The examples below show two representative requirement shapes. For every other s
 
 | Status | Description |
 |---|---|
-| `400` | Invalid request body, an invalid workflow contract, or the workflow is not `active` |
+| `400` | Invalid request body, an inactive workflow, or a workflow containing a step the Runner does not support. Unsupported steps are returned in `invalid_steps` |
 | `401` | Invalid or missing API key |
 | `402` | Insufficient funds to run this workflow |
 | `403` | The workflow belongs to a different organization |
@@ -208,7 +208,7 @@ The examples below show two representative requirement shapes. For every other s
 ```json 400 — Unsupported step
 {
   "error": "Invalid workflow step",
-  "invalid_steps": ["pep-sanctions"]
+  "invalid_steps": ["e-signature"]
 }
 ```
 
