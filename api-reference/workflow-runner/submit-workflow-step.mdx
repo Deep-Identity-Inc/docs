@@ -41,8 +41,6 @@ The generated OpenAPI request schema lists every supported step submission. Use 
 | `AGE_ESTIMATION` | `{ "uploads": { "selfie_front": "..." } }` |
 | `DEEPFAKE_DETECTION` | `start` to receive capture instructions, then `complete` with the returned frame/timeline upload keys |
 | `DEEP_AGE`, `ADDRESS_VERIFICATION`, `BACKGROUND_CHECK` | `{ "action": "start" }`, followed by `{ "action": "complete" }` after the hosted phase finishes |
-| `CREDIT_CHECK` | Canadian address, date of birth, SIN, and explicit credit/privacy consent |
-| `KYB` | Business, registered-address, ownership, officer, and configured document data |
 | `TITLE_SEARCH` | `{ "address": "..." }` |
 | `PEP_SANCTIONS` | `first_name`, `last_name`, `date_of_birth`, and optional `email` |
 | `ADVERSE_MEDIA` | `start` with the screening identity, then `complete` while polling |
@@ -51,13 +49,11 @@ The generated OpenAPI request schema lists every supported step submission. Use 
 | `BANK_STATEMENT_UPLOAD` | `start` to receive the hosted request, then `complete` after upload finishes |
 | `AI_BANK_STATEMENT_ANALYSIS` | `{}` |
 | `DOCUMENT_UPLOAD` | `uploads` keyed by the configured document slots returned in `requirements` |
-| `CUSTOM_FORM` | `answers` keyed by the fields returned in `requirements` |
 | `WHITE_LABEL` | `{ "acknowledged": true }` after applying the returned presentation settings |
 | `PHONE_TRUST_CHECK`, `CARRIER_AGE_GATE`, `PHONE_OWNERSHIP_MATCH` | `{}`; these executors use applicant data already stored on the session |
 | `PHONE_VERIFICATION` | `{ "action": "start" }`, followed by `complete` polling |
-| `PROOFCALL` | `start` with 1–3 references, followed by `complete` polling |
 
-The detailed examples below cover upload, presentation, server-auto, and multi-phase execution. For larger schemas such as `CREDIT_CHECK`, `KYB`, `CUSTOM_FORM`, and `DEEPFAKE_DETECTION`, use the generated request schema on this page together with the current step's `requirements`.
+The detailed examples below cover upload, presentation, server-auto, and multi-phase execution. For larger schemas such as `DEEPFAKE_DETECTION`, use the generated request schema on this page together with the current step's `requirements`.
 
 For config-driven files, pass the requirement's exact slot to [Create Session Uploads](/api-reference/workflow-runner/create-session-uploads), upload the file, then use the returned `file_key` in the step body.
 
@@ -286,53 +282,6 @@ curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d7
 
 A pending result returns `409` with `failure_reason: "PHONE_VERIFICATION_RESULT_NOT_READY"`. A completed mismatch returns `200` with `PHONE_VERIFICATION_CHECK_FAILED` and consumes an attempt.
 
-### PROOFCALL
-
-Supply between one and three references with `start`. The `complete` action takes no references and should be polled at the interval returned in `requirements`.
-
-```bash cURL — start
-curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/PROOFCALL \
-  -H "x-api-key: YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "action": "start",
-    "references": [
-      {
-        "first_name": "Ada",
-        "last_name": "Lovelace",
-        "phone": "+14155551234",
-        "email": "ada@example.com",
-        "relationship": "Former manager"
-      }
-    ]
-  }'
-```
-
-```json 200 — ProofCall started
-{
-  "step_id": "PROOFCALL",
-  "step_status": "IN_PROGRESS",
-  "failure_reason": null,
-  "current_step": 0,
-  "attempts_remaining": 3,
-  "session_status": "PENDING",
-  "session_progress": "STARTED",
-  "proof_call": {
-    "status": "pending",
-    "operation_id": "8d4cd77e-79f7-5ad7-a916-8852f5f9c577"
-  }
-}
-```
-
-```bash cURL — poll result
-curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/PROOFCALL \
-  -H "x-api-key: YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{ "action": "complete" }'
-```
-
-A result that is not ready returns `409` with `failure_reason: "PROOF_CALL_RESULT_NOT_READY"`. A ready response includes `proof_call.verdict` (`pass`, `threshold`, or `fail`) and per-reference answered-question counts.
-
 ## Response
 
 The response uses a common envelope for every supported step. Individual executors can add step-specific result fields; for example, `FACE_LIVENESS` adds a `liveness` object.
@@ -349,7 +298,7 @@ The response uses a common envelope for every supported step. Individual executo
 | `session_status` | string | always | Session status: `PENDING`, `SUBMITTED`, `VERIFIED`, `REJECTED`, `VOIDED`, `EXPIRED`, or `FAILED` |
 | `session_progress` | string | always | `PENDING`, `STARTED`, or `COMPLETED` |
 | `liveness` | object | `step_id` is `FACE_LIVENESS` | Shape depends on the submitted `action` — see [FACE_LIVENESS results](#face_liveness-results) |
-| Step-specific result | object | executor-dependent | A snake_case key such as `phone_trust_check`, `credit_check`, `phone_verification`, or `proof_call`. Treat new fields as additive |
+| Step-specific result | object | executor-dependent | A snake_case key such as `phone_trust_check` or `phone_verification`. Treat new fields as additive |
 
 <Note>
   Advisory checks (age, expiry, document validity period, state) never fail an `ID_VERIFICATION` step and are not included in the response — only the blocking checks below can produce a `failure_reason`.

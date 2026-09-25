@@ -8,7 +8,7 @@ api: POST /v1/sessions/{session_id}/uploads
 POST /v1/sessions/{session_id}/uploads
 ```
 
-Mints session-scoped presigned S3 upload URLs. Use this endpoint for ID/selfie captures and for config-driven files such as custom prompts, consent signatures, KYB documents, document uploads, and Custom Form file fields.
+Mints session-scoped presigned S3 upload URLs. Use this endpoint for ID/selfie captures and for config-driven files such as custom prompts, consent signatures, and document uploads.
 
 Upload each file directly to its `upload_url`, then pass the returned `file_key` under the corresponding `slot` when you call [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step).
 
@@ -138,9 +138,7 @@ The same pattern applies to:
 |---|---|
 | `CUSTOM_PROMPT` | `requirements.upload_slots[]` or `requirements.prompts[].slot` |
 | `DOCUMENT_UPLOAD` | `requirements.documents[].id` |
-| `CUSTOM_FORM` | `requirements.fields[].key` where `type` is `file-upload` |
 | `CONSENT`, `FACE_LIVENESS_CONSENT_SETTINGS` | `signature_upload` when `requirements.signature_required` is `true` |
-| `KYB` | `requirements.documents[].id` |
 
 ### Upload the file
 

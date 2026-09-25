@@ -18,8 +18,8 @@ const exportedIds = [...exportedIdsSource.matchAll(/'([A-Z][A-Z_]+)'/g)].map((ma
 const runnerIdsSource = contractSource.match(/WORKFLOW_RUNNER_STEP_IDS\s*=\s*\[([\s\S]*?)\];/)?.[1] || '';
 const runnerIds = [...runnerIdsSource.matchAll(/'([A-Z][A-Z_]+)'/g)].map((match) => match[1]);
 
-if (apiIds.length !== 26) {
-  throw new Error(`Expected 26 production OpenAPI workflow steps, found ${apiIds.length}`);
+if (apiIds.length !== 22) {
+  throw new Error(`Expected 22 production OpenAPI workflow steps, found ${apiIds.length}`);
 }
 if (new Set(builderIds).size !== builderIds.length || new Set(apiIds).size !== apiIds.length) {
   throw new Error('Workflow builder contract contains duplicate step IDs');
@@ -109,7 +109,7 @@ if (unsupported.valid || unsupported.unsupported.length !== 1 || unsupported.pay
 const enumBlocks = [...openapiSource.matchAll(/enum:\r?\n((?:\s+- [A-Z][A-Z_]+\r?\n)+)/g)].map((match) =>
   [...match[1].matchAll(/- ([A-Z][A-Z_]+)/g)].map((entry) => entry[1]),
 );
-const runnerStepIds = enumBlocks.find((values) => values.includes('PHONE_VERIFICATION') && values.includes('PROOFCALL'));
+const runnerStepIds = enumBlocks.find((values) => values.includes('PHONE_VERIFICATION') && values.includes('CARRIER_AGE_GATE'));
 if (!runnerStepIds) throw new Error('Could not find the Workflow Runner step enum in assets/openapi.yaml');
 
 const createRequestStart = openapiSource.indexOf('    CreateWorkflowRequest:');
@@ -156,7 +156,7 @@ for (const hiddenRequirement of ['IpCheckRequirements', 'InjectionDetectionRequi
 const submitResponseStart = openapiSource.indexOf('    SubmitWorkflowStepResponse:');
 const submitResponseEnd = openapiSource.indexOf('    FaceLivenessStartResult:', submitResponseStart);
 const submitResponseSource = openapiSource.slice(submitResponseStart, submitResponseEnd);
-for (const resultKey of ['phone_verification:', 'proof_call:']) {
+for (const resultKey of ['phone_verification:']) {
   if (!submitResponseSource.includes(resultKey)) {
     throw new Error(`Workflow Runner response schema is missing ${resultKey}`);
   }
@@ -169,10 +169,8 @@ for (const uploadContractMarker of ['DynamicSessionUploadFile:', 'LegacySessionU
 for (const documentedUploadStep of [
   'CUSTOM_PROMPT',
   'DOCUMENT_UPLOAD',
-  'CUSTOM_FORM',
   'CONSENT',
   'FACE_LIVENESS_CONSENT_SETTINGS',
-  'KYB',
 ]) {
   if (!uploadReferenceSource.includes(`\`${documentedUploadStep}\``)) {
     throw new Error(`Session upload reference is missing ${documentedUploadStep}`);
@@ -182,6 +180,10 @@ for (const documentedUploadStep of [
 for (const deferred of [
   'passport-nfc-scanner',
   'crypto-wallet-screening',
+  'credit-check',
+  'kyb',
+  'custom-form',
+  'proofcall',
   'ip-jurisdiction',
   'vpn-detection',
   'injection-detection',
@@ -189,11 +191,23 @@ for (const deferred of [
 ]) {
   if (builderIds.includes(deferred)) throw new Error(`${deferred} must remain outside the OpenAPI workflow contract`);
 }
-for (const hiddenApiId of ['IP_JURISDICTION', 'VPN_DETECTION', 'INJECTION_DETECTION', 'ANTI_CHEAT']) {
+for (const hiddenApiId of [
+  'CREDIT_CHECK',
+  'KYB',
+  'CUSTOM_FORM',
+  'PROOFCALL',
+  'IP_JURISDICTION',
+  'VPN_DETECTION',
+  'INJECTION_DETECTION',
+  'ANTI_CHEAT',
+]) {
   if (createWorkflowReferenceSource.includes(hiddenApiId)) {
     throw new Error(`${hiddenApiId} must remain hidden from the Create Workflow reference page`);
   }
-  if (saveDialogSource.includes(hiddenApiId)) {
+  if (
+    ['IP_JURISDICTION', 'VPN_DETECTION', 'INJECTION_DETECTION', 'ANTI_CHEAT'].includes(hiddenApiId) &&
+    saveDialogSource.includes(hiddenApiId)
+  ) {
     throw new Error(`${hiddenApiId} must remain hidden from the Workflow Builder integration output`);
   }
   if (runnerReferenceSource.includes(hiddenApiId)) {

@@ -48,9 +48,9 @@ Use the Runner when you need to keep the applicant inside your own mobile or web
 
 | Pattern | What your client submits | Examples |
 |---|---|---|
-| `client-submit` | Applicant data or session-owned upload keys | `ID_VERIFICATION`, `CREDIT_CHECK`, `CUSTOM_FORM` |
+| `client-submit` | Applicant data or session-owned upload keys | `ID_VERIFICATION`, `CUSTOM_PROMPT`, `DOCUMENT_UPLOAD` |
 | `server-auto` | An empty JSON object; the server reads session data | `PHONE_TRUST_CHECK`, `PHONE_OWNERSHIP_MATCH`, `AI_BANK_STATEMENT_ANALYSIS` |
-| `multi-phase` | `action: start`, then one or more `action: complete` calls | `FACE_LIVENESS`, `PHONE_VERIFICATION`, `PROOFCALL` |
+| `multi-phase` | `action: start`, then one or more `action: complete` calls | `FACE_LIVENESS`, `PHONE_VERIFICATION`, `ADVERSE_MEDIA` |
 | `presentation` | Consent or acknowledgement collected by your UI | `CONSENT`, `WHITE_LABEL` |
 
 The session's `requirements` object is authoritative. Workflow configuration can change required fields, upload slots, prerequisites, and the actions available for a step.
@@ -126,4 +126,4 @@ A completed run returns `current_step: null` and `session_progress: "COMPLETED"`
 
 ## Supported scope
 
-The Runner supports 25 production workflow steps. `E_SIGNATURE` can be created for hosted workflows but cannot be executed headlessly. Repeated step IDs and advanced branching workflows are not supported.
+The Runner supports 21 production workflow steps. `E_SIGNATURE` can be created for hosted workflows but cannot be executed headlessly. Repeated step IDs and advanced branching workflows are not supported.

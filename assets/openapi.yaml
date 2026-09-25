@@ -1257,7 +1257,31 @@ components:
           type: string
         status:
           type: string
-          description: One of PENDING, VERIFIED, REJECTED, EXPIRED.
+          description: One of PENDING, SUBMITTED, VERIFIED, REJECTED, VOIDED, FAILED,
+            EXPIRED. AI decisions surface as VERIFIED or REJECTED with
+            decision_source set.
+        auto_decision:
+          type: object
+          properties:
+            state:
+              type: string
+              enum:
+                - pending
+                - completed
+                - skipped
+          required:
+            - state
+          description: AI decision progress. pending means keep polling; completed means
+            read status; skipped means the workflow opted out (re-verification).
+            Omitted when auto-approve is off.
+        decision_source:
+          type: string
+          enum:
+            - AUTO_APPROVE
+            - DECLINED
+          description: Set only when an AI decision produced the status. AUTO_APPROVE is
+            returned as VERIFIED and DECLINED as REJECTED. Absent when a person
+            set VERIFIED or REJECTED.
         type:
           type: string
         session_progress:
@@ -1536,7 +1560,8 @@ components:
       properties:
         id:
           type: string
-          description: Workflow step identifier (db format, e.g. id-verification).
+          description: Workflow step identifier in API form (UPPER_SNAKE, e.g.
+            ID_VERIFICATION).
         config:
           type: object
           additionalProperties: {}
@@ -1683,6 +1708,10 @@ components:
                         type: number
                         minimum: 90
                         maximum: 100
+                        description: Minimum face-match confidence for the verify-app receipt
+                          re-verification flow. Has no effect on face-search
+                          re-verification (POST /v1/re-verifications), which
+                          uses a fixed platform threshold.
                     additionalProperties: false
                 required:
                   - id
@@ -1883,7 +1912,7 @@ components:
                       method:
                         type: string
                         enum:
-                          - intel-quiz
+                          - quiz
                           - credit-card
                           - parent-connect
                     additionalProperties: false
@@ -1920,95 +1949,6 @@ components:
                         type: string
                         enum:
                           - canada
-                    additionalProperties: false
-                required:
-                  - id
-              - type: object
-                properties:
-                  id:
-                    type: string
-                    enum:
-                      - CREDIT_CHECK
-                  config:
-                    type: object
-                    properties:
-                      type:
-                        type: string
-                        enum:
-                          - consumer
-                      inquiry_type:
-                        type: string
-                        enum:
-                          - soft
-                          - hard
-                      country:
-                        type: string
-                        enum:
-                          - canada
-                    additionalProperties: false
-                required:
-                  - id
-              - type: object
-                properties:
-                  id:
-                    type: string
-                    enum:
-                      - KYB
-                  config:
-                    type: object
-                    properties:
-                      government_registries:
-                        type: boolean
-                      sanctions_lists:
-                        type: boolean
-                      pep_databases:
-                        type: boolean
-                      escalate_pep_hit:
-                        type: boolean
-                      escalate_sanctions_match:
-                        type: boolean
-                      escalate_adverse_media:
-                        type: boolean
-                      documents:
-                        type: object
-                        properties:
-                          certificate_incorporation:
-                            type: string
-                            enum:
-                              - required
-                              - optional
-                              - none
-                          good_standing:
-                            type: string
-                            enum:
-                              - required
-                              - optional
-                              - none
-                          shareholder_register:
-                            type: string
-                            enum:
-                              - required
-                              - optional
-                              - none
-                          board_resolutions:
-                            type: string
-                            enum:
-                              - required
-                              - optional
-                              - none
-                          ubo_declaration:
-                            type: string
-                            enum:
-                              - required
-                              - optional
-                              - none
-                          financial_statements:
-                            type: string
-                            enum:
-                              - required
-                              - optional
-                              - none
-                        additionalProperties: false
                     additionalProperties: false
                 required:
                   - id
@@ -2238,128 +2178,6 @@ components:
                   id:
                     type: string
                     enum:
-                      - CUSTOM_FORM
-                  config:
-                    type: object
-                    properties:
-                      questionnaire_fields:
-                        type: array
-                        items:
-                          type: object
-                          properties:
-                            label:
-                              type: string
-                              minLength: 1
-                            type:
-                              type: string
-                              enum:
-                                - short-text
-                                - long-text
-                                - dropdown
-                                - multi-select
-                                - checkbox
-                                - yes-no
-                                - date
-                                - number
-                                - currency
-                                - file-upload
-                            options:
-                              type: array
-                              items:
-                                type: string
-                                minLength: 1
-                            required:
-                              type: boolean
-                            help_text:
-                              type: string
-                            conditional:
-                              type: object
-                              properties:
-                                field:
-                                  type: string
-                                  minLength: 1
-                                value:
-                                  anyOf:
-                                    - type: string
-                                    - type: number
-                                    - type: boolean
-                              required:
-                                - field
-                                - value
-                              additionalProperties: false
-                            key:
-                              type: string
-                              minLength: 1
-                            template_id:
-                              type: string
-                              minLength: 1
-                            section_id:
-                              type: string
-                              minLength: 1
-                          required:
-                            - label
-                            - type
-                            - key
-                            - template_id
-                            - section_id
-                          additionalProperties: false
-                      fields:
-                        type: object
-                        additionalProperties:
-                          type: object
-                          properties:
-                            label:
-                              type: string
-                              minLength: 1
-                            type:
-                              type: string
-                              enum:
-                                - short-text
-                                - long-text
-                                - dropdown
-                                - multi-select
-                                - checkbox
-                                - yes-no
-                                - date
-                                - number
-                                - currency
-                                - file-upload
-                            options:
-                              type: array
-                              items:
-                                type: string
-                                minLength: 1
-                            required:
-                              type: boolean
-                            help_text:
-                              type: string
-                            conditional:
-                              type: object
-                              properties:
-                                field:
-                                  type: string
-                                  minLength: 1
-                                value:
-                                  anyOf:
-                                    - type: string
-                                    - type: number
-                                    - type: boolean
-                              required:
-                                - field
-                                - value
-                              additionalProperties: false
-                          required:
-                            - label
-                            - type
-                          additionalProperties: false
-                    additionalProperties: false
-                required:
-                  - id
-              - type: object
-                properties:
-                  id:
-                    type: string
-                    enum:
                       - WHITE_LABEL
                 required:
                   - id
@@ -2383,6 +2201,9 @@ components:
                         enum:
                           - flag
                           - step_up
+                        description: Action persisted by the Backoffice phone-intelligence builder.
+                          Phone steps use `step_up` rather than the generic
+                          enforcement value `step-up`.
                     additionalProperties: false
                 required:
                   - id
@@ -2406,6 +2227,9 @@ components:
                         enum:
                           - flag
                           - step_up
+                        description: Action persisted by the Backoffice phone-intelligence builder.
+                          Phone steps use `step_up` rather than the generic
+                          enforcement value `step-up`.
                     additionalProperties: false
                 required:
                   - id
@@ -2429,6 +2253,9 @@ components:
                         enum:
                           - flag
                           - step_up
+                        description: Action persisted by the Backoffice phone-intelligence builder.
+                          Phone steps use `step_up` rather than the generic
+                          enforcement value `step-up`.
                     additionalProperties: false
                 required:
                   - id
@@ -2445,41 +2272,6 @@ components:
                         type: string
                         minLength: 1
                         maxLength: 60
-                    additionalProperties: false
-                required:
-                  - id
-              - type: object
-                properties:
-                  id:
-                    type: string
-                    enum:
-                      - PROOFCALL
-                  config:
-                    type: object
-                    properties:
-                      template_type:
-                        type: string
-                        enum:
-                          - employment
-                          - education
-                          - reference
-                          - custom
-                      questions:
-                        type: array
-                        items:
-                          type: string
-                          minLength: 1
-                        minItems: 2
-                        maxItems: 5
-                      voice_id:
-                        type: string
-                        enum:
-                          - ara
-                          - eve
-                      max_retries:
-                        type: integer
-                        minimum: 0
-                        maximum: 3
                     additionalProperties: false
                 required:
                   - id
@@ -2604,7 +2396,6 @@ components:
         - $ref: "#/components/schemas/ScreeningRequirements"
         - $ref: "#/components/schemas/SessionPhoneScreeningRequirements"
         - $ref: "#/components/schemas/PhoneVerificationRequirements"
-        - $ref: "#/components/schemas/ProofCallRequirements"
         - $ref: "#/components/schemas/BackgroundCheckRequirements"
         - $ref: "#/components/schemas/AiBankStatementAnalysisRequirements"
         - $ref: "#/components/schemas/CreditCheckRequirements"
@@ -2782,47 +2573,6 @@ components:
       required:
         - actions
         - session_fields
-        - asynchronous
-        - poll_interval_seconds
-    ProofCallRequirements:
-      type: object
-      properties:
-        actions:
-          type: array
-          prefixItems:
-            - type: string
-              enum:
-                - start
-            - type: string
-              enum:
-                - complete
-        input_fields:
-          type: array
-          prefixItems:
-            - type: string
-              enum:
-                - references
-        minimum_references:
-          type: number
-          enum:
-            - 1
-        maximum_references:
-          type: number
-          enum:
-            - 3
-        asynchronous:
-          type: boolean
-          enum:
-            - true
-        poll_interval_seconds:
-          type: number
-          enum:
-            - 30
-      required:
-        - actions
-        - input_fields
-        - minimum_references
-        - maximum_references
         - asynchronous
         - poll_interval_seconds
     BackgroundCheckRequirements:
@@ -3161,11 +2911,11 @@ components:
             `complete` returns the pass/fail result. Omitted for
             ID_VERIFICATION.
         phone_trust_check:
-          $ref: "#/components/schemas/PhoneTrustResponse"
+          $ref: "#/components/schemas/RunnerPhoneTrustResponse"
         carrier_age_gate:
-          $ref: "#/components/schemas/CarrierAgeGateResponse"
+          $ref: "#/components/schemas/RunnerCarrierAgeGateResponse"
         phone_ownership_match:
-          $ref: "#/components/schemas/PhoneOwnershipResponse"
+          $ref: "#/components/schemas/RunnerPhoneOwnershipResponse"
         ai_bank_statement_analysis:
           type: object
           properties:
@@ -3179,36 +2929,6 @@ components:
             - bank_statement_id
             - status
           description: AI_BANK_STATEMENT_ANALYSIS-only queued analysis acknowledgement.
-        credit_check:
-          type: object
-          properties:
-            status:
-              type: string
-              enum:
-                - PENDING
-            inquiry_type:
-              type: string
-              enum:
-                - soft
-                - hard
-          required:
-            - status
-            - inquiry_type
-          description: CREDIT_CHECK-only queued inquiry acknowledgement.
-        kyb:
-          type: object
-          properties:
-            status:
-              type: string
-              enum:
-                - ACCEPTED
-            documents_received:
-              type: integer
-              minimum: 0
-          required:
-            - status
-            - documents_received
-          description: KYB-only accepted-data acknowledgement.
         phone_verification:
           type: object
           properties:
@@ -3226,49 +2946,6 @@ components:
             - status
           description: PHONE_VERIFICATION-only call state. Start returns the operation
             state; complete adds pass/fail.
-        proof_call:
-          type: object
-          properties:
-            status:
-              type: string
-            operation_id:
-              type: string
-              description: Opaque ProofCall operation id returned by the start action.
-            verdict:
-              type: string
-              enum:
-                - pass
-                - threshold
-                - fail
-            references:
-              type: array
-              items:
-                type: object
-                properties:
-                  referenceIndex:
-                    type: integer
-                    minimum: 0
-                  answeredQuestions:
-                    type: integer
-                    minimum: 0
-                  totalQuestions:
-                    type: integer
-                    minimum: 0
-                  verdict:
-                    type: string
-                    enum:
-                      - pass
-                      - threshold
-                      - fail
-                required:
-                  - referenceIndex
-                  - answeredQuestions
-                  - totalQuestions
-                  - verdict
-          required:
-            - status
-          description: PROOFCALL-only state. Start returns an operation id; complete
-            returns the overall and per-reference verdicts.
       required:
         - step_id
         - step_status
@@ -3339,14 +3016,14 @@ components:
         - status
         - confidence
         - passed
-    PhoneTrustResponse:
+    RunnerPhoneTrustResponse:
       type: object
       properties:
         tripped:
           type: boolean
           description: True when the signals below exceed the chosen sensitivity. The
             check never blocks; act on this in your own flow.
-        tripReasons:
+        trip_reasons:
           type: array
           items:
             type: string
@@ -3354,7 +3031,7 @@ components:
               - SIM_SWAP_HIGH_RISK
               - SIM_SWAP_MEDIUM_RISK
               - CALL_FORWARDING_ACTIVE
-        simSwappedRisk:
+        sim_swapped_risk:
           type: string
           enum:
             - NO_DATA
@@ -3364,11 +3041,11 @@ components:
           description: HIGH_RISK = SIM changed in the last 72 hours; MEDIUM_RISK = in the
             last 30 days; LOW_RISK = no recent change; NO_DATA = the carrier
             holds no servable data (normal where the carrier route is not live).
-        simChangedDate:
+        sim_changed_date:
           type: string
           format: date-time
           description: When the carrier last recorded a SIM change, if reported.
-        forwardingRisk:
+        forwarding_risk:
           type: string
           enum:
             - NO_DATA
@@ -3381,29 +3058,29 @@ components:
             - low
             - medium
             - high
-        statusMessage:
+        status_message:
           type: string
           example: Response from one supplier
-        checkedAt:
+        checked_at:
           type: string
           format: date-time
-        correlationId:
+        correlation_id:
           type: string
           description: Provider correlation id — quote it in support requests.
-        sessionId:
+        session_id:
           type: string
           description: Present when the result was attached to a verification session via
             `sessionId`.
       required:
         - tripped
-        - tripReasons
-        - simSwappedRisk
-        - forwardingRisk
+        - trip_reasons
+        - sim_swapped_risk
+        - forwarding_risk
         - sensitivity
-        - statusMessage
-        - checkedAt
+        - status_message
+        - checked_at
       description: PHONE_TRUST_CHECK-only carrier risk result.
-    CarrierAgeGateResponse:
+    RunnerCarrierAgeGateResponse:
       type: object
       properties:
         outcome:
@@ -3416,39 +3093,39 @@ components:
             `requiredAge`; FAIL = the carrier reports they are under it; NO_DATA
             = the carrier holds no servable data for this number (normal where
             the carrier route is not live).
-        ageVerified:
+        age_verified:
           type: string
           enum:
             - VERIFIED
             - NOT_VERIFIED
             - NO_DATA
-        requiredAge:
+        required_age:
           type: integer
           example: 18
-        carrierThreshold:
+        carrier_threshold:
           type: integer
           description: The age threshold the carrier applied, when reported.
-        statusMessage:
+        status_message:
           type: string
           example: Response from one supplier
-        checkedAt:
+        checked_at:
           type: string
           format: date-time
-        correlationId:
+        correlation_id:
           type: string
           description: Provider correlation id — quote it in support requests.
-        sessionId:
+        session_id:
           type: string
           description: Present when the result was attached to a verification session via
             `sessionId`.
       required:
         - outcome
-        - ageVerified
-        - requiredAge
-        - statusMessage
-        - checkedAt
+        - age_verified
+        - required_age
+        - status_message
+        - checked_at
       description: CARRIER_AGE_GATE-only carrier age result.
-    PhoneOwnershipResponse:
+    RunnerPhoneOwnershipResponse:
       type: object
       properties:
         outcome:
@@ -3460,31 +3137,31 @@ components:
           description: MATCH = carrier name score ≥ threshold; NO_MATCH = below it;
             NO_DATA = the carrier holds no servable subscriber data for this
             number (normal where the carrier route is not live).
-        nameScore:
+        name_score:
           type: integer
           minimum: -1
           maximum: 100
           description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
             100 exact.
-        firstNameScore:
+        first_name_score:
           type: integer
           minimum: -1
           maximum: 100
           description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
             100 exact.
-        lastNameScore:
+        last_name_score:
           type: integer
           minimum: -1
           maximum: 100
           description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
             100 exact.
-        dobScore:
+        dob_score:
           type: integer
           minimum: -1
           maximum: 100
           description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
             100 exact.
-        addressScore:
+        address_score:
           type: integer
           minimum: -1
           maximum: 100
@@ -3499,16 +3176,16 @@ components:
         threshold:
           type: integer
           example: 70
-        statusMessage:
+        status_message:
           type: string
           example: Response from one supplier
-        checkedAt:
+        checked_at:
           type: string
           format: date-time
-        correlationId:
+        correlation_id:
           type: string
           description: Provider correlation id — quote it in support requests.
-        sessionId:
+        session_id:
           type: string
           description: Present when the result was attached to a verification session via
             `sessionId`.
@@ -3516,8 +3193,8 @@ components:
         - outcome
         - strictness
         - threshold
-        - statusMessage
-        - checkedAt
+        - status_message
+        - checked_at
       description: PHONE_OWNERSHIP_MATCH-only subscriber-name match result.
     WorkflowStepSubmission:
       anyOf:
@@ -3631,8 +3308,6 @@ components:
             - s3_keys
           additionalProperties: false
         - $ref: "#/components/schemas/HostedWorkflowStepSubmission"
-        - $ref: "#/components/schemas/CreditCheckStepSubmission"
-        - $ref: "#/components/schemas/KybStepSubmission"
         - $ref: "#/components/schemas/TitleSearchStepSubmission"
         - $ref: "#/components/schemas/PepSanctionsStepSubmission"
         - $ref: "#/components/schemas/AdverseMediaStepSubmission"
@@ -3641,11 +3316,9 @@ components:
         - $ref: "#/components/schemas/BankStatementUploadStepSubmission"
         - $ref: "#/components/schemas/AiBankStatementAnalysisStepSubmission"
         - $ref: "#/components/schemas/DocumentUploadStepSubmission"
-        - $ref: "#/components/schemas/CustomFormStepSubmission"
         - $ref: "#/components/schemas/PresentationAcknowledgementStepSubmission"
         - $ref: "#/components/schemas/SessionPhoneScreeningStepSubmission"
         - $ref: "#/components/schemas/PhoneVerificationStepSubmission"
-        - $ref: "#/components/schemas/ProofCallStepSubmission"
       description: Submission body for the current workflow step. Use the shape for
         the step_id in the request path and the requirements returned by the
         workflow runner. Multi-phase steps use their action field;
@@ -3760,198 +3433,6 @@ components:
       required:
         - action
       additionalProperties: false
-    CreditCheckStepSubmission:
-      type: object
-      properties:
-        address:
-          type: object
-          properties:
-            civic_number:
-              type: string
-              minLength: 1
-            street_name:
-              type: string
-              minLength: 1
-            city:
-              type: string
-              minLength: 1
-            province:
-              type: string
-              minLength: 1
-            postal_code:
-              type: string
-              minLength: 1
-            country:
-              type: string
-              minLength: 2
-          required:
-            - civic_number
-            - street_name
-            - city
-            - province
-            - postal_code
-            - country
-          additionalProperties: false
-        date_of_birth:
-          type: string
-          format: date
-        sin:
-          type: string
-          pattern: ^\d{9}$
-        consent:
-          type: object
-          properties:
-            authorize_credit_check:
-              type: boolean
-              enum:
-                - true
-            accept_privacy_policy:
-              type: boolean
-              enum:
-                - true
-          required:
-            - authorize_credit_check
-            - accept_privacy_policy
-          additionalProperties: false
-      required:
-        - address
-        - date_of_birth
-        - sin
-        - consent
-      additionalProperties: false
-      description: Canadian credit-check input and explicit applicant consent. The SIN
-        is encrypted before persistence.
-    KybStepSubmission:
-      type: object
-      properties:
-        business_legal_name:
-          type: string
-          minLength: 1
-        business_trading_name:
-          type: string
-        registration_number:
-          type: string
-          minLength: 1
-        tax_id:
-          type: string
-        entity_type:
-          type: string
-          minLength: 1
-        jurisdiction_country:
-          type: string
-          minLength: 2
-        jurisdiction_state:
-          type: string
-        date_of_incorporation:
-          type: string
-          format: date
-        industry_code:
-          type: string
-        website:
-          type: string
-          format: uri
-        registered_address:
-          type: object
-          properties:
-            street_address:
-              type: string
-              minLength: 1
-            city:
-              type: string
-              minLength: 1
-            state_province:
-              type: string
-              minLength: 1
-            postal_code:
-              type: string
-              minLength: 1
-            country:
-              type: string
-              minLength: 2
-          required:
-            - street_address
-            - city
-            - state_province
-            - postal_code
-            - country
-          additionalProperties: false
-        has_beneficial_owners:
-          type: boolean
-        no_beneficial_owners_attestation:
-          type: boolean
-        ubos:
-          type: array
-          items:
-            type: object
-            properties:
-              first_name:
-                type: string
-                minLength: 1
-              last_name:
-                type: string
-                minLength: 1
-              date_of_birth:
-                type: string
-                format: date
-              ownership_percentage:
-                type: number
-                minimum: 0
-                maximum: 100
-              control_type:
-                type: string
-                minLength: 1
-              nationality:
-                type: string
-                minLength: 1
-            required:
-              - first_name
-              - last_name
-              - ownership_percentage
-              - control_type
-            additionalProperties: false
-        has_officers:
-          type: boolean
-        no_officers_attestation:
-          type: boolean
-        officers:
-          type: array
-          items:
-            type: object
-            properties:
-              first_name:
-                type: string
-                minLength: 1
-              last_name:
-                type: string
-                minLength: 1
-              date_of_birth:
-                type: string
-                format: date
-              role:
-                type: string
-                minLength: 1
-            required:
-              - first_name
-              - last_name
-              - role
-            additionalProperties: false
-        documents:
-          type: object
-          additionalProperties:
-            type: string
-            minLength: 1
-      required:
-        - business_legal_name
-        - registration_number
-        - entity_type
-        - jurisdiction_country
-        - registered_address
-        - has_beneficial_owners
-        - ubos
-        - has_officers
-        - officers
-        - documents
-      additionalProperties: false
     TitleSearchStepSubmission:
       type: object
       properties:
@@ -4056,43 +3537,6 @@ components:
       required:
         - uploads
       additionalProperties: false
-    CustomFormStepSubmission:
-      type: object
-      properties:
-        answers:
-          type: object
-          additionalProperties:
-            anyOf:
-              - type: string
-              - type: number
-              - type: boolean
-              - type: array
-                items:
-                  type: string
-              - type: object
-                properties:
-                  file_key:
-                    type: string
-                    minLength: 1
-                  file_name:
-                    type: string
-                    minLength: 1
-                  file_size:
-                    type: integer
-                    minimum: 0
-                  file_type:
-                    type: string
-                    minLength: 1
-                required:
-                  - file_key
-                  - file_name
-                  - file_size
-                  - file_type
-                additionalProperties: false
-              - type: "null"
-      required:
-        - answers
-      additionalProperties: false
     PresentationAcknowledgementStepSubmission:
       type: object
       properties:
@@ -4123,47 +3567,6 @@ components:
       required:
         - action
       additionalProperties: false
-    ProofCallStepSubmission:
-      type: object
-      properties:
-        action:
-          type: string
-          enum:
-            - start
-            - complete
-        references:
-          type: array
-          items:
-            type: object
-            properties:
-              first_name:
-                type: string
-                minLength: 1
-                maxLength: 100
-              last_name:
-                type: string
-                minLength: 1
-                maxLength: 100
-              phone:
-                type: string
-                pattern: ^\+[1-9]\d{7,14}$
-              email:
-                type: string
-                format: email
-              relationship:
-                type: string
-                minLength: 1
-                maxLength: 100
-            required:
-              - first_name
-              - last_name
-              - phone
-            additionalProperties: false
-          minItems: 1
-          maxItems: 3
-          description: Required for `start`; omitted for `complete`.
-      required:
-        - action
     CreateBankStatementResponse:
       type: object
       properties:
@@ -4659,6 +4062,53 @@ components:
         - firstName
         - lastName
         - dateOfBirth
+    CarrierAgeGateResponse:
+      type: object
+      properties:
+        outcome:
+          type: string
+          enum:
+            - PASS
+            - FAIL
+            - NO_DATA
+          description: PASS = the carrier confirms the subscriber is at least
+            `requiredAge`; FAIL = the carrier reports they are under it; NO_DATA
+            = the carrier holds no servable data for this number (normal where
+            the carrier route is not live).
+        ageVerified:
+          type: string
+          enum:
+            - VERIFIED
+            - NOT_VERIFIED
+            - NO_DATA
+        requiredAge:
+          type: integer
+          example: 18
+        carrierThreshold:
+          type: integer
+          description: The age threshold the carrier applied, when reported.
+        statusMessage:
+          type: string
+          example: Response from one supplier
+        checkedAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          description: Provider correlation id — quote it in support requests.
+        sessionId:
+          type: string
+          description: Present when the result was attached to a verification session via
+            `sessionId`.
+      required:
+        - outcome
+        - ageVerified
+        - requiredAge
+        - statusMessage
+        - checkedAt
+      description: Result of a carrier age gate check. The mobile carrier confirms
+        whether the subscriber is over the legal age threshold (18 on all
+        current routes) without disclosing the actual age.
     CarrierAgeGateRequest:
       type: object
       properties:
@@ -4689,6 +4139,80 @@ components:
           type: string
           minLength: 1
           maxLength: 255
+    PhoneOwnershipResponse:
+      type: object
+      properties:
+        outcome:
+          type: string
+          enum:
+            - MATCH
+            - NO_MATCH
+            - NO_DATA
+          description: MATCH = carrier name score ≥ threshold; NO_MATCH = below it;
+            NO_DATA = the carrier holds no servable subscriber data for this
+            number (normal where the carrier route is not live).
+        nameScore:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        firstNameScore:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        lastNameScore:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        dobScore:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        addressScore:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        strictness:
+          type: string
+          enum:
+            - relaxed
+            - medium
+            - strict
+        threshold:
+          type: integer
+          example: 70
+        statusMessage:
+          type: string
+          example: Response from one supplier
+        checkedAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          description: Provider correlation id — quote it in support requests.
+        sessionId:
+          type: string
+          description: Present when the result was attached to a verification session via
+            `sessionId`.
+      required:
+        - outcome
+        - strictness
+        - threshold
+        - statusMessage
+        - checkedAt
+      description: Result of a phone ownership match. The mobile carrier scores how
+        well the supplied name (and optional address / date of birth) matches
+        the subscriber on record, without disclosing the record itself. Only the
+        name score decides the outcome.
     PhoneOwnershipRequest:
       type: object
       properties:
@@ -4745,6 +4269,72 @@ components:
             - strict
           description: "Minimum carrier name score to count as a MATCH: relaxed 50, medium
             70 (default), strict 90."
+    PhoneTrustResponse:
+      type: object
+      properties:
+        tripped:
+          type: boolean
+          description: True when the signals below exceed the chosen sensitivity. The
+            check never blocks; act on this in your own flow.
+        tripReasons:
+          type: array
+          items:
+            type: string
+            enum:
+              - SIM_SWAP_HIGH_RISK
+              - SIM_SWAP_MEDIUM_RISK
+              - CALL_FORWARDING_ACTIVE
+        simSwappedRisk:
+          type: string
+          enum:
+            - NO_DATA
+            - LOW_RISK
+            - MEDIUM_RISK
+            - HIGH_RISK
+          description: HIGH_RISK = SIM changed in the last 72 hours; MEDIUM_RISK = in the
+            last 30 days; LOW_RISK = no recent change; NO_DATA = the carrier
+            holds no servable data (normal where the carrier route is not live).
+        simChangedDate:
+          type: string
+          format: date-time
+          description: When the carrier last recorded a SIM change, if reported.
+        forwardingRisk:
+          type: string
+          enum:
+            - NO_DATA
+            - NO_RISK
+            - HIGH_RISK
+          description: HIGH_RISK = unconditional call forwarding is active on the line.
+        sensitivity:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+        statusMessage:
+          type: string
+          example: Response from one supplier
+        checkedAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          description: Provider correlation id — quote it in support requests.
+        sessionId:
+          type: string
+          description: Present when the result was attached to a verification session via
+            `sessionId`.
+      required:
+        - tripped
+        - tripReasons
+        - simSwappedRisk
+        - forwardingRisk
+        - sensitivity
+        - statusMessage
+        - checkedAt
+      description: "Result of a phone trust check: recent SIM-swap and call-forwarding
+        signals from the mobile carrier, with a `tripped` verdict for the
+        requested sensitivity. Passive — no SMS code is sent."
     PhoneTrustRequest:
       type: object
       properties:
@@ -5572,6 +5162,16 @@ components:
             - inbound
             - outbound
             - internal
+          description: "Direction of the transaction relative to the monitored subject —
+            not to your institution. `inbound`: funds arriving at the subject.
+            `outbound`: funds leaving the subject. `internal`: funds moving
+            between accounts the same subject controls, with no external
+            counterparty. Taken as given and never inferred — accuracy is the
+            sender's responsibility, and a mislabelled direction cannot be
+            corrected after ingest. There is no `any` value here: `any` exists
+            only in dashboard rule configuration, where it means a rule matches
+            all three directions."
+          example: inbound
         amount:
           $ref: "#/components/schemas/AmlAmount"
         type:
@@ -6045,7 +5645,7 @@ components:
       properties:
         re_verification_id:
           type: string
-        original_session_id:
+        workflow_id:
           type: string
         status:
           type: string
@@ -6053,12 +5653,6 @@ components:
             - PENDING
         expires_at:
           type: string
-        reused:
-          type: boolean
-        consent_required:
-          type: boolean
-          enum:
-            - true
         liveness:
           type: object
           properties:
@@ -6066,15 +5660,16 @@ components:
               type: string
               enum:
                 - FaceMovementChallenge
+                - FaceMovementAndLightChallenge
+              description: The challenge `liveness/start` will issue, from the workflow's
+                face-liveness step (`FaceMovementChallenge` by default).
           required:
             - challenge_type
       required:
         - re_verification_id
-        - original_session_id
+        - workflow_id
         - status
         - expires_at
-        - reused
-        - consent_required
         - liveness
     ReVerificationErrorResponse:
       type: object
@@ -6083,20 +5678,176 @@ components:
           type: string
           enum:
             - not_found
-            - type_not_allowed
-            - not_verified
             - reverify_disabled
-            - no_biometric
       required:
         - error
     CreateReVerificationRequest:
       type: object
       properties:
-        session_id:
+        workflow_id:
           type: string
-          format: uuid
+          minLength: 1
+          maxLength: 128
+          description: The workflow to re-verify against. Its ID-verification step must
+            have re-verification enabled.
+        device_fingerprint:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Optional client device fingerprint, stored on the re-verification
+            session.
       required:
-        - session_id
+        - workflow_id
+      additionalProperties: false
+    ReVerificationLivenessStartResponse:
+      type: object
+      properties:
+        liveness_session_id:
+          type: string
+        script:
+          $ref: "#/components/schemas/LivenessChallengeScript"
+      required:
+        - liveness_session_id
+        - script
+    LivenessChallengeScript:
+      type: object
+      properties:
+        challengeType:
+          type: string
+          enum:
+            - FaceMovementChallenge
+            - FaceMovementAndLightChallenge
+        durationMs:
+          type: integer
+          exclusiveMinimum: 0
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              kind:
+                type: string
+                enum:
+                  - color
+                  - move-closer
+              atMs:
+                type: integer
+                minimum: 0
+              color:
+                type: string
+                description: Hex colour to display. Present on `color` steps only.
+                example: "#FF0000"
+            required:
+              - kind
+              - atMs
+      required:
+        - challengeType
+        - durationMs
+        - steps
+    ReVerificationLifecycleErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          enum:
+            - not_found
+            - already_completed
+            - expired
+            - liveness_not_started
+            - liveness_upload_incomplete
+            - insufficient_balance
+      required:
+        - error
+    ReVerificationLivenessUploadUrlResponse:
+      type: object
+      properties:
+        frame_upload_urls:
+          type: array
+          items:
+            type: string
+        frame_keys:
+          type: array
+          items:
+            type: string
+        timeline_upload_url:
+          type: string
+        timeline_key:
+          type: string
+        clip_upload_url:
+          type: string
+          description: Present only when `clip_mime_type` was sent.
+        clip_key:
+          type: string
+          description: Present only when `clip_mime_type` was sent.
+      required:
+        - frame_upload_urls
+        - frame_keys
+        - timeline_upload_url
+        - timeline_key
+    ReVerificationLivenessUploadUrlRequest:
+      type: object
+      properties:
+        frame_count:
+          type: integer
+          minimum: 3
+          maximum: 8
+          description: Number of captured frames to mint upload URLs for.
+          example: 4
+        clip_mime_type:
+          type: string
+          enum:
+            - video/webm
+            - video/mp4
+          description: Optional replay clip mime type. When present, a clip upload URL is
+            minted too.
+          example: video/mp4
+      required:
+        - frame_count
+      additionalProperties: false
+    ReVerificationDecisionResponse:
+      type: object
+      properties:
+        decision:
+          type: string
+          enum:
+            - verified
+            - retry
+            - failed
+            - retry_liveness
+        failed_attempts:
+          type: integer
+          minimum: 0
+        max_attempts:
+          type: integer
+          exclusiveMinimum: 0
+        liveness:
+          type: object
+          properties:
+            status:
+              type: string
+              enum:
+                - SUCCEEDED
+                - FAILED
+            confidence:
+              type:
+                - number
+                - "null"
+          required:
+            - status
+            - confidence
+        user_id:
+          type: string
+          description: The re-verified applicant's user id. Present only when decision is
+            verified.
+        original_session_id:
+          type: string
+          description: The approved session the applicant's face resolved to. Present only
+            when decision is verified.
+      required:
+        - decision
+        - failed_attempts
+        - max_attempts
+        - liveness
   parameters: {}
 paths:
   /v1/document/scan:
@@ -7151,11 +6902,11 @@ paths:
       description: "Creates a workflow composed of up to 10 ordered, unique steps.
         Supported step ids: ID_VERIFICATION, FACE_LIVENESS,
         FACE_LIVENESS_CONSENT_SETTINGS, AGE_ESTIMATION, DEEPFAKE_DETECTION,
-        DEEP_AGE, ADDRESS_VERIFICATION, BACKGROUND_CHECK, CREDIT_CHECK, KYB,
-        TITLE_SEARCH, PEP_SANCTIONS, ADVERSE_MEDIA, CUSTOM_PROMPT, CONSENT,
+        DEEP_AGE, ADDRESS_VERIFICATION, BACKGROUND_CHECK, TITLE_SEARCH,
+        PEP_SANCTIONS, ADVERSE_MEDIA, CUSTOM_PROMPT, CONSENT,
         BANK_STATEMENT_UPLOAD, AI_BANK_STATEMENT_ANALYSIS, DOCUMENT_UPLOAD,
-        CUSTOM_FORM, WHITE_LABEL, PHONE_TRUST_CHECK, CARRIER_AGE_GATE,
-        PHONE_OWNERSHIP_MATCH, PHONE_VERIFICATION, PROOFCALL, E_SIGNATURE."
+        WHITE_LABEL, PHONE_TRUST_CHECK, CARRIER_AGE_GATE, PHONE_OWNERSHIP_MATCH,
+        PHONE_VERIFICATION, E_SIGNATURE."
       security: *a2
       requestBody:
         required: true
@@ -7550,8 +7301,6 @@ paths:
               - DEEP_AGE
               - ADDRESS_VERIFICATION
               - BACKGROUND_CHECK
-              - CREDIT_CHECK
-              - KYB
               - TITLE_SEARCH
               - PEP_SANCTIONS
               - ADVERSE_MEDIA
@@ -7560,13 +7309,11 @@ paths:
               - BANK_STATEMENT_UPLOAD
               - AI_BANK_STATEMENT_ANALYSIS
               - DOCUMENT_UPLOAD
-              - CUSTOM_FORM
               - WHITE_LABEL
               - PHONE_TRUST_CHECK
               - CARRIER_AGE_GATE
               - PHONE_OWNERSHIP_MATCH
               - PHONE_VERIFICATION
-              - PROOFCALL
             example: ID_VERIFICATION
             description: "Runnable workflow step id. Case- and separator-insensitive:
               `id_verification` and `id-verification` resolve to the same step."
@@ -8620,11 +8367,7 @@ paths:
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/CarrierAgeGateResponse"
-                  - description: Result of a carrier age gate check. The mobile carrier confirms
-                      whether the subscriber is over the legal age threshold (18
-                      on all current routes) without disclosing the actual age.
+                $ref: "#/components/schemas/CarrierAgeGateResponse"
         "400":
           description: The request body failed schema validation or contained an
             unsupported image format.
@@ -8698,13 +8441,7 @@ paths:
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/PhoneOwnershipResponse"
-                  - description: Result of a phone ownership match. The mobile carrier scores how
-                      well the supplied name (and optional address / date of
-                      birth) matches the subscriber on record, without
-                      disclosing the record itself. Only the name score decides
-                      the outcome.
+                $ref: "#/components/schemas/PhoneOwnershipResponse"
         "400":
           description: The request body failed schema validation or contained an
             unsupported image format.
@@ -8779,12 +8516,7 @@ paths:
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/PhoneTrustResponse"
-                  - description: "Result of a phone trust check: recent SIM-swap and call-forwarding
-                      signals from the mobile carrier, with a `tripped` verdict
-                      for the requested sensitivity. Passive — no SMS code is
-                      sent."
+                $ref: "#/components/schemas/PhoneTrustResponse"
         "400":
           description: The request body failed schema validation or contained an
             unsupported image format.
@@ -10420,10 +10152,11 @@ paths:
     post:
       tags:
         - Re-Verifications
-      summary: Create or reuse a re-verification session
-      description: Checks whether an existing verified session can be re-verified,
-        then creates or reuses a pending re-verification session. This creates
-        no billable work and returns no applicant PII.
+      summary: Create a re-verification session
+      description: "Creates a pending re-verification session for a workflow whose
+        ID-verification step has re-verification enabled. The applicant is not
+        named by the request: they are identified by the face search at
+        liveness/complete. This creates no billable work."
       security: *a2
       requestBody:
         required: true
@@ -10432,12 +10165,6 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateReVerificationRequest"
       responses:
-        "200":
-          description: An existing live re-verification session was reused.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CreateReVerificationResponse"
         "201":
           description: A re-verification session was created.
           content:
@@ -10464,18 +10191,230 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: The session was not found, belongs to another organization, or
-            re-verification is disabled by feature flag.
+          description: The workflow was not found or belongs to another organization, or
+            re-verification is not available to this organization.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReVerificationErrorResponse"
         "422":
-          description: The session is not eligible for re-verification.
+          description: The workflow is not active or does not have re-verification enabled
+            on its ID-verification step.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReVerificationErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/re-verifications/{id}/liveness/start:
+    post:
+      tags:
+        - Re-Verifications
+      summary: Start re-verification liveness
+      description: "Starts a liveness attempt: returns a fresh liveness session id and
+        the challenge script the capture must answer. The challenge type comes
+        from the workflow's face-liveness step (FaceMovementChallenge by
+        default). Every call issues a new script and discards any earlier
+        attempt on the session."
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: The new liveness attempt and its challenge script.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLivenessStartResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The re-verification session was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLifecycleErrorResponse"
+        "409":
+          description: The session is already terminal (`already_completed`) or has
+            expired (`expired`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLifecycleErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/re-verifications/{id}/liveness/upload-url:
+    post:
+      tags:
+        - Re-Verifications
+      summary: Get re-verification liveness upload URLs
+      description: Mints presigned S3 PUT URLs for the current liveness attempt's
+        frames (image/jpeg), timeline (application/json) and optional replay
+        clip. The URLs are valid for 15 minutes. Calling this again re-mints
+        URLs for the same keys.
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: id
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReVerificationLivenessUploadUrlRequest"
+      responses:
+        "200":
+          description: Presigned upload URLs and the keys they upload to.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLivenessUploadUrlResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The re-verification session was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLifecycleErrorResponse"
+        "409":
+          description: The session is already terminal (`already_completed`) or has
+            expired (`expired`), or liveness/start has not been called for a new
+            attempt (`liveness_not_started`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLifecycleErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/re-verifications/{id}/liveness/complete:
+    post:
+      tags:
+        - Re-Verifications
+      summary: Complete liveness and decide re-verification
+      description: Scores the uploaded liveness capture and, when it passes the
+        workflow's liveness bar, searches its best face frame against the
+        platform's verified faces, confirms an approved session in this
+        organization and workflow, and records a retry or terminal decision. The
+        result is returned synchronously.
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: The capture was evaluated and a decision was recorded. Calling this
+            again after a terminal decision returns the same recorded decision
+            without re-evaluating or billing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationDecisionResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "402":
+          description: The organization has insufficient balance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLifecycleErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The re-verification session was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLifecycleErrorResponse"
+        "409":
+          description: "The session is already terminal (`already_completed`) or has
+            expired (`expired`); there is no uploaded capture to evaluate,
+            because liveness/start or liveness/upload-url was not called or the
+            last capture was already evaluated (`liveness_not_started`); or a
+            frame or the timeline is missing from storage
+            (`liveness_upload_incomplete`, nothing charged: re-upload and call
+            again)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLifecycleErrorResponse"
         "500":
           description: Unexpected server error.
           content:

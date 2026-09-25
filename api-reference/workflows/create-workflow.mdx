@@ -13,7 +13,7 @@ Creates a new workflow for your organization. Workflows define the ordered seque
 Use the [Workflow Builder](/workflow-builder) to arrange and configure a standard linear workflow, then copy, download, or send the generated request. The builder uses the same step identifiers and configuration fields as this endpoint.
 
 <Note>
-  A workflow contains 1–10 unique steps. Repeated step IDs and advanced branching workflows are not supported. Passport NFC Scanner and Crypto Wallet Screening are not part of the OpenAPI contract yet.
+  A workflow contains 1–10 unique steps. Repeated step IDs and advanced branching workflows are not supported. The API accepts only the production-ready steps listed below. Passport NFC Scanner and Crypto Wallet Screening are not part of the OpenAPI contract yet.
 </Note>
 
 ## Request
@@ -45,8 +45,6 @@ Use the [Workflow Builder](/workflow-builder) to arrange and configure a standar
 | `DEEP_AGE` | Additional age assurance using a configured challenge method |
 | `ADDRESS_VERIFICATION` | Knowledge-based address verification |
 | `BACKGROUND_CHECK` | Canadian background screening |
-| `CREDIT_CHECK` | Canadian consumer credit screening |
-| `KYB` | Business verification and screening |
 | `TITLE_SEARCH` | US property title search |
 | `PEP_SANCTIONS` | Politically exposed persons & sanctions screening |
 | `ADVERSE_MEDIA` | Negative press and media mention detection |
@@ -55,20 +53,18 @@ Use the [Workflow Builder](/workflow-builder) to arrange and configure a standar
 | `BANK_STATEMENT_UPLOAD` | Collect bank statements and configure analysis types |
 | `AI_BANK_STATEMENT_ANALYSIS` | Analyze a previously collected bank statement |
 | `DOCUMENT_UPLOAD` | Collect configured documents and optional extracted fields |
-| `CUSTOM_FORM` | Collect custom or questionnaire-template fields |
 | `WHITE_LABEL` | Apply the organization's hosted-flow branding |
 | `PHONE_TRUST_CHECK` | Screen carrier trust signals such as recent SIM changes |
 | `CARRIER_AGE_GATE` | Ask the carrier to confirm the applicant meets the age threshold |
 | `PHONE_OWNERSHIP_MATCH` | Compare applicant details with the carrier subscriber record |
 | `PHONE_VERIFICATION` | Verify a spoken phrase during a phone call |
-| `PROOFCALL` | Call supplied references and collect configured answers |
 | `E_SIGNATURE` | Collect signatures through the hosted verification flow |
 
 ### Step Configuration
 
 Each step accepts the configuration object shown in the generated request schema. If you omit optional fields, the API applies the same defaults as the standard Backoffice builder. The sections below call out common configurations; use the OpenAPI schema on this page as the exhaustive field reference.
 
-The API also validates cross-step requirements. For example, `AI_BANK_STATEMENT_ANALYSIS` requires an earlier `BANK_STATEMENT_UPLOAD` step, and `BACKGROUND_CHECK`, `CREDIT_CHECK`, and `TITLE_SEARCH` require an earlier `ID_VERIFICATION` step. The [Workflow Builder](/workflow-builder) adds coupled prerequisites automatically.
+The API also validates cross-step requirements. For example, `AI_BANK_STATEMENT_ANALYSIS` requires an earlier `BANK_STATEMENT_UPLOAD` step, and `BACKGROUND_CHECK` and `TITLE_SEARCH` require an earlier `ID_VERIFICATION` step. The [Workflow Builder](/workflow-builder) adds coupled prerequisites automatically.
 
 #### ID_VERIFICATION config
 
@@ -278,59 +274,30 @@ Returns the full workflow record. The response uses the same format as [Retrieve
     "updated_at": "2026-03-31T14:00:00.000Z",
     "steps": [
       {
-        "id": "id-verification",
+        "id": "ID_VERIFICATION",
         "config": {
-          "age_restriction_settings": {
-            "age_restriction_mode": "slider",
-            "country_category_minimum_age": null,
-            "minimum_age": { "lower": 21, "upper": 51 }
-          },
-          "expiry_date_settings": { "expiry_date": 5 },
-          "face_scan_settings": { "face_front_photo_only": false },
-          "id_scan_face_settings": { "require_front_only": false },
-          "id_scan_settings": {
-            "require_secondary_id": false,
-            "require_tertiary_id": false
-          },
-          "valid_id_types_settings": {
-            "valid_id_types": {
-              "driver_license_ca": true,
-              "driver_license_us": true,
-              "passport_ca": true,
-              "passport_us": true
-            }
-          },
-          "valid_states_settings": {
-            "valid_states": { "AL": true, "AK": true, "AZ": true, "...": "all US + CA" }
-          },
-          "fraud_analysis_settings": {
-            "enable_fraud_analysis": true
-          },
-          "fraud_analysis_escalation": {
-            "escalation_type": "nfc-passport",
-            "escalation_risk_threshold": 75
-          }
+          "minimum_age": 21,
+          "maximum_age": 51,
+          "expiry_date_years": 5,
+          "require_secondary_id": false,
+          "require_tertiary_id": false,
+          "face_front_photo_only": false,
+          "require_front_only": false,
+          "enable_fraud_analysis": true,
+          "escalation_type": "nfc-passport",
+          "escalation_risk_threshold": 75
         }
       },
       {
-        "id": "face-liveness",
-        "config": {
-          "face_liveness_confidence_settings": { "confidence_threshold": 85 },
-          "face_liveness_settings": { "preferred_liveness_method": "FaceMovementChallenge" }
-        }
+        "id": "FACE_LIVENESS",
+        "config": { "confidence_threshold": 85 }
       },
       {
-        "id": "age-estimation",
-        "config": {
-          "age_restriction_settings": {
-            "age_restriction_mode": "slider",
-            "country_category_minimum_age": null,
-            "minimum_age": { "lower": 18, "upper": 100 }
-          }
-        }
+        "id": "AGE_ESTIMATION",
+        "config": { "minimum_age": 18, "maximum_age": 100 }
       },
-      { "id": "pep-sanctions", "config": {} },
-      { "id": "adverse-media", "config": {} }
+      { "id": "PEP_SANCTIONS", "config": {} },
+      { "id": "ADVERSE_MEDIA", "config": {} }
     ]
   }
 }
