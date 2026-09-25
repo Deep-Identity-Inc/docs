@@ -752,6 +752,273 @@ components:
         - faceDetected
       description: Age and gender estimate for the most confident detected face. When
         `faceDetected` is false, only that field is present.
+    CreateLivenessSessionResponse:
+      type: object
+      properties:
+        liveness_session_id:
+          type: string
+          description: The Rekognition Face Liveness session id.
+        region:
+          type: string
+          description: AWS region the liveness session runs in.
+        credentials:
+          $ref: "#/components/schemas/LivenessCredentials"
+        expires_at:
+          type: string
+          format: date-time
+          description: When the vended credentials expire (ISO 8601).
+      required:
+        - liveness_session_id
+        - region
+        - credentials
+        - expires_at
+    LivenessCredentials:
+      type: object
+      properties:
+        access_key_id:
+          type: string
+        secret_access_key:
+          type: string
+        session_token:
+          type: string
+        expiration:
+          type: string
+          format: date-time
+      required:
+        - access_key_id
+        - secret_access_key
+        - session_token
+        - expiration
+      description: Temporary AWS credentials scoped to only
+        rekognition:StartFaceLivenessSession, valid ~15 minutes.
+    CreateLivenessSessionRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+          description: Optional verification session to attach this liveness check to.
+            When provided it must belong to the calling org; the liveness check
+            is then billed as part of that session. When omitted, the check runs
+            standalone and is billed per use.
+        challenge_type:
+          type: string
+          enum:
+            - FaceMovementChallenge
+            - FaceMovementAndLightChallenge
+          description: Liveness challenge to issue. Defaults to FaceMovementChallenge
+            (move closer to the camera); FaceMovementAndLightChallenge adds the
+            randomized colored-light sequence. Both are supported by every
+            liveness provider.
+    LivenessResultResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - SUCCEEDED
+            - IN_PROGRESS
+            - FAILED
+          description: Normalized session status (Rekognition CREATED maps to IN_PROGRESS;
+            EXPIRED maps to FAILED).
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: Liveness confidence 0–100 (absent until the session resolves).
+        passed:
+          type: boolean
+          description: True when status is SUCCEEDED and confidence >= the threshold.
+      required:
+        - status
+        - passed
+      description: Face liveness result. `passed` applies the (overridable, default
+        80) confidence threshold server-side.
+    DeepFakePromptResponse:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        challengeWord:
+          type: string
+      required:
+        - sessionId
+        - challengeWord
+    DeepFakeUploadUrlsResponse:
+      type: object
+      properties:
+        uploadUrls:
+          type: object
+          additionalProperties:
+            type: string
+        uploadKeys:
+          type: object
+          additionalProperties:
+            type: string
+        sessionId:
+          type: string
+      required:
+        - uploadUrls
+        - uploadKeys
+        - sessionId
+    DeepFakeUploadUrlsRequest:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        includeAudio:
+          type: boolean
+      required:
+        - sessionId
+        - includeAudio
+    DeepFakeAnalyzeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        passed:
+          type: boolean
+        confidence:
+          type: number
+        verdict:
+          type: string
+          enum:
+            - LIVE
+            - DEEPFAKE
+            - INCONCLUSIVE
+        riskScore:
+          type: number
+        trustVerdict:
+          type: string
+          enum:
+            - PASS
+            - REVIEW
+            - REJECT
+        trustScore:
+          type: number
+        challengeWord:
+          type: string
+        failureReasons:
+          type: array
+          items:
+            type: string
+        verificationId:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        details:
+          $ref: "#/components/schemas/DeepFakeAnalyzeDetails"
+      required:
+        - success
+        - passed
+        - confidence
+        - verdict
+        - riskScore
+        - trustVerdict
+        - trustScore
+        - failureReasons
+        - verificationId
+        - timestamp
+        - details
+    DeepFakeAnalyzeDetails:
+      type: object
+      properties:
+        layers:
+          type: object
+          additionalProperties: {}
+        avgLayerConfidence:
+          type: number
+        trustBreakdown:
+          type: object
+          additionalProperties:
+            type: number
+        degradedModules:
+          type: array
+          items:
+            type: string
+      required:
+        - layers
+        - avgLayerConfidence
+        - trustBreakdown
+        - degradedModules
+    DeepFakeAnalyzeRequest:
+      type: object
+      properties:
+        scanDurationMs:
+          type: number
+        challengeWord:
+          type: string
+        frameMeta:
+          type: array
+          items:
+            type: object
+            properties:
+              actionId:
+                type: string
+              action:
+                type: string
+                enum:
+                  - hold-still
+                  - blink
+                  - turn-left
+                  - turn-right
+                  - speak-prompt
+              timestamp:
+                type: number
+              yaw:
+                type: number
+              pitch:
+                type: number
+              roll:
+                type: number
+              leftEyeOpenness:
+                type: number
+              rightEyeOpenness:
+                type: number
+              faceDetected:
+                type: boolean
+            required:
+              - actionId
+              - action
+              - timestamp
+              - yaw
+              - pitch
+              - roll
+              - leftEyeOpenness
+              - rightEyeOpenness
+              - faceDetected
+        s3Keys:
+          type: object
+          properties:
+            frame_0:
+              type: string
+            frame_1:
+              type: string
+            frame_2:
+              type: string
+            frame_3:
+              type: string
+            frame_4:
+              type: string
+            frame_5:
+              type: string
+            audio_clip:
+              type: string
+            video_clip:
+              type: string
+          required:
+            - frame_0
+            - frame_1
+            - frame_2
+            - frame_3
+            - frame_4
+            - frame_5
+      required:
+        - scanDurationMs
+        - frameMeta
+        - s3Keys
     IdentityVerifyResponse:
       type: object
       properties:
@@ -990,7 +1257,31 @@ components:
           type: string
         status:
           type: string
-          description: One of PENDING, VERIFIED, REJECTED, EXPIRED.
+          description: One of PENDING, SUBMITTED, VERIFIED, REJECTED, VOIDED, FAILED,
+            EXPIRED. AI decisions surface as VERIFIED or REJECTED with
+            decision_source set.
+        auto_decision:
+          type: object
+          properties:
+            state:
+              type: string
+              enum:
+                - pending
+                - completed
+                - skipped
+          required:
+            - state
+          description: AI decision progress. pending means keep polling; completed means
+            read status; skipped means the workflow opted out (re-verification).
+            Omitted when auto-approve is off.
+        decision_source:
+          type: string
+          enum:
+            - AUTO_APPROVE
+            - DECLINED
+          description: Set only when an AI decision produced the status. AUTO_APPROVE is
+            returned as VERIFIED and DECLINED as REJECTED. Absent when a person
+            set VERIFIED or REJECTED.
         type:
           type: string
         session_progress:
@@ -1082,6 +1373,82 @@ components:
             - REJECTED
       required:
         - new_status
+    SessionUploadsResponse:
+      type: object
+      properties:
+        signed_urls:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionSignedUrlEntry"
+      required:
+        - signed_urls
+    SessionSignedUrlEntry:
+      type: object
+      properties:
+        file_key:
+          type: string
+          description: S3 object key under the sessions upload bucket. Echo this key in
+            the step submission `uploads` map.
+        upload_type:
+          type: string
+          enum:
+            - id_front
+            - id_back
+            - secondary_id_front
+            - secondary_id_back
+            - tertiary_id_front
+            - tertiary_id_back
+            - selfie_front
+        upload_url:
+          type: string
+          description: S3 presigned PUT URL. Send the file as the request body.
+      required:
+        - file_key
+        - upload_type
+        - upload_url
+    SessionUploadsRequest:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionUploadFile"
+          minItems: 1
+          description: One entry per file the caller intends to upload into the session
+            uploads bucket.
+      required:
+        - files
+    SessionUploadFile:
+      type: object
+      properties:
+        file_name:
+          type: string
+          minLength: 1
+          example: front.jpg
+          description: Original file name. Its extension is used when building the S3
+            object key (`{timestamp}-{upload_type}.{ext}`).
+        content_type:
+          type: string
+          minLength: 1
+          example: image/jpeg
+          description: MIME type of the file. Signed into the presigned URL — the PUT must
+            send the same Content-Type header.
+        upload_type:
+          type: string
+          enum:
+            - id_front
+            - id_back
+            - secondary_id_front
+            - secondary_id_back
+            - tertiary_id_front
+            - tertiary_id_back
+            - selfie_front
+          description: Hosted-flow Uploads slot this file will occupy on the session record.
+          example: id_front
+      required:
+        - file_name
+        - content_type
+        - upload_type
     ListWorkflowsResponse:
       type: object
       properties:
@@ -1188,14 +1555,59 @@ components:
                   config:
                     type: object
                     properties:
+                      age_restriction_mode:
+                        type: string
+                        enum:
+                          - slider
+                          - country
                       minimum_age:
                         type: integer
-                        minimum: 1
+                        minimum: 0
                         maximum: 100
                       maximum_age:
                         type: integer
-                        minimum: 1
+                        minimum: 0
                         maximum: 100
+                      country_category_restrictions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            country:
+                              type: string
+                              minLength: 1
+                            categories:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  id:
+                                    type: string
+                                    minLength: 1
+                                  label:
+                                    type: string
+                                    minLength: 1
+                                  minimumAge:
+                                    type: integer
+                                    minimum: 0
+                                    maximum: 100
+                                required:
+                                  - id
+                                  - label
+                                  - minimumAge
+                                additionalProperties: false
+                          required:
+                            - country
+                            - categories
+                          additionalProperties: false
+                      country_category_minimum_age:
+                        type: integer
+                        minimum: 0
+                        maximum: 100
+                        description: Accepted for Backoffice payload compatibility. In country mode the
+                          server derives the enforced value from the maximum
+                          minimumAge in country_category_restrictions, falling
+                          back to 18 when no category is selected.
                       expiry_date_years:
                         type: integer
                         minimum: 0
@@ -1210,15 +1622,54 @@ components:
                         type: boolean
                       enable_fraud_analysis:
                         type: boolean
+                        description: Must be true when escalation_type is nfc-passport or
+                          address-verification.
                       escalation_type:
                         type: string
                         enum:
                           - none
                           - nfc-passport
+                          - address-verification
+                        description: "Fraud-analysis escalation. Values other than none require
+                          enable_fraud_analysis: true."
                       escalation_risk_threshold:
                         type: integer
                         minimum: 0
                         maximum: 100
+                      accept_all_countries:
+                        type: boolean
+                      valid_countries:
+                        type: object
+                        additionalProperties:
+                          type: boolean
+                      valid_states:
+                        type: object
+                        additionalProperties:
+                          type: boolean
+                      id_confidence_threshold_enabled:
+                        type: boolean
+                      id_confidence_threshold:
+                        type: integer
+                        minimum: 0
+                        maximum: 100
+                      valid_id_types:
+                        type: object
+                        additionalProperties:
+                          type: boolean
+                      valid_id_types_by_country:
+                        type: object
+                        additionalProperties:
+                          type: boolean
+                      reverify_by_attestation_enabled:
+                        type: boolean
+                      reverify_min_confidence:
+                        type: number
+                        minimum: 90
+                        maximum: 100
+                        description: Minimum face-match confidence for the verify-app receipt
+                          re-verification flow. Has no effect on face-search
+                          re-verification (POST /v1/re-verifications), which
+                          uses a fixed platform threshold.
                     additionalProperties: false
                 required:
                   - id
@@ -1233,8 +1684,13 @@ components:
                     properties:
                       confidence_threshold:
                         type: integer
-                        minimum: 1
+                        minimum: 0
                         maximum: 100
+                      preferred_liveness_method:
+                        type: string
+                        enum:
+                          - FaceMovementChallenge
+                          - FaceMovementAndLightChallenge
                     additionalProperties: false
                 required:
                   - id
@@ -1247,10 +1703,59 @@ components:
                   config:
                     type: object
                     properties:
+                      age_restriction_mode:
+                        type: string
+                        enum:
+                          - slider
+                          - country
                       minimum_age:
                         type: integer
-                        minimum: 1
+                        minimum: 0
                         maximum: 100
+                      maximum_age:
+                        type: integer
+                        minimum: 0
+                        maximum: 100
+                      country_category_restrictions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            country:
+                              type: string
+                              minLength: 1
+                            categories:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  id:
+                                    type: string
+                                    minLength: 1
+                                  label:
+                                    type: string
+                                    minLength: 1
+                                  minimumAge:
+                                    type: integer
+                                    minimum: 0
+                                    maximum: 100
+                                required:
+                                  - id
+                                  - label
+                                  - minimumAge
+                                additionalProperties: false
+                          required:
+                            - country
+                            - categories
+                          additionalProperties: false
+                      country_category_minimum_age:
+                        type: integer
+                        minimum: 0
+                        maximum: 100
+                        description: Accepted for Backoffice payload compatibility. In country mode the
+                          server derives the enforced value from the maximum
+                          minimumAge in country_category_restrictions, falling
+                          back to 18 when no category is selected.
                     additionalProperties: false
                 required:
                   - id
@@ -1270,6 +1775,220 @@ components:
                       - ADVERSE_MEDIA
                 required:
                   - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - IP_JURISDICTION
+                  config:
+                    type: object
+                    properties:
+                      allowed_jurisdictions:
+                        type: array
+                        items:
+                          type: string
+                      blocked_jurisdictions:
+                        type: array
+                        items:
+                          type: string
+                      out_of_jurisdiction_action:
+                        type: string
+                        enum:
+                          - block
+                          - flag
+                          - step-up
+                          - allow
+                      datacenter_ip_action:
+                        type: string
+                        enum:
+                          - block
+                          - flag
+                          - step-up
+                          - allow
+                      trusted_ip_list:
+                        anyOf:
+                          - type: string
+                          - type: array
+                            items:
+                              type: string
+                      escalation_type:
+                        type: string
+                        enum:
+                          - none
+                          - nfc-passport
+                          - address-verification
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - VPN_DETECTION
+                  config:
+                    type: object
+                    properties:
+                      vpn_enabled:
+                        type: boolean
+                      vpn_action:
+                        type: string
+                        enum:
+                          - block
+                          - flag
+                          - step-up
+                          - allow
+                      datacenter_enabled:
+                        type: boolean
+                      datacenter_action:
+                        type: string
+                        enum:
+                          - block
+                          - flag
+                          - step-up
+                          - allow
+                      tor_enabled:
+                        type: boolean
+                      tor_action:
+                        type: string
+                        enum:
+                          - block
+                          - flag
+                          - step-up
+                          - allow
+                      trusted_ip_list:
+                        anyOf:
+                          - type: string
+                          - type: array
+                            items:
+                              type: string
+                      trusted_asn_list:
+                        anyOf:
+                          - type: string
+                          - type: array
+                            items:
+                              type: string
+                      confidence_threshold:
+                        type: integer
+                        minimum: 0
+                        maximum: 100
+                      escalation_type:
+                        type: string
+                        enum:
+                          - none
+                          - nfc-passport
+                          - address-verification
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - INJECTION_DETECTION
+                  config:
+                    type: object
+                    properties:
+                      action_on_detection:
+                        type: string
+                        enum:
+                          - block
+                          - flag
+                          - step-up
+                          - rechallenge
+                          - allow
+                      automation_handling:
+                        type: string
+                        enum:
+                          - block
+                          - flag
+                          - step-up
+                          - ignore
+                      confidence_threshold:
+                        type: integer
+                        minimum: 0
+                        maximum: 100
+                      escalation_type:
+                        type: string
+                        enum:
+                          - none
+                          - nfc-passport
+                          - address-verification
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - ANTI_CHEAT
+                  config:
+                    type: object
+                    properties:
+                      duplicate_enabled:
+                        type: boolean
+                      match_threshold:
+                        type: integer
+                        minimum: 1
+                        maximum: 100
+                      action_on_duplicate:
+                        type: string
+                        enum:
+                          - flag
+                          - manual-review
+                          - block
+                          - allow
+                      multi_account_enabled:
+                        type: boolean
+                      signal_ip_enabled:
+                        type: boolean
+                      signal_ip_weight:
+                        type: number
+                        minimum: 0
+                        maximum: 1
+                      signal_biometric_enabled:
+                        type: boolean
+                      signal_biometric_weight:
+                        type: number
+                        minimum: 0
+                        maximum: 1
+                      signal_document_enabled:
+                        type: boolean
+                      signal_document_weight:
+                        type: number
+                        minimum: 0
+                        maximum: 1
+                      signal_namedob_enabled:
+                        type: boolean
+                      signal_namedob_weight:
+                        type: number
+                        minimum: 0
+                        maximum: 1
+                      signal_device_enabled:
+                        type: boolean
+                      signal_device_weight:
+                        type: number
+                        minimum: 0
+                        maximum: 1
+                      link_sensitivity:
+                        type: integer
+                        minimum: 1
+                        maximum: 5
+                      action_on_multi_account:
+                        type: string
+                        enum:
+                          - flag
+                          - manual-review
+                          - block
+                          - allow
+                      self_exclusion_enabled:
+                        type: boolean
+                    additionalProperties: false
+                required:
+                  - id
           minItems: 1
           maxItems: 10
           description: Ordered list of unique workflow steps. Max 10 steps; each id may
@@ -1278,6 +1997,485 @@ components:
         - name
         - steps
       description: Body for creating a workflow.
+    UpdateWorkflowStepConfigResponse:
+      type: object
+      properties:
+        workflow:
+          $ref: "#/components/schemas/Workflow"
+      required:
+        - workflow
+    UpdateWorkflowStepConfigRequest:
+      type: object
+      properties:
+        config:
+          type: object
+          additionalProperties: {}
+          example:
+            reverify_by_attestation_enabled: true
+            reverify_min_confidence: 95
+          description: Partial config for the selected workflow step.
+      required:
+        - config
+    CreateWorkflowSessionResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        expires_at:
+          type:
+            - string
+            - "null"
+          example: 2026-08-01T00:00:00Z
+          description: ISO 8601 expiry instant, or null when no expiry is configured.
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowSessionStep"
+        current_step:
+          type: integer
+          minimum: 0
+          example: 0
+          description: Zero-based index into steps for the next executable step.
+      required:
+        - session_id
+        - expires_at
+        - steps
+        - current_step
+      description: Returned after creating a headless workflow session. No invite is
+        sent and no hosted session_url is included.
+    WorkflowSessionStep:
+      type: object
+      properties:
+        step_id:
+          type: string
+          description: Step id in API form (UPPER_SNAKE), e.g. ID_VERIFICATION.
+          example: ID_VERIFICATION
+        status:
+          type: string
+          enum:
+            - PENDING
+            - IN_PROGRESS
+            - COMPLETED
+            - FAILED
+            - SKIPPED
+        requirements:
+          $ref: "#/components/schemas/WorkflowStepRequirements"
+      required:
+        - step_id
+        - status
+        - requirements
+    WorkflowStepRequirements:
+      anyOf:
+        - $ref: "#/components/schemas/IdVerificationRequirements"
+        - $ref: "#/components/schemas/FaceLivenessRequirements"
+      description: Client-facing capture requirements derived from the workflow step
+        config. The shape depends on the step type.
+    IdVerificationRequirements:
+      type: object
+      properties:
+        document:
+          type: object
+          properties:
+            require_front_only:
+              type: boolean
+              description: True only when requirements were resolved for a concrete front-only
+                document type. On session-create / GET workflow this is always
+                false — use `front_only_document_types` after the user selects a
+                type.
+            front_only_document_types:
+              type: array
+              items:
+                type: string
+              description: API document types that only require a front-side capture (no
+                `*_back` upload).
+              example:
+                - passport
+            require_secondary_id:
+              type: boolean
+            require_tertiary_id:
+              type: boolean
+            valid_id_types:
+              type: array
+              items:
+                type: string
+              description: Accepted document types, in stored form.
+              example:
+                - driver-license-us
+                - passport-us
+            valid_states:
+              type: array
+              items:
+                type: string
+              description: Accepted issuing states/provinces.
+              example:
+                - NY
+                - ON
+          required:
+            - require_front_only
+            - front_only_document_types
+            - require_secondary_id
+            - require_tertiary_id
+            - valid_id_types
+            - valid_states
+        face:
+          type: object
+          properties:
+            face_front_photo_only:
+              type: boolean
+          required:
+            - face_front_photo_only
+      required:
+        - document
+        - face
+      description: Capture requirements for an ID_VERIFICATION step.
+        Secondary/tertiary flags come from step config; front-vs-back capture is
+        per document type via `front_only_document_types`. valid_id_types and
+        valid_states are enforced during execution.
+    FaceLivenessRequirements:
+      type: object
+      properties:
+        challenge_type:
+          type: string
+          description: Liveness challenge the client should run.
+          example: FaceMovementChallenge
+        confidence_threshold:
+          type: number
+          description: Server-enforced pass mark for the liveness result.
+          example: 70
+      required:
+        - challenge_type
+        - confidence_threshold
+    CreateWorkflowSessionRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          minLength: 1
+          example: user@example.com
+        first_name:
+          type: string
+          minLength: 1
+          example: Jane
+        last_name:
+          type: string
+          minLength: 1
+          example: Doe
+        phone:
+          type: string
+          pattern: ^\+[1-9]\d{9,14}$
+          example: "+15192223333"
+          description: Phone number in E.164 format.
+        external_id:
+          type: string
+          description: Caller-supplied identifier echoed back on responses and queryable
+            via list endpoints.
+        expires_in_hours:
+          type: integer
+          minimum: 1
+          maximum: 8760
+          description: Auto-expire the session after this many hours. Range 1–8760 (1
+            year). Overrides workflow settings.sessionExpiry.
+      required:
+        - email
+        - first_name
+        - last_name
+        - phone
+      description: Body for creating a headless workflow session (no invite, no hosted
+        URL). Snake_case and camelCase keys are accepted at runtime.
+    GetSessionWorkflowResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+        status:
+          type: string
+          description: Session status enum (e.g. PENDING, SUBMITTED, FAILED).
+          example: PENDING
+        session_progress:
+          type: string
+          description: One of PENDING, STARTED, COMPLETED.
+          example: PENDING
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/GetSessionWorkflowStep"
+        current_step:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          description: Zero-based index into steps for the next executable step. Null when
+            the run is finished.
+          example: 1
+        attempts_remaining:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          description: Session-wide failure budget remaining when failureSettings.active;
+            null when unlimited.
+          example: 2
+      required:
+        - session_id
+        - status
+        - session_progress
+        - steps
+        - current_step
+        - attempts_remaining
+      description: Read-only workflow execution state for an SDK-run session. Safe to
+        poll; used as the SDK resume path after app kill.
+    GetSessionWorkflowStep:
+      type: object
+      properties:
+        step_id:
+          type: string
+          description: Step id in API form (UPPER_SNAKE), e.g. ID_VERIFICATION.
+          example: ID_VERIFICATION
+        status:
+          type: string
+          enum:
+            - PENDING
+            - IN_PROGRESS
+            - COMPLETED
+            - FAILED
+            - SKIPPED
+        attempts:
+          type: integer
+          minimum: 0
+          description: Per-step attempt counter (reporting only; budget is session-wide).
+          example: 1
+        started_at:
+          type:
+            - string
+            - "null"
+          description: ISO 8601 when the step entered IN_PROGRESS, or null.
+        completed_at:
+          type:
+            - string
+            - "null"
+          description: ISO 8601 when the step reached a terminal status, or null.
+        failure_reason:
+          type:
+            - string
+            - "null"
+          description: Set when the step last failed a blocking check; null otherwise.
+        requirements:
+          allOf:
+            - $ref: "#/components/schemas/WorkflowStepRequirements"
+            - description: Capture requirements for this step, always included so the client
+                can render any step on resume.
+      required:
+        - step_id
+        - status
+        - attempts
+        - started_at
+        - completed_at
+        - failure_reason
+        - requirements
+    SubmitWorkflowStepResponse:
+      type: object
+      properties:
+        step_id:
+          type: string
+          description: Submitted step id in API form (UPPER_SNAKE).
+          example: ID_VERIFICATION
+        step_status:
+          type: string
+          enum:
+            - PENDING
+            - IN_PROGRESS
+            - COMPLETED
+            - FAILED
+            - SKIPPED
+          description: Resulting status of the submitted step after this call.
+          example: COMPLETED
+        failure_reason:
+          type:
+            - string
+            - "null"
+          description: Set when a blocking check failed this attempt; null on success.
+          example: null
+        current_step:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          description: Zero-based index of the next executable step after this submission.
+            Null when the run is finished.
+          example: 1
+        attempts_remaining:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          description: Session-wide failure budget remaining when failureSettings.active;
+            null when unlimited.
+          example: 2
+        session_status:
+          type: string
+          description: Session status after this submission (e.g. PENDING, SUBMITTED,
+            FAILED).
+          example: PENDING
+        session_progress:
+          type: string
+          description: Session progress after this submission (PENDING, STARTED, or
+            COMPLETED).
+          example: STARTED
+        liveness:
+          anyOf:
+            - $ref: "#/components/schemas/FaceLivenessStartResult"
+            - $ref: "#/components/schemas/FaceLivenessCompleteResult"
+          description: FACE_LIVENESS-only payload. `start` returns streaming credentials;
+            `complete` returns the pass/fail result. Omitted for
+            ID_VERIFICATION.
+      required:
+        - step_id
+        - step_status
+        - failure_reason
+        - current_step
+        - attempts_remaining
+        - session_status
+        - session_progress
+      description: Step submission result envelope. All runnable steps share the
+        common fields; FACE_LIVENESS additionally returns a `liveness` object.
+    FaceLivenessStartResult:
+      type: object
+      properties:
+        liveness_session_id:
+          type: string
+          description: Rekognition Face Liveness session id the device streams to.
+        region:
+          type: string
+          example: us-east-1
+        credentials:
+          $ref: "#/components/schemas/FaceLivenessStepCredentials"
+        expires_at:
+          type: string
+          description: ISO 8601 when the vended credentials expire.
+      required:
+        - liveness_session_id
+        - region
+        - credentials
+        - expires_at
+    FaceLivenessStepCredentials:
+      type: object
+      properties:
+        access_key_id:
+          type: string
+        secret_access_key:
+          type: string
+        session_token:
+          type: string
+        expiration:
+          type: string
+          description: ISO 8601 expiry of the vended STS credentials.
+      required:
+        - access_key_id
+        - secret_access_key
+        - session_token
+        - expiration
+      description: Temporary AWS credentials scoped to
+        rekognition:StartFaceLivenessSession (~15 minutes).
+    FaceLivenessCompleteResult:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Normalized Rekognition liveness status (e.g. SUCCEEDED, FAILED).
+          example: SUCCEEDED
+        confidence:
+          type:
+            - number
+            - "null"
+          description: Liveness confidence score when available; null when Rekognition
+            omits it.
+          example: 93.1
+        passed:
+          type: boolean
+          description: True when status is SUCCEEDED and confidence meets the step's
+            configured threshold.
+      required:
+        - status
+        - confidence
+        - passed
+    WorkflowStepSubmission:
+      anyOf:
+        - $ref: "#/components/schemas/IdVerificationStepSubmission"
+        - $ref: "#/components/schemas/FaceLivenessStepSubmission"
+      description: Submission body for a workflow step. The accepted shape depends on
+        the step type and on the step's stored config — e.g. an ID verification
+        step with require-secondary-id requires secondary upload slots.
+        Front-vs-back capture for ID verification is decided per declared
+        document type (passports are front-only).
+    IdVerificationStepSubmission:
+      type: object
+      properties:
+        document_type:
+          type: string
+        secondary_document_type:
+          type: string
+          description: Declared type of the secondary document. Required when the step
+            config sets require-secondary-id; each document is classified
+            against its own declared type.
+        tertiary_document_type:
+          type: string
+          description: Declared type of the tertiary document. Required when the step
+            config sets require-tertiary-id.
+        uploads:
+          type: object
+          properties:
+            id_front:
+              type: string
+            id_back:
+              type: string
+            secondary_id_front:
+              type: string
+            secondary_id_back:
+              type: string
+            tertiary_id_front:
+              type: string
+            tertiary_id_back:
+              type: string
+            selfie_front:
+              type: string
+          required:
+            - id_front
+            - selfie_front
+      required:
+        - document_type
+        - uploads
+    FaceLivenessStepSubmission:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+            - start
+            - upload-url
+            - complete
+          description: "`start` mints a Rekognition liveness session and returns streaming
+            credentials; `upload-url` (custom provider only) mints upload URLs
+            for the captured frames/clip; `complete` fetches the result
+            server-side."
+          example: start
+        frame_count:
+          type: integer
+          minimum: 1
+          maximum: 8
+          description: Number of captured frames to mint upload URLs for. Required when
+            `action` is `upload-url`.
+          example: 4
+        clip_mime_type:
+          type: string
+          minLength: 1
+          description: Optional full-attempt replay clip mime type, used only when
+            `action` is `upload-url`. An absent/unknown mime yields no clip url.
+          example: video/mp4
+      required:
+        - action
     CreateBankStatementResponse:
       type: object
       properties:
@@ -1512,6 +2710,40 @@ components:
         - phone
       description: Body for creating a hard or soft credit-check session. Snake_case
         keys are also accepted.
+    AuthVerifyResponse:
+      type: object
+      properties:
+        valid:
+          type: boolean
+          enum:
+            - true
+          example: true
+          description: Always `true` on a 200 response. Indicates the API key is valid and
+            the organization is active.
+        organization:
+          $ref: "#/components/schemas/AuthVerifyOrganization"
+      required:
+        - valid
+        - organization
+    AuthVerifyOrganization:
+      type: object
+      properties:
+        id:
+          type: string
+          example: org_a1b2c3d4e5f6
+          description: Unique identifier of the organization the API key belongs to.
+        name:
+          type: string
+          example: Acme Inc.
+          description: Display name of the organization.
+        status:
+          type: string
+          example: active
+          description: Organization status. `active` for a successful connection test.
+      required:
+        - id
+        - name
+        - status
     ListOAuthClientsResponse:
       type: object
       properties:
@@ -1532,28 +2764,18 @@ components:
           type: string
         type:
           type: string
-        credential_source:
+        auth_model:
+          type: string
+        authentication_method:
           type: string
         redirect_uris:
           type: array
           items:
             type: string
-        token_endpoint_auth_methods:
-          type: array
-          items:
-            type: string
         bound_user:
           $ref: "#/components/schemas/OAuthBoundUser"
-        api_key_id:
-          type: string
         sandbox:
           type: boolean
-        created_at:
-          type: string
-        updated_at:
-          type: string
-        last_used_at:
-          type: string
         integration_status:
           type: string
       required:
@@ -1561,15 +2783,14 @@ components:
         - name
         - description
         - type
-        - credential_source
+        - auth_model
+        - authentication_method
         - redirect_uris
-        - token_endpoint_auth_methods
         - bound_user
-        - api_key_id
         - sandbox
         - integration_status
-      description: Representation of the single derived OAuth client bound to the
-        caller's API key.
+      description: Representation of the shared public OAuth client used by hosted MCP
+        login.
     OAuthBoundUser:
       type: object
       properties:
@@ -1594,7 +2815,7 @@ components:
       required:
         - error
       description: Returned with HTTP 410 from create/rotate/revoke endpoints. Clients
-        are derived from the caller's API key and cannot be mutated separately.
+        use a fixed public client and are not mutated separately.
     OAuthClientCreateBody:
       type: object
       properties:
@@ -1618,7 +2839,8 @@ components:
         - name
         - type
       description: "Body for creating an OAuth client. NOTE: this endpoint currently
-        returns 410 — clients are derived from the caller's API key."
+        returns 410 — clients use a fixed public client and authenticate with
+        email and password."
     OAuthClientType:
       type: string
       enum:
@@ -1746,10 +2968,321 @@ components:
           type: string
           format: date
       required:
-        - email
         - firstName
         - lastName
         - dateOfBirth
+    CarrierAgeGateResponse:
+      type: object
+      properties:
+        outcome:
+          type: string
+          enum:
+            - PASS
+            - FAIL
+            - NO_DATA
+          description: PASS = the carrier confirms the subscriber is at least
+            `requiredAge`; FAIL = the carrier reports they are under it; NO_DATA
+            = the carrier holds no servable data for this number (normal where
+            the carrier route is not live).
+        ageVerified:
+          type: string
+          enum:
+            - VERIFIED
+            - NOT_VERIFIED
+            - NO_DATA
+        requiredAge:
+          type: integer
+          example: 18
+        carrierThreshold:
+          type: integer
+          description: The age threshold the carrier applied, when reported.
+        statusMessage:
+          type: string
+          example: Response from one supplier
+        checkedAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          description: Provider correlation id — quote it in support requests.
+        sessionId:
+          type: string
+          description: Present when the result was attached to a verification session via
+            `sessionId`.
+      required:
+        - outcome
+        - ageVerified
+        - requiredAge
+        - statusMessage
+        - checkedAt
+      description: Result of a carrier age gate check. The mobile carrier confirms
+        whether the subscriber is over the legal age threshold (18 on all
+        current routes) without disclosing the actual age.
+    CarrierAgeGateRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+          pattern: ^\+?[0-9()\-\s.]{7,20}$
+          example: "+447425604497"
+          description: Mobile number in E.164 format (+ and country code). Bare 10-digit
+            North American numbers are treated as +1. Required unless
+            `sessionId` is given, in which case it defaults to the session
+            applicant's phone.
+        sessionId:
+          type: string
+          format: uuid
+          description: Optional verification session to attach the result to. The result
+            is written to that session's `analysis_data.phone_checks.age_gate`
+            (visible on GET /v1/verification/sessions/{id}) instead of creating
+            a standalone screening record. The session must belong to your
+            organization. A repeat call overwrites the previous result.
+        email:
+          type: string
+          example: applicant@example.com
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 255
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 255
+    PhoneOwnershipResponse:
+      type: object
+      properties:
+        outcome:
+          type: string
+          enum:
+            - MATCH
+            - NO_MATCH
+            - NO_DATA
+          description: MATCH = carrier name score ≥ threshold; NO_MATCH = below it;
+            NO_DATA = the carrier holds no servable subscriber data for this
+            number (normal where the carrier route is not live).
+        nameScore:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        firstNameScore:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        lastNameScore:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        dobScore:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        addressScore:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        strictness:
+          type: string
+          enum:
+            - relaxed
+            - medium
+            - strict
+        threshold:
+          type: integer
+          example: 70
+        statusMessage:
+          type: string
+          example: Response from one supplier
+        checkedAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          description: Provider correlation id — quote it in support requests.
+        sessionId:
+          type: string
+          description: Present when the result was attached to a verification session via
+            `sessionId`.
+      required:
+        - outcome
+        - strictness
+        - threshold
+        - statusMessage
+        - checkedAt
+      description: Result of a phone ownership match. The mobile carrier scores how
+        well the supplied name (and optional address / date of birth) matches
+        the subscriber on record, without disclosing the record itself. Only the
+        name score decides the outcome.
+    PhoneOwnershipRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+          pattern: ^\+?[0-9()\-\s.]{7,20}$
+          example: "+447425604497"
+          description: Mobile number in E.164 format (+ and country code). Bare 10-digit
+            North American numbers are treated as +1. Required unless
+            `sessionId` is given, in which case it defaults to the session
+            applicant's phone.
+        sessionId:
+          type: string
+          format: uuid
+          description: Optional verification session to attach the result to. The result
+            is written to that session's `analysis_data.phone_checks.ownership`
+            instead of creating a standalone screening record. The session must
+            belong to your organization. A repeat call overwrites the previous
+            result.
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: John
+          description: Name to match against the carrier's subscriber record. At least one
+            of firstName/lastName is required unless `sessionId` is given (then
+            the session applicant's name is used).
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: Smith
+        address:
+          type: string
+          minLength: 1
+          maxLength: 500
+          example: 23 Omnia Street, London, EC1A 1BB, GB
+          description: Optional free-text address. When given, `addressScore` in the
+            response is meaningful; it never changes the outcome.
+        dateOfBirth:
+          type: string
+          format: date
+          example: 1990-01-15
+          description: Optional date of birth (YYYY-MM-DD). Reported as `dobScore`; never
+            changes the outcome.
+        email:
+          type: string
+          example: applicant@example.com
+        strictness:
+          type: string
+          enum:
+            - relaxed
+            - medium
+            - strict
+          description: "Minimum carrier name score to count as a MATCH: relaxed 50, medium
+            70 (default), strict 90."
+    PhoneTrustResponse:
+      type: object
+      properties:
+        tripped:
+          type: boolean
+          description: True when the signals below exceed the chosen sensitivity. The
+            check never blocks; act on this in your own flow.
+        tripReasons:
+          type: array
+          items:
+            type: string
+            enum:
+              - SIM_SWAP_HIGH_RISK
+              - SIM_SWAP_MEDIUM_RISK
+              - CALL_FORWARDING_ACTIVE
+        simSwappedRisk:
+          type: string
+          enum:
+            - NO_DATA
+            - LOW_RISK
+            - MEDIUM_RISK
+            - HIGH_RISK
+          description: HIGH_RISK = SIM changed in the last 72 hours; MEDIUM_RISK = in the
+            last 30 days; LOW_RISK = no recent change; NO_DATA = the carrier
+            holds no servable data (normal where the carrier route is not live).
+        simChangedDate:
+          type: string
+          format: date-time
+          description: When the carrier last recorded a SIM change, if reported.
+        forwardingRisk:
+          type: string
+          enum:
+            - NO_DATA
+            - NO_RISK
+            - HIGH_RISK
+          description: HIGH_RISK = unconditional call forwarding is active on the line.
+        sensitivity:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+        statusMessage:
+          type: string
+          example: Response from one supplier
+        checkedAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          description: Provider correlation id — quote it in support requests.
+        sessionId:
+          type: string
+          description: Present when the result was attached to a verification session via
+            `sessionId`.
+      required:
+        - tripped
+        - tripReasons
+        - simSwappedRisk
+        - forwardingRisk
+        - sensitivity
+        - statusMessage
+        - checkedAt
+      description: "Result of a phone trust check: recent SIM-swap and call-forwarding
+        signals from the mobile carrier, with a `tripped` verdict for the
+        requested sensitivity. Passive — no SMS code is sent."
+    PhoneTrustRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+          pattern: ^\+?[0-9()\-\s.]{7,20}$
+          example: "+447425604497"
+          description: Mobile number in E.164 format (+ and country code). Bare 10-digit
+            North American numbers are treated as +1. Required unless
+            `sessionId` is given, in which case it defaults to the session
+            applicant's phone.
+        sessionId:
+          type: string
+          format: uuid
+          description: Optional verification session to attach the result to. The result
+            is written to that session's `analysis_data.phone_checks.trust`
+            instead of creating a standalone screening record. The session must
+            belong to your organization. A repeat call overwrites the previous
+            result (any SMS verification state on it is preserved).
+        sensitivity:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+          description: What trips the check. low = a SIM swap in the last 72 hours only;
+            medium (default) and high = also a SIM swap in the last 30 days or
+            active unconditional call forwarding.
+        email:
+          type: string
+          example: applicant@example.com
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 255
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 255
     AsyncJobAccepted:
       type: object
       properties:
@@ -1792,7 +3325,6 @@ components:
           type: string
           pattern: ^[A-Z]{2}$/i
       required:
-        - email
         - firstName
         - lastName
         - dateOfBirth
@@ -1910,6 +3442,90 @@ components:
         - updatedAt
         - status
         - error
+    Profile:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        organizationId:
+          type: string
+        logoUrl:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - name
+        - organizationId
+        - createdAt
+        - updatedAt
+    CreateProfileRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          example: Acme Branding
+          description: Display name for the branding profile.
+        logoUrl:
+          type: string
+          example: org-id/profiles/logos/uuid
+          description: S3 object key from POST /v1/profiles/logo-upload-url. Omit to
+            create a profile without a logo.
+      required:
+        - name
+    ListProfilesResponse:
+      type: object
+      properties:
+        profiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Profile"
+      required:
+        - profiles
+    LogoUploadUrlResponse:
+      type: object
+      properties:
+        uploadUrl:
+          type: string
+          description: S3 presigned PUT URL. Upload the logo as the raw request body with
+            the matching Content-Type header.
+        fileKey:
+          type: string
+          description: S3 object key. Pass this as `logoUrl` when creating or updating the
+            profile.
+      required:
+        - uploadUrl
+        - fileKey
+    LogoUploadUrlRequest:
+      type: object
+      properties:
+        contentType:
+          type: string
+          enum:
+            - image/jpeg
+            - image/png
+            - image/webp
+            - image/gif
+          example: image/png
+          description: "MIME type of the logo. Supported: image/jpeg, image/png,
+            image/webp, image/gif."
+        byteLength:
+          type: integer
+          exclusiveMinimum: 0
+          maximum: 15728640
+          example: 102400
+          description: File size in bytes. Signed into the presigned URL — the PUT must
+            send exactly this many bytes. Maximum 15 MiB.
+      required:
+        - contentType
+        - byteLength
     PresignUrlResponse:
       type: object
       properties:
@@ -1966,6 +3582,1180 @@ components:
       required:
         - contentType
         - byteLength
+    AnalyzeInjectionResponse:
+      type: object
+      properties:
+        verdict:
+          type: string
+          enum:
+            - HIT
+            - CLEAR
+            - UNAVAILABLE
+        action:
+          type: string
+        confidence:
+          type:
+            - number
+            - "null"
+        escalation:
+          type:
+            - object
+            - "null"
+          properties:
+            type:
+              type: string
+            check:
+              type: string
+              enum:
+                - injection-detection
+          required:
+            - type
+            - check
+      required:
+        - verdict
+        - action
+        - confidence
+        - escalation
+    AnalyzeInjectionRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+          minLength: 1
+        device_integrity:
+          $ref: "#/components/schemas/InjectionSignal"
+        media_source:
+          $ref: "#/components/schemas/InjectionSignal"
+        frame_timing:
+          $ref: "#/components/schemas/InjectionSignal"
+      required:
+        - session_id
+      description: Signals for injection/spoofing detection on a verification session.
+    InjectionSignal:
+      type: object
+      properties:
+        pass:
+          type: boolean
+        score:
+          type: number
+          minimum: 0
+          maximum: 100
+        signals:
+          type: array
+          items:
+            type: string
+          default: []
+      required:
+        - pass
+        - score
+    IpCheckResponse:
+      type: object
+      properties:
+        verdict:
+          type: string
+          enum:
+            - HIT
+            - CLEAR
+            - UNAVAILABLE
+        action:
+          type: string
+        evidence:
+          type: object
+          additionalProperties: {}
+        escalation:
+          type:
+            - object
+            - "null"
+          properties:
+            decision:
+              type: string
+              enum:
+                - ESCALATE
+            type:
+              type: string
+            reason:
+              type: string
+          required:
+            - decision
+            - type
+            - reason
+      required:
+        - verdict
+        - action
+        - evidence
+        - escalation
+    AnalyzeIpCheckRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+          minLength: 1
+        ip_address:
+          type: string
+          minLength: 1
+      required:
+        - session_id
+        - ip_address
+      description: Body for an IP-based iGaming check (jurisdiction or VPN/anonymizer)
+        on a session.
+    AntiCheatResponse:
+      type: object
+      properties:
+        verdict:
+          type: string
+          enum:
+            - DUPLICATE
+            - UNIQUE
+            - UNAVAILABLE
+            - SELF_EXCLUSION
+        action:
+          type: string
+          enum:
+            - allow
+            - flag
+            - manual-review
+            - block
+      required:
+        - verdict
+        - action
+    AnalyzeAntiCheatRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+          minLength: 1
+        image:
+          type: string
+          minLength: 1
+        device_fingerprint:
+          type: string
+      required:
+        - session_id
+        - image
+      description: Anti-cheat analysis (face-dedup + multi-accounting +
+        self-exclusion) for a session.
+    SelfExclusionListResponse:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            oneOf:
+              - type: object
+                properties:
+                  type:
+                    type: string
+                    enum:
+                      - identity
+                  document_number:
+                    type: string
+                  reason:
+                    type:
+                      - string
+                      - "null"
+                  added_by:
+                    type:
+                      - string
+                      - "null"
+                  added_at:
+                    type:
+                      - string
+                      - "null"
+                  first_name:
+                    type: string
+                  last_name:
+                    type: string
+                required:
+                  - type
+                  - document_number
+                  - reason
+                  - added_by
+                  - added_at
+              - type: object
+                properties:
+                  type:
+                    type: string
+                    enum:
+                      - face
+                  session_id:
+                    type: string
+                  reason:
+                    type:
+                      - string
+                      - "null"
+                  excluded_at:
+                    type:
+                      - string
+                      - "null"
+                required:
+                  - type
+                  - session_id
+                  - reason
+                  - excluded_at
+        truncated:
+          type: boolean
+      required:
+        - entries
+        - truncated
+    SelfExclusionIdentityAddResponse:
+      type: object
+      properties:
+        excluded:
+          type: array
+          items:
+            type: object
+            properties:
+              document_number:
+                type: string
+              status:
+                type: string
+                enum:
+                  - added
+                  - already_excluded
+                  - invalid
+            required:
+              - document_number
+              - status
+      required:
+        - excluded
+    SelfExclusionIdentityAddRequest:
+      type: object
+      properties:
+        document_number:
+          type: string
+          minLength: 1
+        document_numbers:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          minItems: 1
+        reason:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+      description: Add one or more document numbers to the org's self-exclusion registry.
+    SelfExclusionIdentityRemoveResponse:
+      type: object
+      properties:
+        removed:
+          type: boolean
+        face_unexcluded:
+          type: boolean
+      required:
+        - removed
+        - face_unexcluded
+    SelfExclusionFaceResponse:
+      type: object
+      properties:
+        excluded:
+          type: boolean
+        session_id:
+          type: string
+        reason:
+          type: string
+        matched_session_id:
+          type: string
+      required:
+        - excluded
+    SelfExclusionFaceRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+          minLength: 1
+        reason:
+          type: string
+      required:
+        - session_id
+      description: Exclude the enrolled face on a session.
+    SelfExclusionFaceRemoveResponse:
+      type: object
+      properties:
+        unexcluded:
+          type: boolean
+        matched_session_id:
+          type: string
+      required:
+        - unexcluded
+    AntiCheatPurgeResponse:
+      type: object
+      properties:
+        deleted:
+          type: boolean
+        face_id:
+          type:
+            - string
+            - "null"
+      required:
+        - deleted
+        - face_id
+    SelfExclusionApplicantResponse:
+      type: object
+      properties:
+        face_attached:
+          type: boolean
+        document_number:
+          type:
+            - string
+            - "null"
+        identity_status:
+          type: string
+          enum:
+            - added
+            - already_excluded
+        matched_session_id:
+          type: string
+        message:
+          type: string
+      required:
+        - face_attached
+        - document_number
+    SelfExclusionApplicantRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+          minLength: 1
+        reason:
+          type: string
+      required:
+        - session_id
+      description: "Exclude an applicant by session: flags the face (with
+        matched-session fallback) and, if the session has a scanned document
+        number, adds an identity exclusion linked to that face."
+    AmlIngestResponse:
+      type: object
+      properties:
+        accepted:
+          type: integer
+          description: Records STORED — clean and warned. `warned` is an informational
+            subset of this.
+        warned:
+          type: integer
+        rejected:
+          type: integer
+          description: Records that were not stored.
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/AmlRecordResult"
+      required:
+        - accepted
+        - warned
+        - rejected
+        - results
+      description: A well-formed envelope always returns 200. Per-record outcomes are
+        DATA, not transport errors — always inspect `results`.
+    AmlRecordResult:
+      type: object
+      properties:
+        index:
+          type: integer
+          description: Zero-based position in the submitted batch.
+        client_txn_id:
+          type:
+            - string
+            - "null"
+        status:
+          type: string
+          enum:
+            - accepted
+            - warned
+            - rejected
+        warnings:
+          type: array
+          items:
+            type: string
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              field:
+                type:
+                  - string
+                  - "null"
+                description: Dotted path to the offending field, in snake_case.
+                example: amount.value
+              message:
+                type: string
+            required:
+              - code
+              - field
+              - message
+      required:
+        - index
+        - client_txn_id
+        - status
+    AmlQuotaExceeded:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          enum:
+            - QUOTA_EXCEEDED
+        quota:
+          type: integer
+        used:
+          type: integer
+        remaining:
+          type: integer
+        month:
+          type: string
+          example: 2026-08
+        resets_at:
+          type: string
+          example: 2026-09-01T00:00:00.000Z
+      required:
+        - error
+        - code
+        - quota
+        - used
+        - remaining
+        - month
+        - resets_at
+      description: Nothing was stored. Reservation is atomic and happens before any write.
+    AmlTransactionBatch:
+      type: object
+      properties:
+        bot_id:
+          type: string
+          minLength: 1
+          description: Enrol subjects into this specific transaction_risk bot. Omit it
+            when the organization has exactly one running transaction_risk bot;
+            we never auto-select among several.
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AmlTransactionRecord"
+          minItems: 1
+          maxItems: 500
+      required:
+        - transactions
+      description: Up to 500 records or 5 MB per request, whichever is smaller. A bare
+        JSON array of records is also accepted. Both snake_case and camelCase
+        keys are accepted; `metadata` keys are never converted.
+    AmlTransactionRecord:
+      type: object
+      properties:
+        client_txn_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Your own unique identifier for this transaction. Re-posting the
+            same id updates the same record — this is what makes ingest
+            idempotent. Max 128 characters.
+          example: txn-000123
+        subject_user_id:
+          type: string
+          minLength: 1
+          description: Your own identifier for the customer this transaction belongs to. A
+            subject is auto-provisioned and enrolled in monitoring on first
+            sight.
+          example: cust-8821
+        timestamp:
+          type: string
+          description: When the transaction occurred (ISO-8601).
+          example: 2026-08-01T09:00:00Z
+        direction:
+          type: string
+          enum:
+            - inbound
+            - outbound
+            - internal
+          description: "Direction of the transaction relative to the monitored subject —
+            not to your institution. `inbound`: funds arriving at the subject.
+            `outbound`: funds leaving the subject. `internal`: funds moving
+            between accounts the same subject controls, with no external
+            counterparty. Taken as given and never inferred — accuracy is the
+            sender's responsibility, and a mislabelled direction cannot be
+            corrected after ingest. There is no `any` value here: `any` exists
+            only in dashboard rule configuration, where it means a rule matches
+            all three directions."
+          example: inbound
+        amount:
+          $ref: "#/components/schemas/AmlAmount"
+        type:
+          type: string
+          enum:
+            - card
+            - wire
+            - eft
+            - ach
+            - crypto
+            - cash
+            - internal_transfer
+            - other
+        normalized_amount:
+          $ref: "#/components/schemas/AmlNormalizedAmount"
+        fx_rate:
+          type: number
+        status:
+          type: string
+          enum:
+            - pending
+            - completed
+            - failed
+            - reversed
+        channel:
+          type: string
+          enum:
+            - web
+            - mobile
+            - api
+            - branch
+            - atm
+            - pos
+        counterparty:
+          type: object
+          properties:
+            name:
+              type: string
+            external_id:
+              type: string
+            account_number:
+              type: string
+            institution:
+              type: string
+            country:
+              type: string
+              description: ISO-3166-1 alpha-2 country code.
+              example: CA
+            wallet_address:
+              type: string
+          description: The other party to the transaction. Stored as a data field for rule
+            evaluation — a counterparty is NEVER enrolled as a monitored user.
+        geography:
+          type: object
+          properties:
+            origin_country:
+              type: string
+              description: ISO-3166-1 alpha-2 country code.
+              example: CA
+            destination_country:
+              type: string
+              description: ISO-3166-1 alpha-2 country code.
+              example: CA
+            ip_country:
+              type: string
+              description: ISO-3166-1 alpha-2 country code.
+              example: CA
+            ip_address:
+              type: string
+              description: Optional. The IP address the transaction originated from. Retained
+                as context for risk adjudication — it does NOT trigger any rule.
+              example: 203.0.113.42
+        crypto:
+          type: object
+          properties:
+            asset_type:
+              type: string
+            tx_hash:
+              type: string
+            wallet_from:
+              type: string
+            wallet_to:
+              type: string
+            amount_asset:
+              type: number
+        metadata:
+          type: object
+          additionalProperties: {}
+          description: Free-form client-specific fields. Stored verbatim and never
+            interpreted — your keys are preserved exactly as sent and are NOT
+            case-converted.
+        subject:
+          type: object
+          properties:
+            first_name:
+              type:
+                - string
+                - "null"
+            last_name:
+              type:
+                - string
+                - "null"
+            email:
+              type:
+                - string
+                - "null"
+              format: email
+            phone:
+              type:
+                - string
+                - "null"
+          description: Optional identity for the subject. Omitting it still stores the
+            transaction and monitors the subject, but an unnamed subject cannot
+            be name-screened (you receive a SUBJECT_UNNAMED warning).
+      required:
+        - client_txn_id
+        - subject_user_id
+        - timestamp
+        - direction
+        - amount
+        - type
+    AmlAmount:
+      type: object
+      properties:
+        value:
+          type: number
+        currency:
+          type: string
+          description: ISO-4217 currency code. Retired codes are accepted.
+          example: USD
+      required:
+        - value
+        - currency
+      description: A monetary figure. `value` must be a JSON number, not a string.
+    AmlNormalizedAmount:
+      type: object
+      properties:
+        value:
+          type: number
+        currency:
+          type: string
+          description: ISO-4217 currency code. Retired codes are accepted.
+          example: USD
+        fx_rate:
+          type: number
+      required:
+        - value
+        - currency
+      description: The amount expressed in your organization's base currency. Supply
+        it whenever the transaction currency differs from your base currency —
+        we perform no FX conversion.
+    MonitoredUser:
+      type: object
+      properties:
+        org_id:
+          type: string
+        bot_id:
+          type: string
+        subject_user_id:
+          type: string
+        subject_user_name:
+          type:
+            - string
+            - "null"
+        subject_country:
+          type: string
+        status:
+          type: string
+        cadence_days:
+          type: number
+        next_check_at:
+          type: string
+        last_checked_at:
+          type:
+            - string
+            - "null"
+        added_at:
+          type: string
+        added_by:
+          type:
+            - string
+            - "null"
+        updated_at:
+          type: string
+      required:
+        - org_id
+        - bot_id
+        - subject_user_id
+        - subject_user_name
+        - subject_country
+        - status
+        - cadence_days
+        - next_check_at
+        - last_checked_at
+        - added_at
+        - added_by
+        - updated_at
+    AddMonitoredUserRequest:
+      type: object
+      properties:
+        subject_user_id:
+          type: string
+          minLength: 1
+          description: Your own identifier for the customer to place under monitoring.
+          example: cust-8821
+      required:
+        - subject_user_id
+      description: Both snake_case and camelCase keys are accepted at runtime.
+    CreateDeepAgeSessionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        session_url:
+          type: string
+          description: Link the applicant opens to complete age verification.
+        method:
+          type: string
+          description: The resolved internal method name. `quiz` resolves to `intel-quiz`.
+        external_id:
+          type: string
+        expires_at:
+          type:
+            - string
+            - "null"
+        links:
+          type: array
+          items:
+            type: object
+            properties:
+              rel:
+                type: string
+              href:
+                type: string
+              description:
+                type: string
+            required:
+              - rel
+              - href
+              - description
+      required:
+        - id
+        - session_url
+        - method
+        - links
+    ListParentConnectResponse:
+      type: object
+      properties:
+        parent_connect_requests:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParentConnectRequest"
+        next_token:
+          type:
+            - string
+            - "null"
+          description: Opaque cursor for the next page, or null on the last page. Pass it
+            back verbatim as `next_token`.
+      required:
+        - parent_connect_requests
+        - next_token
+    ParentConnectRequest:
+      type: object
+      properties:
+        id:
+          type:
+            - string
+            - "null"
+        child_session_id:
+          type:
+            - string
+            - "null"
+        parent_session_id:
+          type:
+            - string
+            - "null"
+        status:
+          type:
+            - string
+            - "null"
+          enum:
+            - PENDING
+            - PARENT_INVITED
+            - PARENT_VERIFIED
+            - CONSENT_GIVEN
+            - EXPIRED
+            - DECLINED
+            - null
+        age_band:
+          type:
+            - string
+            - "null"
+        contact_method:
+          type:
+            - string
+            - "null"
+          description: "How the parent was invited: `sms`, `email` or `device`."
+        platform_restrictions:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+                minLength: 1
+              label:
+                type: string
+                minLength: 1
+              type:
+                type: string
+                enum:
+                  - toggle
+                  - number
+                  - select
+                  - minutes
+              category:
+                type: string
+                enum:
+                  - feature
+                  - content
+              default: {}
+              required:
+                type: boolean
+              min:
+                type: number
+              max:
+                type: number
+              options:
+                type: array
+                items:
+                  type: string
+            required:
+              - key
+              - label
+              - type
+          description: The boundary schema this platform declared when the session was
+            created.
+        boundaries:
+          type:
+            - object
+            - "null"
+          additionalProperties: {}
+          description: The parent's chosen values, keyed by restriction key. Null until
+            consent is given.
+        eula_url:
+          type:
+            - string
+            - "null"
+        eula_accepted:
+          type: boolean
+        child_attestation_id:
+          type:
+            - string
+            - "null"
+          description: Set once the chain-mint pipeline has minted the child's
+            attestation. Use it to read boundaries later.
+        parent_attestation_id:
+          type:
+            - string
+            - "null"
+        boundaries_revision:
+          type:
+            - number
+            - "null"
+          description: 1 while the boundaries are still the consented set; incremented on
+            every later parental edit.
+        consent_given_at:
+          type:
+            - string
+            - "null"
+        consent_expires_at:
+          type:
+            - string
+            - "null"
+        reconsent_due_at:
+          type:
+            - string
+            - "null"
+        invite_expires_at:
+          type:
+            - string
+            - "null"
+        declined_at:
+          type:
+            - string
+            - "null"
+        created_at:
+          type:
+            - string
+            - "null"
+        updated_at:
+          type:
+            - string
+            - "null"
+      required:
+        - id
+        - child_session_id
+        - parent_session_id
+        - status
+        - age_band
+        - contact_method
+        - platform_restrictions
+        - boundaries
+        - eula_url
+        - eula_accepted
+        - child_attestation_id
+        - parent_attestation_id
+        - boundaries_revision
+        - consent_given_at
+        - consent_expires_at
+        - reconsent_due_at
+        - invite_expires_at
+        - declined_at
+        - created_at
+        - updated_at
+    BoundariesResponse:
+      type: object
+      properties:
+        child_attestation_id:
+          type:
+            - string
+            - "null"
+        parent_attestation_id:
+          type:
+            - string
+            - "null"
+        parent_connect_id:
+          type:
+            - string
+            - "null"
+        age_band:
+          type:
+            - string
+            - "null"
+        parental_consent:
+          type: boolean
+        eula_accepted:
+          type: boolean
+        boundaries:
+          type: object
+          additionalProperties: {}
+        boundaries_revision:
+          type: number
+        boundaries_match_attestation:
+          type: boolean
+          description: True when the attestation's `restrictions_hash` label still
+            describes these boundaries. False means a parent has edited them
+            since consent — trust this response over the attestation.
+        consent_expires_at:
+          type:
+            - string
+            - "null"
+        updated_at:
+          type:
+            - string
+            - "null"
+      required:
+        - child_attestation_id
+        - parent_attestation_id
+        - parent_connect_id
+        - age_band
+        - parental_consent
+        - eula_accepted
+        - boundaries
+        - boundaries_revision
+        - boundaries_match_attestation
+        - consent_expires_at
+        - updated_at
+    CreateReVerificationResponse:
+      type: object
+      properties:
+        re_verification_id:
+          type: string
+        workflow_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - PENDING
+        expires_at:
+          type: string
+        liveness:
+          type: object
+          properties:
+            challenge_type:
+              type: string
+              enum:
+                - FaceMovementChallenge
+                - FaceMovementAndLightChallenge
+              description: The challenge `liveness/start` will issue, from the workflow's
+                face-liveness step (`FaceMovementChallenge` by default).
+          required:
+            - challenge_type
+      required:
+        - re_verification_id
+        - workflow_id
+        - status
+        - expires_at
+        - liveness
+    ReVerificationErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          enum:
+            - not_found
+            - reverify_disabled
+      required:
+        - error
+    CreateReVerificationRequest:
+      type: object
+      properties:
+        workflow_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The workflow to re-verify against. Its ID-verification step must
+            have re-verification enabled.
+        device_fingerprint:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Optional client device fingerprint, stored on the re-verification
+            session.
+      required:
+        - workflow_id
+      additionalProperties: false
+    ReVerificationLivenessStartResponse:
+      type: object
+      properties:
+        liveness_session_id:
+          type: string
+        script:
+          $ref: "#/components/schemas/LivenessChallengeScript"
+      required:
+        - liveness_session_id
+        - script
+    LivenessChallengeScript:
+      type: object
+      properties:
+        challengeType:
+          type: string
+          enum:
+            - FaceMovementChallenge
+            - FaceMovementAndLightChallenge
+        durationMs:
+          type: integer
+          exclusiveMinimum: 0
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              kind:
+                type: string
+                enum:
+                  - color
+                  - move-closer
+              atMs:
+                type: integer
+                minimum: 0
+              color:
+                type: string
+                description: Hex colour to display. Present on `color` steps only.
+                example: "#FF0000"
+            required:
+              - kind
+              - atMs
+      required:
+        - challengeType
+        - durationMs
+        - steps
+    ReVerificationLifecycleErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          enum:
+            - not_found
+            - already_completed
+            - expired
+            - liveness_not_started
+            - liveness_upload_incomplete
+            - insufficient_balance
+      required:
+        - error
+    ReVerificationLivenessUploadUrlResponse:
+      type: object
+      properties:
+        frame_upload_urls:
+          type: array
+          items:
+            type: string
+        frame_keys:
+          type: array
+          items:
+            type: string
+        timeline_upload_url:
+          type: string
+        timeline_key:
+          type: string
+        clip_upload_url:
+          type: string
+          description: Present only when `clip_mime_type` was sent.
+        clip_key:
+          type: string
+          description: Present only when `clip_mime_type` was sent.
+      required:
+        - frame_upload_urls
+        - frame_keys
+        - timeline_upload_url
+        - timeline_key
+    ReVerificationLivenessUploadUrlRequest:
+      type: object
+      properties:
+        frame_count:
+          type: integer
+          minimum: 3
+          maximum: 8
+          description: Number of captured frames to mint upload URLs for.
+          example: 4
+        clip_mime_type:
+          type: string
+          enum:
+            - video/webm
+            - video/mp4
+          description: Optional replay clip mime type. When present, a clip upload URL is
+            minted too.
+          example: video/mp4
+      required:
+        - frame_count
+      additionalProperties: false
+    ReVerificationDecisionResponse:
+      type: object
+      properties:
+        decision:
+          type: string
+          enum:
+            - verified
+            - retry
+            - failed
+            - retry_liveness
+        failed_attempts:
+          type: integer
+          minimum: 0
+        max_attempts:
+          type: integer
+          exclusiveMinimum: 0
+        liveness:
+          type: object
+          properties:
+            status:
+              type: string
+              enum:
+                - SUCCEEDED
+                - FAILED
+            confidence:
+              type:
+                - number
+                - "null"
+          required:
+            - status
+            - confidence
+        user_id:
+          type: string
+          description: The re-verified applicant's user id. Present only when decision is
+            verified.
+        original_session_id:
+          type: string
+          description: The approved session the applicant's face resolved to. Present only
+            when decision is verified.
+      required:
+        - decision
+        - failed_attempts
+        - max_attempts
+        - liveness
   parameters: {}
 paths:
   /v1/document/scan:
@@ -2173,6 +4963,322 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/face/liveness/sessions:
+    post:
+      tags:
+        - Face
+      summary: Create a face liveness session and vend streaming credentials
+      description: Creates an AWS Rekognition Face Liveness session and returns
+        short-lived STS credentials scoped to only
+        `rekognition:StartFaceLivenessSession`, which the device uses to open
+        the liveness streaming connection. Pass `session_id` to attach the check
+        to a verification session (billed as part of that session); omit it to
+        run standalone (billed per use). Reference and audit images are never
+        persisted or returned.
+      security: *a2
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLivenessSessionRequest"
+      responses:
+        "200":
+          description: Liveness session created with vended credentials.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateLivenessSessionResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "402":
+          description: Organization has insufficient credits and is not subscribed to the
+            IDV service (standalone checks only).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/face/liveness/sessions/{liveness_session_id}/result:
+    get:
+      tags:
+        - Face
+      summary: Fetch a face liveness result
+      description: Returns the normalized liveness status, confidence, and a
+        server-computed `passed` flag (confidence compared against an
+        overridable threshold, default 80). Reference and audit images are never
+        returned. Pass `session_id` to authorize the read against the owning
+        verification session.
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            description: The Rekognition liveness session id returned at create time.
+          required: true
+          description: The Rekognition liveness session id returned at create time.
+          name: liveness_session_id
+          in: path
+        - schema:
+            type: string
+            description: Optional verification session the liveness check was attached to.
+              When provided, ownership is enforced against it.
+          required: false
+          description: Optional verification session the liveness check was attached to.
+            When provided, ownership is enforced against it.
+          name: session_id
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            description: Pass/fail cutoff for `passed`, 1-100. Defaults to 80 when omitted.
+              SDK-overridable.
+          required: false
+          description: Pass/fail cutoff for `passed`, 1-100. Defaults to 80 when omitted.
+            SDK-overridable.
+          name: confidence_threshold
+          in: query
+      responses:
+        "200":
+          description: Liveness result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LivenessResultResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/deepfake/challenge/{sessionId}:
+    get:
+      tags:
+        - Deepfake
+      summary: Fetch the deepfake liveness challenge phrase
+      description: Returns the challenge phrase the user must speak during the
+        deepfake liveness scan for the given session. The phrase is derived from
+        the session's workflow when configured, otherwise a random phrase is
+        generated.
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: sessionId
+          in: path
+      responses:
+        "200":
+          description: Challenge phrase for the session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeepFakePromptResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/deepfake/upload-urls:
+    post:
+      tags:
+        - Deepfake
+      summary: Generate presigned upload URLs for deepfake scan media
+      description: Generates presigned S3 PUT URLs for the six liveness frames (and,
+        when `includeAudio` is set, the audio clip) captured during the deepfake
+        scan. Returns the upload URLs alongside the S3 object keys to echo back
+        to POST /v1/deepfake/analyze.
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeepFakeUploadUrlsRequest"
+      responses:
+        "200":
+          description: Presigned upload URLs and their S3 object keys.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeepFakeUploadUrlsResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/deepfake/analyze:
+    post:
+      tags:
+        - Deepfake
+      summary: Run the deepfake analysis pipeline and return a verdict
+      description: Runs the three-layer deepfake pipeline (Vision-signal liveness
+        gate, ViT image analysis, and voice verification) over the uploaded scan
+        media and returns a synchronous verdict. The media is downloaded from
+        the ephemeral temp bucket and deleted after analysis — nothing is
+        persisted. Each S3 key must belong to the calling organization.
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeepFakeAnalyzeRequest"
+      responses:
+        "200":
+          description: Deepfake analysis verdict.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeepFakeAnalyzeResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "402":
+          description: Organization has insufficient credits to run the analysis.
           content:
             application/json:
               schema:
@@ -2524,6 +5630,78 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /v1/sessions/{session_id}/uploads:
+    post:
+      tags:
+        - Sessions
+      summary: Generate session-scoped presigned upload URLs
+      description: Issues S3 presigned PUT URLs into the sessions upload bucket using
+        the hosted-flow key scheme
+        `{organizationId}/{sessionId}/{timestamp}-{fileName}`. Echo the returned
+        `file_key` values in a subsequent step submission. Unlike `POST
+        /v1/upload/presign`, keys are session-linked so the backoffice can
+        render uploads. Keys are recorded on the session's Uploads map at step
+        submission, not at presign time.
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: session_id
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionUploadsRequest"
+      responses:
+        "200":
+          description: Presigned upload URLs for each requested file.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionUploadsResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "Session is terminal (`sessionProgress: COMPLETED` or a terminal
+            status)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /v1/idv:
     post:
       tags:
@@ -2719,6 +5897,359 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/workflows/{workflow_id}/steps/{step_id}/config:
+    patch:
+      tags:
+        - Workflows
+      summary: Update workflow step config
+      description: Partially updates one existing workflow step's configuration.
+        Existing modeled settings and unmodeled stored configuration are
+        preserved.
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: workflow_id
+          in: path
+        - schema:
+            type: string
+            minLength: 1
+            example: ID_VERIFICATION
+            description: Workflow step id. Case- and separator-insensitive.
+          required: true
+          description: Workflow step id. Case- and separator-insensitive.
+          name: step_id
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkflowStepConfigRequest"
+      responses:
+        "200":
+          description: Workflow step configuration updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateWorkflowStepConfigResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: The step stores its settings in the legacy `propertyGroups` shape
+            and cannot be patched (`legacy_step_config`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/workflows/{workflow_id}/sessions:
+    post:
+      tags:
+        - Workflows
+      summary: Create a headless workflow session
+      description: Creates a headless workflow session for SDK-driven execution. No
+        invite email/SMS is sent and no hosted session_url is returned.
+        Validates workflow ownership against the calling organization.
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: workflow_id
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkflowSessionRequest"
+      responses:
+        "200":
+          description: Headless workflow session created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateWorkflowSessionResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/sessions/{session_id}/workflow:
+    get:
+      tags:
+        - Workflows
+      summary: Fetch workflow execution state
+      description: Returns the ordered per-step execution state for an SDK-run
+        workflow session, including capture requirements for every step. Safe to
+        poll; used by the SDK to resume after app kill. Sessions without
+        `workflowExecution` (non-SDK / hosted-only) return 404.
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: session_id
+          in: path
+      responses:
+        "200":
+          description: Current workflow execution state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetSessionWorkflowResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/sessions/{session_id}/workflow/start:
+    post:
+      tags:
+        - Workflows
+      summary: Start an existing workflow session
+      description: "Hands an un-started headless workflow session to an SDK runner:
+        create the session with `POST /v1/workflows/{workflow_id}/sessions` from
+        your backend, then pass only the `session_id` to the app, which starts
+        the run here. Validate-only — the call never writes, so it is safely
+        repeatable until the first step submission lands. The session must be
+        `PENDING` and un-started (`session_progress: PENDING`); already-started,
+        terminal, and expired sessions return 409. Sessions without
+        `workflowExecution` (hosted / invite-lane) return 404. The 200 body is
+        the same execution-state envelope as `GET
+        /v1/sessions/{session_id}/workflow`."
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: session_id
+          in: path
+      responses:
+        "200":
+          description: Session is runnable. Returns the current workflow execution state —
+            identical shape to the GET.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetSessionWorkflowResponse"
+        "400":
+          description: Invalid `session_id`, or the session's snapshotted execution plan
+            contains steps this runner does not support (`invalid_steps` lists
+            them in API form).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Session is not `PENDING` / un-started — already started, terminal,
+            or expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/sessions/{session_id}/steps/{step_id}:
+    post:
+      tags:
+        - Workflows
+      summary: Submit a workflow session step
+      description: "Submits and executes a single step of a headless workflow session.
+        `step_id` is case- and separator-insensitive (ID_VERIFICATION,
+        id_verification and id-verification all resolve) and must be the current
+        step of the session's workflow. The body is validated against the step's
+        stored config (required upload slots vary per workflow). FACE_LIVENESS
+        is two-phase via `action: start | complete`. Steps must be submitted in
+        order; out-of-order or terminal-session submissions return 409. No
+        inline billing — the completed session is stream-billed downstream."
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: session_id
+          in: path
+        - schema:
+            type: string
+            enum:
+              - ID_VERIFICATION
+              - FACE_LIVENESS
+            example: ID_VERIFICATION
+            description: "Runnable workflow step id. Case- and separator-insensitive:
+              `id_verification` and `id-verification` resolve to the same step."
+          required: true
+          description: "Runnable workflow step id. Case- and separator-insensitive:
+            `id_verification` and `id-verification` resolve to the same step."
+          name: step_id
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowStepSubmission"
+      responses:
+        "200":
+          description: Step executed. Common envelope for all step types; FACE_LIVENESS
+            additionally returns a `liveness` payload (`start` → credentials,
+            `complete` → pass/fail).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitWorkflowStepResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Out-of-order submission, concurrent duplicate, liveness result not
+            ready, or session is terminal.
           content:
             application/json:
               schema:
@@ -3127,11 +6658,6 @@ paths:
             type: string
           required: false
           name: nextToken
-          in: path
-        - schema:
-            type: string
-          required: false
-          name: nextToken
           in: query
       responses:
         "200":
@@ -3388,6 +6914,48 @@ paths:
         "501":
           description: Credit Checks read API is not yet generally available. Use a
             sandbox API key to preview test responses.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/auth/verify:
+    get:
+      tags:
+        - Auth
+      summary: Verify an API key
+      description: Connection-test endpoint. Validates the API key in the `x-api-key`
+        header and returns the organization it belongs to. Used by integrations
+        (e.g. Zapier) to confirm a key is valid before running other calls.
+      security: *a2
+      responses:
+        "200":
+          description: API key is valid and the organization is active.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthVerifyResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
           content:
             application/json:
               schema:
@@ -3652,6 +7220,226 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /v1/screening/carrier-age-gate:
+    post:
+      tags:
+        - Screening
+      summary: Run a carrier age gate check
+      description: "Asks the subscriber's mobile carrier whether the holder of a phone
+        number is over the legal age threshold (18 on all current routes) and
+        returns synchronously. `outcome` is PASS (carrier confirms 18+), FAIL
+        (carrier reports under 18) or NO_DATA (the carrier holds no servable
+        data for this number — the normal answer where the carrier route is not
+        yet live, e.g. US and Canada today; UK numbers return real data). The
+        actual age is never disclosed. No workflow or session is required: by
+        default the check is filed as a completed silent-screening session for
+        audit and billed on success. Pass `sessionId` to attach the result to an
+        existing verification session instead — it is written to that session's
+        `analysis_data.phone_checks.age_gate`, `phone` defaults to the session
+        applicant's number, and no second charge is taken when the session's
+        workflow already includes the carrier age gate step."
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CarrierAgeGateRequest"
+      responses:
+        "200":
+          description: Carrier age gate result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CarrierAgeGateResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: The carrier data provider is temporarily unavailable. Nothing was
+            billed; retry later.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/screening/phone-ownership:
+    post:
+      tags:
+        - Screening
+      summary: Run a phone ownership match
+      description: Asks the subscriber's mobile carrier how well a name (and
+        optionally an address and date of birth) matches the account holder on
+        record for a phone number, and returns synchronously. `outcome` is MATCH
+        (carrier name score at or above the strictness threshold — relaxed 50 /
+        medium 70 / strict 90), NO_MATCH (below it) or NO_DATA (the carrier
+        holds no servable subscriber data for this number — the normal answer
+        where the carrier route is not yet live, e.g. US and Canada today; UK
+        numbers return real data). Address and date-of-birth scores are
+        informational and never change the outcome. The subscriber record itself
+        is never disclosed. By default the check is filed as a completed
+        silent-screening session for audit and billed on success. Pass
+        `sessionId` to attach the result to an existing verification session
+        instead — it is written to that session's
+        `analysis_data.phone_checks.ownership`, `phone` and the name default to
+        the session applicant, and no second charge is taken when the session's
+        workflow already includes the phone ownership step.
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhoneOwnershipRequest"
+      responses:
+        "200":
+          description: Phone ownership match result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhoneOwnershipResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: The carrier data provider is temporarily unavailable. Nothing was
+            billed; retry later.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/screening/phone-trust:
+    post:
+      tags:
+        - Screening
+      summary: Run a phone trust check
+      description: "Asks the subscriber's mobile carrier for account-takeover signals
+        on a phone number — a recent SIM swap and active unconditional call
+        forwarding — and returns synchronously with a `tripped` verdict for the
+        requested `sensitivity` (low = SIM swap in the last 72 hours only;
+        medium, the default, and high = also a SIM swap in the last 30 days or
+        active call forwarding). This is passive: no SMS code is sent to the
+        subscriber and the check never blocks anything on its own. NO_DATA on a
+        signal means the carrier holds no servable data for that number — the
+        normal answer where the carrier route is not yet live, e.g. US and
+        Canada today; UK numbers return real data. By default the check is filed
+        as a completed silent-screening session for audit and billed on success.
+        Pass `sessionId` to attach the result to an existing verification
+        session instead — it is written to that session's
+        `analysis_data.phone_checks.trust` (any SMS verification state already
+        there is preserved), `phone` defaults to the session applicant's number,
+        and no second charge is taken when the session's workflow already
+        includes the phone trust step."
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhoneTrustRequest"
+      responses:
+        "200":
+          description: Phone trust check result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhoneTrustResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: The carrier data provider is temporarily unavailable. Nothing was
+            billed; retry later.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /v1/screening/adverse-media:
     post:
       tags:
@@ -3859,6 +7647,213 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /v1/profiles:
+    post:
+      tags:
+        - Profiles
+      summary: Create a branding profile
+      description: Creates a branding profile for the calling organization. Optionally
+        attach a logo by passing the `fileKey` from POST
+        /v1/profiles/logo-upload-url as `logoUrl`.
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProfileRequest"
+      responses:
+        "201":
+          description: Profile created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      tags:
+        - Profiles
+      summary: List branding profiles
+      description: Returns all branding profiles belonging to the calling organization.
+      security: *a2
+      responses:
+        "200":
+          description: Profiles for the organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListProfilesResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/profiles/{id}:
+    get:
+      tags:
+        - Profiles
+      summary: Fetch a branding profile by id
+      description: Returns a single branding profile. The profile must belong to the
+        calling organization.
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: Profile detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/profiles/logo-upload-url:
+    post:
+      tags:
+        - Profiles
+      summary: Generate a presigned logo upload URL
+      description: "Generates an S3 presigned PUT URL for uploading a profile logo.
+        Flow: (1) call this endpoint to get `{ uploadUrl, fileKey }`, (2) PUT
+        the image binary to `uploadUrl` with the matching Content-Type header,
+        (3) pass `fileKey` as `logoUrl` when creating the profile."
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoUploadUrlRequest"
+      responses:
+        "200":
+          description: Presigned logo upload URL and object key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogoUploadUrlResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /v1/upload/presign:
     post:
       tags:
@@ -3908,6 +7903,1402 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/igaming/injection:
+    post:
+      tags:
+        - iGaming
+      summary: Analyze injection / spoofing signals for a session
+      description: Scores device-integrity, media-source, and frame-timing signals
+        against the session's injection-detection step configuration and returns
+        a verdict and enforcement action. When the resolved action is `block`,
+        the session is marked failed.
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalyzeInjectionRequest"
+      responses:
+        "200":
+          description: Injection analysis result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyzeInjectionResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/igaming/vpn-detection:
+    post:
+      tags:
+        - iGaming
+      summary: Detect VPN / proxy / Tor / datacenter IPs for a session
+      description: Checks the supplied IPv4 address against the anonymizer feed (Tor
+        exit nodes, datacenter ranges, VPN ranges) using the session's
+        vpn-detection step configuration, and returns a verdict and enforcement
+        action. When the resolved action is `block`, the session is marked
+        failed. Non-IPv4 input returns `UNAVAILABLE`.
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalyzeIpCheckRequest"
+      responses:
+        "200":
+          description: VPN/anonymizer analysis result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IpCheckResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/igaming/ip-jurisdiction:
+    post:
+      tags:
+        - iGaming
+      summary: Check an IP against allowed/blocked jurisdictions for a session
+      description: Resolves the supplied IPv4 address to a jurisdiction (MaxMind
+        GeoLite2) and evaluates it against the session's ip-jurisdiction step
+        configuration (allowed/blocked lists + optional datacenter-IP handling),
+        returning a verdict and enforcement action. When the resolved action is
+        `block`, the session is marked failed. Non-IPv4 input returns
+        `UNAVAILABLE`.
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalyzeIpCheckRequest"
+      responses:
+        "200":
+          description: Jurisdiction analysis result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IpCheckResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/igaming/anti-cheat:
+    post:
+      tags:
+        - iGaming
+      summary: Anti-cheat analysis (face dedup, multi-accounting, self-exclusion)
+      description: Runs biometric duplicate detection, multi-accounting session
+        linkage, and self-exclusion checks for a session using its anti-cheat
+        step configuration, returning a verdict and enforcement action. Enrolls
+        the face into the org's dedup collection on first sight. When the
+        resolved action is `block`, the session is marked failed. Response is
+        redacted to verdict/action.
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalyzeAntiCheatRequest"
+      responses:
+        "200":
+          description: Anti-cheat analysis result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AntiCheatResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/igaming/self-exclusion:
+    get:
+      tags:
+        - iGaming
+      summary: List the organization's self-exclusion registry
+      description: Returns the org's self-exclusion entries — identity
+        (document-number) and face (session) — merged into a single list. Face
+        entries already represented by a linked identity are de-duplicated.
+        Defensively bounded by `limit` (default 200, max 1000); `truncated` is
+        true when the registry exceeded the limit.
+      security: *a2
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 200
+          required: false
+          name: limit
+          in: query
+      responses:
+        "200":
+          description: Self-exclusion registry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfExclusionListResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/igaming/self-exclusion/identity:
+    post:
+      tags:
+        - iGaming
+      summary: Add document-number identities to the self-exclusion registry
+      description: Adds one or more document numbers to the org's self-exclusion
+        registry. Idempotent per number — re-adding an existing number returns
+        `already_excluded`, not an error. A future anti-cheat run whose
+        extracted document number matches a registered entry blocks with verdict
+        SELF_EXCLUSION.
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SelfExclusionIdentityAddRequest"
+      responses:
+        "200":
+          description: Per-number result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfExclusionIdentityAddResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/igaming/self-exclusion/identity/{document_number}:
+    delete:
+      tags:
+        - iGaming
+      summary: Remove a document-number identity from the self-exclusion registry
+      description: "Removes an identity exclusion. If the entry was linked to a
+        session (added via a face exclusion that carried a document number),
+        that session's face exclusion is cleared too. Idempotent — removing an
+        absent number returns `removed: false`."
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: document_number
+          in: path
+      responses:
+        "200":
+          description: Removal result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfExclusionIdentityRemoveResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/igaming/self-exclusion/face:
+    post:
+      tags:
+        - iGaming
+      summary: Exclude the enrolled face on a session
+      description: "Flags the face enrolled on a session (via a prior anti-cheat
+        analyze call) as self-excluded, so a future applicant whose face matches
+        it blocks with verdict SELF_EXCLUSION. If the session has no enrolled
+        face, returns `excluded: false, reason: no_enrolled_face`."
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SelfExclusionFaceRequest"
+      responses:
+        "200":
+          description: Face exclusion result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfExclusionFaceResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/igaming/self-exclusion/face/{session_id}:
+    delete:
+      tags:
+        - iGaming
+      summary: Clear the self-exclusion flag on a session's enrolled face
+      description: "Clears the self-exclusion flag on a session's enrolled face.
+        Returns `unexcluded: false` when the session has no enrolled face."
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: session_id
+          in: path
+      responses:
+        "200":
+          description: Face un-exclusion result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfExclusionFaceRemoveResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/igaming/anti-cheat/{session_id}:
+    delete:
+      tags:
+        - iGaming
+      summary: Purge a session's enrolled face (un-enroll / data deletion)
+      description: Deletes the session's enrolled Rekognition face and its dedup
+        crosswalk row. Org-scoped; acts only on the session's own enrollment (a
+        DUPLICATE session, which never enrolled its own face, returns
+        deleted:false). Idempotent — no enrollment returns deleted:false. Use
+        for GDPR/data-deletion or to reset an enrollment.
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: session_id
+          in: path
+      responses:
+        "200":
+          description: Purge result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AntiCheatPurgeResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/igaming/self-exclusion/applicant:
+    post:
+      tags:
+        - iGaming
+      summary: Exclude an applicant by session (face + identity in one call)
+      description: "The preferred exclusion path: flags the applicant's enrolled face
+        (falling back to the matched enrollment if this session was a DUPLICATE)
+        and, when the session has a scanned document number, adds a linked
+        identity exclusion in the same call. Returns what was excluded; reports
+        'nothing to exclude' when the session has neither an enrolled face nor a
+        document number."
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SelfExclusionApplicantRequest"
+      responses:
+        "200":
+          description: What was excluded for the applicant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfExclusionApplicantResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/aml/transactions:
+    post:
+      tags:
+        - AML
+      summary: Save transaction records for monitoring
+      description: 'Stores one or more transactions for AML transaction-risk
+        monitoring. Send a JSON array or `{ "transactions": [ ... ] }` — up to
+        500 records or 5 MB per request, whichever is smaller. Ingest is
+        idempotent on `clientTxnId`: re-posting the same id updates the same
+        record and appends a revision entry only when a field really changed.
+        Subjects are auto-provisioned and enrolled in monitoring on first sight;
+        a counterparty is stored as a data field and is never enrolled. A
+        well-formed envelope ALWAYS returns 200 — per-record outcomes are data,
+        so always inspect `results` for `warnings` and `errors`. Both snake_case
+        and camelCase request keys are accepted; `metadata` keys are never
+        converted.'
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AmlTransactionBatch"
+      responses:
+        "200":
+          description: Per-record results. Inspect `results` — a stored record may still
+            carry warnings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AmlIngestResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: Request body exceeded 5 MB. Split the batch into smaller requests.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Monthly transaction quota exceeded. Nothing was stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AmlQuotaExceeded"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/aml/bots/{bot_id}/monitored-users:
+    post:
+      tags:
+        - AML
+      summary: Add a user to monitoring
+      description: "Places one of your customers under ongoing AML monitoring by the
+        given bot. Idempotent: re-adding an existing subject returns 200 with
+        the existing enrolment rather than resetting its cadence, and
+        reactivates a previously removed one."
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+            example: agt-1a2b3c4d
+          required: true
+          name: bot_id
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddMonitoredUserRequest"
+      responses:
+        "200":
+          description: Subject was already enrolled; the existing enrolment is returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonitoredUser"
+        "201":
+          description: Subject enrolled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonitoredUser"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/age-verification:
+    post:
+      tags:
+        - Age verification
+      summary: Create an age-verification session
+      description: >-
+        Creates a standalone age-verification session and invites the applicant.
+        `method` selects how they prove their age: `quiz` (knowledge-based),
+        `credit-card` (card issuance check), or `parent-connect` (verified
+        parental consent for a minor).
+
+
+        For `parent-connect`, declare the boundaries the parent may set via
+        `platformRestrictions` and, optionally, an `eulaUrl` they must accept.
+        Those are recorded on the session and are the only declaration the
+        consent flow will honour — a request that omits them offers the parent
+        no boundaries to choose. They are rejected for the other two methods,
+        which have no parent to present them to.
+      security: *a2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+                phone:
+                  type: string
+                  pattern: ^\+[1-9]\d{9,14}$
+                method:
+                  type: string
+                  enum:
+                    - quiz
+                    - credit-card
+                    - parent-connect
+                externalId:
+                  type: string
+                sendEmailInvite:
+                  type: boolean
+                sendPhoneInvite:
+                  type: boolean
+                redirectUrl:
+                  type: string
+                  format: uri
+                expiresInHours:
+                  type: integer
+                  minimum: 1
+                  maximum: 8760
+                ageBand:
+                  type: string
+                  minLength: 1
+                platformRestrictions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      key:
+                        type: string
+                        minLength: 1
+                      label:
+                        type: string
+                        minLength: 1
+                      type:
+                        type: string
+                        enum:
+                          - toggle
+                          - number
+                          - select
+                          - minutes
+                      category:
+                        type: string
+                        enum:
+                          - feature
+                          - content
+                      default: {}
+                      required:
+                        type: boolean
+                      min:
+                        type: number
+                      max:
+                        type: number
+                      options:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - key
+                      - label
+                      - type
+                eulaUrl:
+                  type: string
+                  format: uri
+              required:
+                - email
+                - firstName
+                - lastName
+                - phone
+                - method
+      responses:
+        "200":
+          description: Session created and the invite dispatched.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateDeepAgeSessionResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "402":
+          description: Insufficient token balance or no active subscription.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/age-verification/parent-connect:
+    get:
+      tags:
+        - Age verification
+      summary: List Parent Connect requests
+      description: >-
+        Returns this organization's parental-consent requests, newest first.
+        Pass `child_session_id` to find the request behind a session you created
+        — that is the only identifier you hold until the child starts the flow
+        and a `parent_connect` id is minted.
+
+
+        This surface is read-only. Recording consent, declining, and editing
+        boundaries are the parent's actions, authorised by a token delivered
+        only in their invite; an API key cannot perform them.
+
+
+        `status` is applied as a filter after `limit` items are read, so when it
+        is set a page can come back short — or even empty — while `next_token`
+        is still non-null. Always keep paging until `next_token` is null; do not
+        stop because a page's `parent_connect_requests` array is short or empty.
+      security: *a2
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: string
+          required: false
+          name: next_token
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: child_session_id
+          in: query
+        - schema:
+            type: string
+            enum:
+              - PENDING
+              - PARENT_INVITED
+              - PARENT_VERIFIED
+              - CONSENT_GIVEN
+              - EXPIRED
+              - DECLINED
+          required: false
+          name: status
+          in: query
+      responses:
+        "200":
+          description: Page of Parent Connect requests.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListParentConnectResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/age-verification/parent-connect/{parentConnectId}:
+    get:
+      tags:
+        - Age verification
+      summary: Fetch a Parent Connect request
+      description: Returns one parental-consent request and its lifecycle state.
+        `status` reaches `CONSENT_GIVEN` once a verified parent has consented;
+        `child_attestation_id` appears shortly after, when the attestation has
+        been minted.
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: parentConnectId
+          in: path
+      responses:
+        "200":
+          description: The Parent Connect request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParentConnectRequest"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/age-verification/boundaries/{childAttestationId}:
+    get:
+      tags:
+        - Age verification
+      summary: Read the boundaries behind an attestation
+      description: >-
+        Returns the parental boundaries bound to a minted child attestation,
+        addressed by the attestation id you receive in the
+        `parent_connect.consent_given` webhook.
+
+
+        Check `boundaries_match_attestation` before verifying the attestation's
+        `restrictions_hash` label: the envelope is immutable and commits to
+        revision 1, so a parent's later lawful edit makes that hash stop
+        describing the current set. When the flag is false, treat this response
+        — not the attestation — as the source of truth.
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: childAttestationId
+          in: path
+      responses:
+        "200":
+          description: The consented boundaries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoundariesResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Referenced resource was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/re-verifications:
+    post:
+      tags:
+        - Re-Verifications
+      summary: Create a re-verification session
+      description: "Creates a pending re-verification session for a workflow whose
+        ID-verification step has re-verification enabled. The applicant is not
+        named by the request: they are identified by the face search at
+        liveness/complete. This creates no billable work."
+      security: *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReVerificationRequest"
+      responses:
+        "201":
+          description: A re-verification session was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateReVerificationResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: The API key is invalid or belongs to a sandbox organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The workflow was not found or belongs to another organization, or
+            re-verification is not available to this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationErrorResponse"
+        "422":
+          description: The workflow is not active or does not have re-verification enabled
+            on its ID-verification step.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/re-verifications/{id}/liveness/start:
+    post:
+      tags:
+        - Re-Verifications
+      summary: Start re-verification liveness
+      description: "Starts a liveness attempt: returns a fresh liveness session id and
+        the challenge script the capture must answer. The challenge type comes
+        from the workflow's face-liveness step (FaceMovementChallenge by
+        default). Every call issues a new script and discards any earlier
+        attempt on the session."
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: The new liveness attempt and its challenge script.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLivenessStartResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The re-verification session was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLifecycleErrorResponse"
+        "409":
+          description: The session is already terminal (`already_completed`) or has
+            expired (`expired`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLifecycleErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/re-verifications/{id}/liveness/upload-url:
+    post:
+      tags:
+        - Re-Verifications
+      summary: Get re-verification liveness upload URLs
+      description: Mints presigned S3 PUT URLs for the current liveness attempt's
+        frames (image/jpeg), timeline (application/json) and optional replay
+        clip. The URLs are valid for 15 minutes. Calling this again re-mints
+        URLs for the same keys.
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: id
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReVerificationLivenessUploadUrlRequest"
+      responses:
+        "200":
+          description: Presigned upload URLs and the keys they upload to.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLivenessUploadUrlResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The re-verification session was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLifecycleErrorResponse"
+        "409":
+          description: The session is already terminal (`already_completed`) or has
+            expired (`expired`), or liveness/start has not been called for a new
+            attempt (`liveness_not_started`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLifecycleErrorResponse"
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/re-verifications/{id}/liveness/complete:
+    post:
+      tags:
+        - Re-Verifications
+      summary: Complete liveness and decide re-verification
+      description: Scores the uploaded liveness capture and, when it passes the
+        workflow's liveness bar, searches its best face frame against the
+        platform's verified faces, confirms an approved session in this
+        organization and workflow, and records a retry or terminal decision. The
+        result is returned synchronously.
+      security: *a2
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: id
+          in: path
+      responses:
+        "200":
+          description: The capture was evaluated and a decision was recorded. Calling this
+            again after a terminal decision returns the same recorded decision
+            without re-evaluating or billing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationDecisionResponse"
+        "400":
+          description: The request body failed schema validation or contained an
+            unsupported image format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "402":
+          description: The organization has insufficient balance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLifecycleErrorResponse"
+        "403":
+          description: API key is missing, or the referenced resource does not belong to
+            this organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The re-verification session was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLifecycleErrorResponse"
+        "409":
+          description: "The session is already terminal (`already_completed`) or has
+            expired (`expired`); there is no uploaded capture to evaluate,
+            because liveness/start or liveness/upload-url was not called or the
+            last capture was already evaluated (`liveness_not_started`); or a
+            frame or the timeline is missing from storage
+            (`liveness_upload_incomplete`, nothing charged: re-upload and call
+            again)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReVerificationLifecycleErrorResponse"
         "500":
           description: Unexpected server error.
           content:
