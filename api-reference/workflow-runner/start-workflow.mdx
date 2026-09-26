@@ -69,7 +69,7 @@ Returns the same execution-state envelope as [Get Workflow State](/api-reference
 
 | Status | Description |
 |---|---|
-| `400` | Invalid `session_id` path parameter, or the session's workflow contains a step type not supported by the Workflow Runner API (response includes `invalid_steps`) |
+| `400` | Invalid `session_id` path parameter or an invalid workflow execution contract |
 | `401` | Invalid or missing API key |
 | `403` | The session belongs to a different organization |
 | `404` | Session not found, or no workflow execution state exists for this session |

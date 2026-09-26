@@ -10,7 +10,11 @@ POST /v1/workflows
 
 Creates a new workflow for your organization. Workflows define the ordered sequence of verification steps that applicants must complete.
 
-Currently supported steps: `ID_VERIFICATION`, `FACE_LIVENESS`, `AGE_ESTIMATION`, `PEP_SANCTIONS`, `ADVERSE_MEDIA`, `IP_JURISDICTION`, `VPN_DETECTION`, `INJECTION_DETECTION`, `ANTI_CHEAT`.
+Use the [Workflow Builder](/workflow-builder) to arrange and configure a standard linear workflow, then copy, download, or send the generated request. The builder uses the same step identifiers and configuration fields as this endpoint.
+
+<Note>
+  A workflow contains 1–10 unique steps. Repeated step IDs and advanced branching workflows are not supported. The API accepts only the production-ready steps listed below. Passport NFC Scanner and Crypto Wallet Screening are not part of the OpenAPI contract yet.
+</Note>
 
 ## Request
 
@@ -35,17 +39,32 @@ Currently supported steps: `ID_VERIFICATION`, `FACE_LIVENESS`, `AGE_ESTIMATION`,
 |---------|-------------|
 | `ID_VERIFICATION` | Government ID scanning and validation |
 | `FACE_LIVENESS` | Active anti-spoofing liveness detection |
+| `FACE_LIVENESS_CONSENT_SETTINGS` | Collect consent before face-liveness capture |
 | `AGE_ESTIMATION` | Biometric age estimation |
+| `DEEPFAKE_DETECTION` | Guided media capture and synthetic-media risk analysis |
+| `DEEP_AGE` | Additional age assurance using a configured challenge method |
+| `ADDRESS_VERIFICATION` | Knowledge-based address verification |
+| `BACKGROUND_CHECK` | Canadian background screening |
+| `TITLE_SEARCH` | US property title search |
 | `PEP_SANCTIONS` | Politically exposed persons & sanctions screening |
 | `ADVERSE_MEDIA` | Negative press and media mention detection |
-| `IP_JURISDICTION` | iGaming: block/allow by the applicant's resolved country + datacenter-IP handling |
-| `VPN_DETECTION` | iGaming: detect VPN / Tor / datacenter (anonymizer) connections |
-| `INJECTION_DETECTION` | iGaming: detect injected media, virtual cameras, and emulators |
-| `ANTI_CHEAT` | iGaming: biometric duplicate detection, multi-accounting linkage, and self-exclusion |
+| `CUSTOM_PROMPT` | Present one or more custom applicant prompts |
+| `CONSENT` | Present consent text and optionally require a signature |
+| `BANK_STATEMENT_UPLOAD` | Collect bank statements and configure analysis types |
+| `AI_BANK_STATEMENT_ANALYSIS` | Analyze a previously collected bank statement |
+| `DOCUMENT_UPLOAD` | Collect configured documents and optional extracted fields |
+| `WHITE_LABEL` | Apply the organization's hosted-flow branding |
+| `PHONE_TRUST_CHECK` | Screen carrier trust signals such as recent SIM changes |
+| `CARRIER_AGE_GATE` | Ask the carrier to confirm the applicant meets the age threshold |
+| `PHONE_OWNERSHIP_MATCH` | Compare applicant details with the carrier subscriber record |
+| `PHONE_VERIFICATION` | Verify a spoken phrase during a phone call |
+| `E_SIGNATURE` | Collect signatures through the hosted verification flow |
 
 ### Step Configuration
 
-Each step accepts optional configuration. If omitted, sensible defaults are applied.
+Each step accepts the configuration object shown in the generated request schema. If you omit optional fields, the API applies the same defaults as the standard Backoffice builder. The sections below call out common configurations; use the OpenAPI schema on this page as the exhaustive field reference.
+
+The API also validates cross-step requirements. For example, `AI_BANK_STATEMENT_ANALYSIS` requires an earlier `BANK_STATEMENT_UPLOAD` step, and `BACKGROUND_CHECK` and `TITLE_SEARCH` require an earlier `ID_VERIFICATION` step. The [Workflow Builder](/workflow-builder) adds coupled prerequisites automatically.
 
 #### ID_VERIFICATION config
 
@@ -77,91 +96,6 @@ Each step accepts optional configuration. If omitted, sensible defaults are appl
 #### PEP_SANCTIONS / ADVERSE_MEDIA
 
 No configuration options. These steps use default settings.
-
-#### IP_JURISDICTION config
-
-Config keys are snake_case. Enforcement actions are one of `block`, `flag`, `step-up`, `allow`.
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `allowed_jurisdictions` | string[] | `[]` | Jurisdictions that are allowed (allowlist) — ISO 3166 country codes (`CA`) or country-subdivision codes (`CA-ON`, `US-WA`). When non-empty, locations outside the list are out-of-jurisdiction |
-| `blocked_jurisdictions` | string[] | `[]` | Jurisdictions to block, same code format. Checked before the allowlist |
-| `out_of_jurisdiction_action` | string | `"block"` | Action when the resolved location is blocked (or not in a non-empty allowlist) |
-| `datacenter_ip_action` | string | `"flag"` | Action when an in-jurisdiction IP resolves to a datacenter / hosting network. `allow` skips the datacenter rule |
-| `trusted_ip_list` | string[] | `[]` | CIDR ranges or ASNs (`AS64496`) exempt from the **datacenter rule only** — they do not bypass the jurisdiction lists |
-| `escalation_type` | string | `"none"` | Escalation type to run when the action is `step-up` |
-
-#### VPN_DETECTION config
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `vpn_enabled` | boolean | `true` | Detect commercial VPN ranges |
-| `vpn_action` | string | `"step-up"` | Action when a VPN is detected |
-| `datacenter_enabled` | boolean | `true` | Detect datacenter / hosting ranges |
-| `datacenter_action` | string | `"block"` | Action when a datacenter IP is detected |
-| `tor_enabled` | boolean | `true` | Detect Tor exit nodes |
-| `tor_action` | string | `"block"` | Action when a Tor exit node is detected |
-| `trusted_ip_list` | string[] | `[]` | IPs or CIDR ranges that bypass the check |
-| `trusted_asn_list` | string[] | `[]` | ASNs that bypass the check |
-| `confidence_threshold` | integer | `70` | Minimum confidence (1–100) to treat a hit as positive. Matches carry fixed confidences — Tor `95`, datacenter `90`, VPN `85` — so a threshold above `85` disables VPN hits, above `90` disables datacenter hits |
-| `escalation_type` | string | `"none"` | Escalation type to run when the action is `step-up` |
-
-#### INJECTION_DETECTION config
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `action_on_detection` | string | `"block"` | Action when injection/spoofing is detected. One of `block`, `flag`, `step-up`, `rechallenge`, `allow` |
-| `automation_handling` | string | `"block"` | Action when automation/emulator signals fire. One of `block`, `flag`, `step-up`, `ignore` |
-| `confidence_threshold` | integer | `70` | Minimum **trust** confidence (1–100) for a capture to pass. The client-reported `media_source` and `frame_timing` scores (higher = cleaner) are combined `0.6 / 0.4`; a result **below** this threshold is a detection |
-| `escalation_type` | string | `"none"` | Escalation type to run when the action is `step-up` |
-
-<Warning>
-  Standalone `POST /v1/igaming/injection` calls apply these defaults even when the workflow has **no** `INJECTION_DETECTION` step — the other three iGaming checks skip when their step is absent. See [Injection detection](/api-reference/igaming/injection).
-</Warning>
-
-<Note>
-  **`step-up` requires a configured escalation.** For IP jurisdiction, VPN detection, and injection detection, an action that resolves to `step-up` is only emitted when the step also sets an `escalation_type` (other than `none`). If a step-up would fire with no escalation configured, the check **downgrades it to `flag`** — so it never returns a step-up with nothing for you to step up to. (Anti-cheat uses `manual-review` instead of `step-up`.)
-</Note>
-
-#### ANTI_CHEAT config
-
-Enforcement actions are one of `flag`, `manual-review`, `block`, `allow`. The step has three groups: biometric **duplicate** detection, **multi-accounting** linkage, and **self-exclusion**.
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `duplicate_enabled` | boolean | `true` | Enable biometric face-dedup |
-| `match_threshold` | integer | `85` | Face-match similarity (1–100) at or above which two faces are a duplicate |
-| `action_on_duplicate` | string | `"flag"` | Action when the face matches an existing enrollment |
-| `multi_account_enabled` | boolean | `true` | Enable multi-accounting linkage |
-| `signal_ip_enabled` | boolean | `true` | Use a shared submission IP as a linkage signal |
-| `signal_ip_weight` | number | `0.2` | Weight of the IP signal (contributes to the score only — see note) |
-| `signal_biometric_enabled` | boolean | `true` | Use a biometric face match as a linkage signal |
-| `signal_biometric_weight` | number | `1.0` | Weight of the biometric signal |
-| `signal_document_enabled` | boolean | `true` | Use a shared document number as a linkage signal |
-| `signal_document_weight` | number | `0.9` | Weight of the document signal |
-| `signal_namedob_enabled` | boolean | `true` | Use a shared name + date of birth as a linkage signal |
-| `signal_namedob_weight` | number | `0.1` | Weight of the name/DOB signal |
-| `signal_device_enabled` | boolean | `true` | Use a shared device fingerprint as a linkage signal |
-| `signal_device_weight` | number | `0.5` | Weight of the device signal |
-| `link_sensitivity` | integer | `2` | How many **distinct signal types** must match another account before they are linked (1–5) |
-| `action_on_multi_account` | string | `"flag"` | Action when accounts are linked |
-| `self_exclusion_enabled` | boolean | `true` | Enforce the self-exclusion registry — block applicants whose document number or matched face is excluded |
-
-<Note>
-  Multi-accounting **fires on the count of distinct matched signal types**, not on the
-  weighted score: two accounts link when they share at least `link_sensitivity`
-  signal types (IP, biometric, document, name/DOB, device). The `*_weight` values
-  only affect the reported link score — raising a weight does **not** make a single
-  signal trigger a link on its own. To make linkage stricter or looser, change
-  `link_sensitivity`, not the weights.
-</Note>
-
-<Info>
-  The IP multi-accounting signal reads the applicant's submission IP from the
-  session. In deepidv's hosted verification flow this is captured automatically;
-  in a pure server-to-server integration it may not be set, in which case the IP
-  signal simply doesn't contribute (the other signals still apply).
-</Info>
 
 ### Fraud Analysis & Escalation
 
@@ -340,59 +274,30 @@ Returns the full workflow record. The response uses the same format as [Retrieve
     "updated_at": "2026-03-31T14:00:00.000Z",
     "steps": [
       {
-        "id": "id-verification",
+        "id": "ID_VERIFICATION",
         "config": {
-          "age_restriction_settings": {
-            "age_restriction_mode": "slider",
-            "country_category_minimum_age": null,
-            "minimum_age": { "lower": 21, "upper": 51 }
-          },
-          "expiry_date_settings": { "expiry_date": 5 },
-          "face_scan_settings": { "face_front_photo_only": false },
-          "id_scan_face_settings": { "require_front_only": false },
-          "id_scan_settings": {
-            "require_secondary_id": false,
-            "require_tertiary_id": false
-          },
-          "valid_id_types_settings": {
-            "valid_id_types": {
-              "driver_license_ca": true,
-              "driver_license_us": true,
-              "passport_ca": true,
-              "passport_us": true
-            }
-          },
-          "valid_states_settings": {
-            "valid_states": { "AL": true, "AK": true, "AZ": true, "...": "all US + CA" }
-          },
-          "fraud_analysis_settings": {
-            "enable_fraud_analysis": true
-          },
-          "fraud_analysis_escalation": {
-            "escalation_type": "nfc-passport",
-            "escalation_risk_threshold": 75
-          }
+          "minimum_age": 21,
+          "maximum_age": 51,
+          "expiry_date_years": 5,
+          "require_secondary_id": false,
+          "require_tertiary_id": false,
+          "face_front_photo_only": false,
+          "require_front_only": false,
+          "enable_fraud_analysis": true,
+          "escalation_type": "nfc-passport",
+          "escalation_risk_threshold": 75
         }
       },
       {
-        "id": "face-liveness",
-        "config": {
-          "face_liveness_confidence_settings": { "confidence_threshold": 85 },
-          "face_liveness_settings": { "preferred_liveness_method": "FaceMovementChallenge" }
-        }
+        "id": "FACE_LIVENESS",
+        "config": { "confidence_threshold": 85 }
       },
       {
-        "id": "age-estimation",
-        "config": {
-          "age_restriction_settings": {
-            "age_restriction_mode": "slider",
-            "country_category_minimum_age": null,
-            "minimum_age": { "lower": 18, "upper": 100 }
-          }
-        }
+        "id": "AGE_ESTIMATION",
+        "config": { "minimum_age": 18, "maximum_age": 100 }
       },
-      { "id": "pep-sanctions", "config": {} },
-      { "id": "adverse-media", "config": {} }
+      { "id": "PEP_SANCTIONS", "config": {} },
+      { "id": "ADVERSE_MEDIA", "config": {} }
     ]
   }
 }

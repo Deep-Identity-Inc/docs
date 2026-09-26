@@ -80,7 +80,7 @@ state = response.json()
 
 | Field | Type | Description |
 |---|---|---|
-| `step_id` | string | `ID_VERIFICATION` or `FACE_LIVENESS` |
+| `step_id` | string | One of the Runner's [supported step identifiers](/api-reference/workflow-runner/create-workflow-session#available-steps) |
 | `status` | string | `PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, or `SKIPPED` |
 | `attempts` | integer | Number of times this step has been submitted |
 | `started_at` | string \| null | ISO 8601 timestamp of the first submission, or `null` |

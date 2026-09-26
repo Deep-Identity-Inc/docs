@@ -1,0 +1,1443 @@
+{
+  "info": {
+    "_postman_id": "c9574401-56b9-4acd-b9b7-9ef3eaf302a4",
+    "name": "DIDV-850 — Workflow creation and Runner regression",
+    "description": "Repeatable dev verification for DIDV-850.\n\nThe default run creates uniquely named workflows, validates the 21 non-E-signature Create Workflow steps, exercises a safe Workflow Runner flow end to end, and covers contract rejection cases. E-signature creation and real phone verification are opt-in.\n\nImport the example environment, add only `api_key`, select the environment, and run the collection in order. Test workflows are prefixed with `DIDV-850 POSTMAN` because the public API has no workflow deletion endpoint.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "x-api-key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{api_key}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://v5ba6yg9s6.execute-api.us-east-1.amazonaws.com/dev"
+    },
+    {
+      "key": "api_key",
+      "value": ""
+    },
+    {
+      "key": "run_id",
+      "value": ""
+    },
+    {
+      "key": "test_email",
+      "value": ""
+    },
+    {
+      "key": "core_workflow_id",
+      "value": ""
+    },
+    {
+      "key": "extended_workflow_id",
+      "value": ""
+    },
+    {
+      "key": "phone_workflow_id",
+      "value": ""
+    },
+    {
+      "key": "runner_workflow_id",
+      "value": ""
+    },
+    {
+      "key": "runner_session_id",
+      "value": ""
+    },
+    {
+      "key": "esign_workflow_id",
+      "value": ""
+    },
+    {
+      "key": "phone_session_id",
+      "value": ""
+    },
+    {
+      "key": "phone_poll_attempt",
+      "value": "0"
+    }
+  ],
+  "item": [
+    {
+      "name": "00 — Setup",
+      "description": "Initializes a unique run and verifies the selected dev environment.",
+      "item": [
+        {
+          "name": "Initialize test run",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const apiKey = pm.variables.get('api_key');",
+                  "if (!apiKey) throw new Error('Set api_key in the selected Postman environment before running the collection');",
+                  "const baseUrl = String(pm.variables.get('base_url') || '').replace(/\\/$/, '');",
+                  "if (!baseUrl) throw new Error('Set base_url in the selected Postman environment');",
+                  "pm.collectionVariables.set('base_url', baseUrl);",
+                  "const suffix = pm.variables.replaceIn('{{$randomUUID}}').slice(0, 8);",
+                  "const runId = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14) + '-' + suffix;",
+                  "pm.collectionVariables.set('run_id', runId);",
+                  "const configuredEmail = pm.environment.get('applicant_email');",
+                  "pm.collectionVariables.set('test_email', configuredEmail || `didv850+${runId}@example.com`);",
+                  "['core_workflow_id','extended_workflow_id','phone_workflow_id','runner_workflow_id','runner_session_id','esign_workflow_id','phone_session_id'].forEach((key) => pm.collectionVariables.unset(key));",
+                  "pm.collectionVariables.set('phone_poll_attempt', '0');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', () => pm.response.to.have.status(200));",
+                  "pm.test('created a unique run id', () => pm.expect(pm.collectionVariables.get('run_id')).to.match(/^\\d{14}-[a-f0-9]{8}$/i));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/health",
+            "description": "Run this first. It resets runtime IDs without modifying environment secrets."
+          }
+        },
+        {
+          "name": "Verify API key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', () => pm.response.to.have.status(200));",
+                  "pm.test('returns a workflow list', () => pm.expect(pm.response.json().workflows).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/workflows"
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 — Create Workflow contract",
+      "description": "Covers every production Create Workflow step except opt-in E-signature.",
+      "item": [
+        {
+          "name": "Create core workflow (10 steps)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('returns a workflow id', () => pm.expect(json.workflow && json.workflow.id).to.be.a('string').and.not.empty);",
+                  "const expectedIds = [\"ID_VERIFICATION\",\"FACE_LIVENESS\",\"FACE_LIVENESS_CONSENT_SETTINGS\",\"AGE_ESTIMATION\",\"DEEPFAKE_DETECTION\",\"DEEP_AGE\",\"ADDRESS_VERIFICATION\",\"BACKGROUND_CHECK\",\"TITLE_SEARCH\",\"PEP_SANCTIONS\"];",
+                  "pm.test('returns the requested public step ids in order', () => pm.expect(json.workflow.steps.map((step) => step.id)).to.eql(expectedIds));",
+                  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings|document-upload-instructions|document-analysis-settings|data-extraction-settings)/));",
+                  "if (json.workflow && json.workflow.id) pm.collectionVariables.set('core_workflow_id', json.workflow.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DIDV-850 POSTMAN {{run_id}} CORE\",\n  \"steps\": [\n    {\n      \"id\": \"ID_VERIFICATION\",\n      \"config\": {\n        \"minimum_age\": 21,\n        \"maximum_age\": 75\n      }\n    },\n    {\n      \"id\": \"FACE_LIVENESS\",\n      \"config\": {\n        \"confidence_threshold\": 80\n      }\n    },\n    {\n      \"id\": \"FACE_LIVENESS_CONSENT_SETTINGS\",\n      \"config\": {\n        \"face_liveness\": false\n      }\n    },\n    {\n      \"id\": \"AGE_ESTIMATION\",\n      \"config\": {\n        \"minimum_age\": 18,\n        \"maximum_age\": 100\n      }\n    },\n    {\n      \"id\": \"DEEPFAKE_DETECTION\"\n    },\n    {\n      \"id\": \"DEEP_AGE\"\n    },\n    {\n      \"id\": \"ADDRESS_VERIFICATION\"\n    },\n    {\n      \"id\": \"BACKGROUND_CHECK\"\n    },\n    {\n      \"id\": \"TITLE_SEARCH\"\n    },\n    {\n      \"id\": \"PEP_SANCTIONS\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows"
+          }
+        },
+        {
+          "name": "Retrieve core workflow",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const expectedIds = [\"ID_VERIFICATION\",\"FACE_LIVENESS\",\"FACE_LIVENESS_CONSENT_SETTINGS\",\"AGE_ESTIMATION\",\"DEEPFAKE_DETECTION\",\"DEEP_AGE\",\"ADDRESS_VERIFICATION\",\"BACKGROUND_CHECK\",\"TITLE_SEARCH\",\"PEP_SANCTIONS\"];",
+                  "pm.test('round-trips public step ids', () => pm.expect(json.workflow.steps.map((step) => step.id)).to.eql(expectedIds));",
+                  "pm.test('round-trips public config without database property groups', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings|document-upload-instructions|document-analysis-settings|data-extraction-settings)/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/workflows/{{core_workflow_id}}"
+          }
+        },
+        {
+          "name": "Create extended workflow (10 steps)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('returns a workflow id', () => pm.expect(json.workflow && json.workflow.id).to.be.a('string').and.not.empty);",
+                  "const expectedIds = [\"ADVERSE_MEDIA\",\"CUSTOM_PROMPT\",\"CONSENT\",\"BANK_STATEMENT_UPLOAD\",\"AI_BANK_STATEMENT_ANALYSIS\",\"DOCUMENT_UPLOAD\",\"WHITE_LABEL\",\"PHONE_TRUST_CHECK\",\"CARRIER_AGE_GATE\",\"PHONE_OWNERSHIP_MATCH\"];",
+                  "pm.test('returns the requested public step ids in order', () => pm.expect(json.workflow.steps.map((step) => step.id)).to.eql(expectedIds));",
+                  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings|document-upload-instructions|document-analysis-settings|data-extraction-settings)/));",
+                  "if (json.workflow && json.workflow.id) pm.collectionVariables.set('extended_workflow_id', json.workflow.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DIDV-850 POSTMAN {{run_id}} EXTENDED\",\n  \"steps\": [\n    {\n      \"id\": \"ADVERSE_MEDIA\"\n    },\n    {\n      \"id\": \"CUSTOM_PROMPT\",\n      \"config\": {\n        \"prompts\": [\n          {\n            \"text\": \"Capture a verification image\"\n          }\n        ]\n      }\n    },\n    {\n      \"id\": \"CONSENT\",\n      \"config\": {\n        \"consent_text\": \"I agree to this verification test.\",\n        \"require_signature\": false\n      }\n    },\n    {\n      \"id\": \"BANK_STATEMENT_UPLOAD\"\n    },\n    {\n      \"id\": \"AI_BANK_STATEMENT_ANALYSIS\"\n    },\n    {\n      \"id\": \"DOCUMENT_UPLOAD\",\n      \"config\": {\n        \"documents\": [\n          {\n            \"id\": \"supporting_document\",\n            \"description\": \"Supporting document\"\n          }\n        ]\n      }\n    },\n    {\n      \"id\": \"WHITE_LABEL\"\n    },\n    {\n      \"id\": \"PHONE_TRUST_CHECK\"\n    },\n    {\n      \"id\": \"CARRIER_AGE_GATE\"\n    },\n    {\n      \"id\": \"PHONE_OWNERSHIP_MATCH\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows"
+          }
+        },
+        {
+          "name": "Retrieve extended workflow",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const expectedIds = [\"ADVERSE_MEDIA\",\"CUSTOM_PROMPT\",\"CONSENT\",\"BANK_STATEMENT_UPLOAD\",\"AI_BANK_STATEMENT_ANALYSIS\",\"DOCUMENT_UPLOAD\",\"WHITE_LABEL\",\"PHONE_TRUST_CHECK\",\"CARRIER_AGE_GATE\",\"PHONE_OWNERSHIP_MATCH\"];",
+                  "pm.test('round-trips public step ids', () => pm.expect(json.workflow.steps.map((step) => step.id)).to.eql(expectedIds));",
+                  "pm.test('round-trips public config without database property groups', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings|document-upload-instructions|document-analysis-settings|data-extraction-settings)/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/workflows/{{extended_workflow_id}}"
+          }
+        },
+        {
+          "name": "Create phone verification workflow",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('returns a workflow id', () => pm.expect(json.workflow && json.workflow.id).to.be.a('string').and.not.empty);",
+                  "const expectedIds = [\"PHONE_VERIFICATION\"];",
+                  "pm.test('returns the requested public step ids in order', () => pm.expect(json.workflow.steps.map((step) => step.id)).to.eql(expectedIds));",
+                  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings|document-upload-instructions|document-analysis-settings|data-extraction-settings)/));",
+                  "if (json.workflow && json.workflow.id) pm.collectionVariables.set('phone_workflow_id', json.workflow.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DIDV-850 POSTMAN {{run_id}} PHONE\",\n  \"steps\": [\n    {\n      \"id\": \"PHONE_VERIFICATION\",\n      \"config\": {\n        \"verification_prompt\": \"My voice confirms my identity\"\n      }\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows"
+          }
+        },
+        {
+          "name": "Update phone verification config",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const step = json.workflow.steps.find((candidate) => candidate.id === 'PHONE_VERIFICATION');",
+                  "pm.test('returns the updated flat public config', () => pm.expect(step.config).to.eql({ verification_prompt: 'DIDV 850 automated phrase' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"config\": {\n    \"verification_prompt\": \"DIDV 850 automated phrase\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows/{{phone_workflow_id}}/steps/PHONE_VERIFICATION/config"
+          }
+        },
+        {
+          "name": "Retrieve updated phone workflow",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('persists the updated flat public config', () => pm.expect(json.workflow.steps).to.eql([{ id: 'PHONE_VERIFICATION', config: { verification_prompt: 'DIDV 850 automated phrase' } }]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/workflows/{{phone_workflow_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 — Contract rejection cases",
+      "description": "Verifies validation without starting billable provider operations.",
+      "item": [
+        {
+          "name": "Reject duplicate steps",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 400', () => pm.response.to.have.status(400));",
+                  "pm.test('mentions duplicate steps', () => pm.expect(pm.response.text().toLowerCase()).to.include('duplicate'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DIDV-850 POSTMAN {{run_id}} DUPLICATE\",\n  \"steps\": [\n    {\n      \"id\": \"ID_VERIFICATION\"\n    },\n    {\n      \"id\": \"ID_VERIFICATION\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows"
+          }
+        },
+        {
+          "name": "Reject more than 10 steps",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DIDV-850 POSTMAN {{run_id}} TOO MANY\",\n  \"steps\": [\n    {\n      \"id\": \"ID_VERIFICATION\"\n    },\n    {\n      \"id\": \"FACE_LIVENESS\"\n    },\n    {\n      \"id\": \"FACE_LIVENESS_CONSENT_SETTINGS\"\n    },\n    {\n      \"id\": \"AGE_ESTIMATION\"\n    },\n    {\n      \"id\": \"DEEPFAKE_DETECTION\"\n    },\n    {\n      \"id\": \"DEEP_AGE\"\n    },\n    {\n      \"id\": \"ADDRESS_VERIFICATION\"\n    },\n    {\n      \"id\": \"BACKGROUND_CHECK\"\n    },\n    {\n      \"id\": \"TITLE_SEARCH\"\n    },\n    {\n      \"id\": \"PEP_SANCTIONS\"\n    },\n    {\n      \"id\": \"ADVERSE_MEDIA\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows"
+          }
+        },
+        {
+          "name": "Reject missing prerequisite",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 400', () => pm.response.to.have.status(400));",
+                  "pm.test('identifies ID verification prerequisite', () => pm.expect(pm.response.text()).to.include('ID_VERIFICATION'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DIDV-850 POSTMAN {{run_id}} PREREQUISITE\",\n  \"steps\": [\n    {\n      \"id\": \"BACKGROUND_CHECK\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows"
+          }
+        },
+        {
+          "name": "Reject hidden step — CREDIT_CHECK",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 400', () => pm.response.to.have.status(400));",
+                  "pm.test('returns validation details', () => pm.expect(pm.response.json().hints).to.be.an('array').and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DIDV-850 POSTMAN {{run_id}} HIDDEN CREDIT_CHECK\",\n  \"steps\": [\n    {\n      \"id\": \"CREDIT_CHECK\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows"
+          }
+        },
+        {
+          "name": "Reject hidden step — KYB",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 400', () => pm.response.to.have.status(400));",
+                  "pm.test('returns validation details', () => pm.expect(pm.response.json().hints).to.be.an('array').and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DIDV-850 POSTMAN {{run_id}} HIDDEN KYB\",\n  \"steps\": [\n    {\n      \"id\": \"KYB\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows"
+          }
+        },
+        {
+          "name": "Reject hidden step — CUSTOM_FORM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 400', () => pm.response.to.have.status(400));",
+                  "pm.test('returns validation details', () => pm.expect(pm.response.json().hints).to.be.an('array').and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DIDV-850 POSTMAN {{run_id}} HIDDEN CUSTOM_FORM\",\n  \"steps\": [\n    {\n      \"id\": \"CUSTOM_FORM\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows"
+          }
+        },
+        {
+          "name": "Reject hidden step — PROOFCALL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 400', () => pm.response.to.have.status(400));",
+                  "pm.test('returns validation details', () => pm.expect(pm.response.json().hints).to.be.an('array').and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DIDV-850 POSTMAN {{run_id}} HIDDEN PROOFCALL\",\n  \"steps\": [\n    {\n      \"id\": \"PROOFCALL\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows"
+          }
+        },
+        {
+          "name": "Reject hidden step — IP_JURISDICTION",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 400', () => pm.response.to.have.status(400));",
+                  "pm.test('returns validation details', () => pm.expect(pm.response.json().hints).to.be.an('array').and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DIDV-850 POSTMAN {{run_id}} HIDDEN IP_JURISDICTION\",\n  \"steps\": [\n    {\n      \"id\": \"IP_JURISDICTION\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows"
+          }
+        },
+        {
+          "name": "Reject hidden step — VPN_DETECTION",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 400', () => pm.response.to.have.status(400));",
+                  "pm.test('returns validation details', () => pm.expect(pm.response.json().hints).to.be.an('array').and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DIDV-850 POSTMAN {{run_id}} HIDDEN VPN_DETECTION\",\n  \"steps\": [\n    {\n      \"id\": \"VPN_DETECTION\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows"
+          }
+        },
+        {
+          "name": "Reject hidden step — INJECTION_DETECTION",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 400', () => pm.response.to.have.status(400));",
+                  "pm.test('returns validation details', () => pm.expect(pm.response.json().hints).to.be.an('array').and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DIDV-850 POSTMAN {{run_id}} HIDDEN INJECTION_DETECTION\",\n  \"steps\": [\n    {\n      \"id\": \"INJECTION_DETECTION\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows"
+          }
+        },
+        {
+          "name": "Reject hidden step — ANTI_CHEAT",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 400', () => pm.response.to.have.status(400));",
+                  "pm.test('returns validation details', () => pm.expect(pm.response.json().hints).to.be.an('array').and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DIDV-850 POSTMAN {{run_id}} HIDDEN ANTI_CHEAT\",\n  \"steps\": [\n    {\n      \"id\": \"ANTI_CHEAT\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows"
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 — Workflow Runner automatic flow",
+      "description": "Runs a non-provider workflow with no manual uploads or external calls.",
+      "item": [
+        {
+          "name": "Create safe Runner workflow",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('returns a workflow id', () => pm.expect(json.workflow && json.workflow.id).to.be.a('string').and.not.empty);",
+                  "const expectedIds = [\"FACE_LIVENESS_CONSENT_SETTINGS\",\"CONSENT\",\"WHITE_LABEL\"];",
+                  "pm.test('returns the requested public step ids in order', () => pm.expect(json.workflow.steps.map((step) => step.id)).to.eql(expectedIds));",
+                  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings|document-upload-instructions|document-analysis-settings|data-extraction-settings)/));",
+                  "if (json.workflow && json.workflow.id) pm.collectionVariables.set('runner_workflow_id', json.workflow.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DIDV-850 POSTMAN {{run_id}} RUNNER\",\n  \"steps\": [\n    {\n      \"id\": \"FACE_LIVENESS_CONSENT_SETTINGS\",\n      \"config\": {\n        \"face_liveness\": false\n      }\n    },\n    {\n      \"id\": \"CONSENT\",\n      \"config\": {\n        \"consent_text\": \"I agree to this automated dev verification.\",\n        \"require_signature\": false\n      }\n    },\n    {\n      \"id\": \"WHITE_LABEL\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows"
+          }
+        },
+        {
+          "name": "Create headless session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('starts at the first step', () => pm.expect(json.current_step).to.eql(0));",
+                  "pm.test('returns three ordered Runner steps', () => pm.expect(json.steps.map((step) => step.step_id)).to.eql(['FACE_LIVENESS_CONSENT_SETTINGS','CONSENT','WHITE_LABEL']));",
+                  "if (json.session_id) pm.collectionVariables.set('runner_session_id', json.session_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"email\": \"{{test_email}}\",\n  \"phone\": \"{{phone}}\",\n  \"external_id\": \"didv-850-postman-{{run_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows/{{runner_workflow_id}}/sessions"
+          }
+        },
+        {
+          "name": "Get initial workflow state",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', () => pm.response.to.have.status(200));",
+                  "pm.test('current step is zero', () => pm.expect(pm.response.json().current_step).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/sessions/{{runner_session_id}}/workflow"
+          }
+        },
+        {
+          "name": "Start workflow",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', () => pm.response.to.have.status(200));",
+                  "pm.test('start preserves the first step', () => pm.expect(pm.response.json().current_step).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/sessions/{{runner_session_id}}/workflow/start"
+          }
+        },
+        {
+          "name": "Start workflow again (idempotent)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', () => pm.response.to.have.status(200));",
+                  "pm.test('repeated start remains on the first step', () => pm.expect(pm.response.json().current_step).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/sessions/{{runner_session_id}}/workflow/start"
+          }
+        },
+        {
+          "name": "Reject out-of-order step",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 409', () => pm.response.to.have.status(409));",
+                  "pm.test('reports the expected current step', () => pm.expect(pm.response.json().current_step).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"acknowledged\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/sessions/{{runner_session_id}}/steps/WHITE_LABEL"
+          }
+        },
+        {
+          "name": "Reject invalid dynamic upload slot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 400', () => pm.response.to.have.status(400));",
+                  "pm.test('returns invalid_slots', () => pm.expect(pm.response.json().invalid_slots).to.include('unexpected_slot'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"files\": [\n    {\n      \"file_name\": \"unexpected.png\",\n      \"content_type\": \"image/png\",\n      \"slot\": \"unexpected_slot\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/sessions/{{runner_session_id}}/uploads"
+          }
+        },
+        {
+          "name": "Complete disabled face-consent settings",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', () => pm.response.to.have.status(200));",
+                  "pm.test('advances to consent', () => pm.expect(pm.response.json().current_step).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/sessions/{{runner_session_id}}/steps/FACE_LIVENESS_CONSENT_SETTINGS"
+          }
+        },
+        {
+          "name": "Accept consent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', () => pm.response.to.have.status(200));",
+                  "pm.test('advances to white label', () => pm.expect(pm.response.json().current_step).to.eql(2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accepted\": true,\n  \"legal_name\": \"{{legal_name}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/sessions/{{runner_session_id}}/steps/CONSENT"
+          }
+        },
+        {
+          "name": "Acknowledge white label",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('completes the workflow', () => { pm.expect(json.current_step).to.eql(null); pm.expect(json.session_progress).to.eql('COMPLETED'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"acknowledged\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/sessions/{{runner_session_id}}/steps/WHITE_LABEL"
+          }
+        },
+        {
+          "name": "Get completed workflow state",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('all steps completed', () => pm.expect(json.steps.every((step) => step.status === 'COMPLETED')).to.eql(true));",
+                  "pm.test('session is terminal', () => { pm.expect(json.current_step).to.eql(null); pm.expect(json.session_progress).to.eql('COMPLETED'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/sessions/{{runner_session_id}}/workflow"
+          }
+        },
+        {
+          "name": "Reject restart after completion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/sessions/{{runner_session_id}}/workflow/start"
+          }
+        },
+        {
+          "name": "Reject replay after completion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"acknowledged\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/sessions/{{runner_session_id}}/steps/WHITE_LABEL"
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 — Optional E-signature boundary",
+      "description": "Set run_esignature_tests=true and provide an existing DeepSign template before running.",
+      "item": [
+        {
+          "name": "Create hosted E-signature workflow",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (String(pm.variables.get('run_esignature_tests')).toLowerCase() !== 'true') {",
+                  "  console.log('Skipping optional request because run_esignature_tests is not true');",
+                  "  pm.execution.skipRequest();",
+                  "}",
+                  "if (!pm.variables.get('esign_template_id')) throw new Error('Set esign_template_id before enabling E-signature tests');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('returns a workflow id', () => pm.expect(json.workflow && json.workflow.id).to.be.a('string').and.not.empty);",
+                  "const expectedIds = [\"E_SIGNATURE\"];",
+                  "pm.test('returns the requested public step ids in order', () => pm.expect(json.workflow.steps.map((step) => step.id)).to.eql(expectedIds));",
+                  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings|document-upload-instructions|document-analysis-settings|data-extraction-settings)/));",
+                  "if (json.workflow && json.workflow.id) pm.collectionVariables.set('esign_workflow_id', json.workflow.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"DIDV-850 POSTMAN {{run_id}} ESIGN\",\n  \"steps\": [\n    {\n      \"id\": \"E_SIGNATURE\",\n      \"config\": {\n        \"template_id\": \"{{esign_template_id}}\",\n        \"template_name\": \"{{esign_template_name}}\",\n        \"template_signer_count\": 1,\n        \"include_sender_as_signer\": false,\n        \"allow_typed_signature\": true\n      }\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows"
+          }
+        },
+        {
+          "name": "Reject E-signature in headless Runner",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (String(pm.variables.get('run_esignature_tests')).toLowerCase() !== 'true') {",
+                  "  console.log('Skipping optional request because run_esignature_tests is not true');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 400', () => pm.response.to.have.status(400));",
+                  "pm.test('identifies E-signature as invalid for Runner', () => pm.expect(pm.response.text().toLowerCase()).to.include('e-signature'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"email\": \"{{test_email}}\",\n  \"phone\": \"{{phone}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows/{{esign_workflow_id}}/sessions"
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 — Optional real phone verification",
+      "description": "Enable only after the backend adapter is deployed. This places a real call to the configured phone number.",
+      "item": [
+        {
+          "name": "Create phone verification session",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (String(pm.variables.get('run_phone_verification_tests')).toLowerCase() !== 'true') {",
+                  "  console.log('Skipping optional request because run_phone_verification_tests is not true');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json.session_id) pm.collectionVariables.set('phone_session_id', json.session_id);",
+                  "pm.collectionVariables.set('phone_poll_attempt', '0');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"{{first_name}}\",\n  \"last_name\": \"{{last_name}}\",\n  \"email\": \"{{test_email}}\",\n  \"phone\": \"{{phone}}\",\n  \"external_id\": \"didv-850-phone-{{run_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/workflows/{{phone_workflow_id}}/sessions"
+          }
+        },
+        {
+          "name": "Start phone verification call",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (String(pm.variables.get('run_phone_verification_tests')).toLowerCase() !== 'true') {",
+                  "  console.log('Skipping optional request because run_phone_verification_tests is not true');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 200', () => pm.response.to.have.status(200));",
+                  "pm.test('call enters progress or completes', () => pm.expect(['IN_PROGRESS','COMPLETED']).to.include(pm.response.json().step_status));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"start\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/sessions/{{phone_session_id}}/steps/PHONE_VERIFICATION"
+          }
+        },
+        {
+          "name": "Poll phone verification result",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (String(pm.variables.get('run_phone_verification_tests')).toLowerCase() !== 'true') {",
+                  "  console.log('Skipping optional request because run_phone_verification_tests is not true');",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const attempt = Number(pm.collectionVariables.get('phone_poll_attempt') || 0) + 1;",
+                  "pm.collectionVariables.set('phone_poll_attempt', String(attempt));",
+                  "const limit = Number(pm.variables.get('phone_poll_limit') || 12);",
+                  "if (pm.response.code === 409 && pm.response.text().includes('PHONE_VERIFICATION_RESULT_NOT_READY') && attempt < limit) {",
+                  "  console.log(`Phone result not ready; retry ${attempt}/${limit}`);",
+                  "  const delay = Number(pm.variables.get('phone_poll_interval_ms') || 5000);",
+                  "  setTimeout(() => pm.execution.setNextRequest(pm.info.requestName), delay);",
+                  "} else {",
+                  "  pm.test('phone verification reaches a final response', () => pm.response.to.have.status(200));",
+                  "  pm.test('phone verification is no longer in progress', () => pm.expect(pm.response.json().step_status).not.to.eql('IN_PROGRESS'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"complete\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/v1/sessions/{{phone_session_id}}/steps/PHONE_VERIFICATION"
+          }
+        }
+      ]
+    }
+  ]
+}

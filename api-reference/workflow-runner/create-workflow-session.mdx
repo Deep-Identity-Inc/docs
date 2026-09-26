@@ -11,7 +11,7 @@ POST /v1/workflows/{workflow_id}/sessions
 Creates a new session scoped to a workflow and returns the ordered list of steps the session must complete, along with each step's requirements. Unlike [Create Session](/api-reference/sessions/create-session), this endpoint does not send an invite email or SMS and does not return a hosted `session_url` — it's designed for headless integrations (mobile/web SDKs) that drive the session directly through [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step).
 
 <Info>
-  Only workflows whose steps are all `ID_VERIFICATION` and/or `FACE_LIVENESS` can be run through this API today. See [Available steps](#available-steps) below.
+  The Runner supports 21 of the 22 steps accepted by [Create Workflow](/api-reference/workflows/create-workflow). `E_SIGNATURE` is hosted-only and cannot be executed through the headless Runner. Read each returned step's `requirements` instead of hard-coding a two-step flow.
 </Info>
 
 ## Request
@@ -121,12 +121,16 @@ session = response.json()
 
 ### Available steps
 
-Only these two step types can be run through the Workflow Runner API. A workflow containing any other step type is rejected — see [Error responses](#error-responses).
+The Runner handles its 21 supported workflow steps in four ways:
 
-| `step_id` | Requirements shape |
-|---|---|
-| `ID_VERIFICATION` | [ID_VERIFICATION requirements](#id_verification-requirements) |
-| `FACE_LIVENESS` | [FACE_LIVENESS requirements](#face_liveness-requirements) |
+| Behavior | Step IDs | Client behavior |
+|---|---|---|
+| `client-submit` | `ID_VERIFICATION`, `AGE_ESTIMATION`, `TITLE_SEARCH`, `PEP_SANCTIONS`, `CUSTOM_PROMPT`, `DOCUMENT_UPLOAD` | Collect the fields or uploads described by `requirements`, then submit the current step |
+| `server-auto` | `AI_BANK_STATEMENT_ANALYSIS`, `PHONE_TRUST_CHECK`, `CARRIER_AGE_GATE`, `PHONE_OWNERSHIP_MATCH` | Submit the current step to ask the server to perform the check; poll when the response reports that work is still pending |
+| `multi-phase` | `FACE_LIVENESS`, `DEEPFAKE_DETECTION`, `DEEP_AGE`, `ADDRESS_VERIFICATION`, `BACKGROUND_CHECK`, `ADVERSE_MEDIA`, `BANK_STATEMENT_UPLOAD`, `PHONE_VERIFICATION` | Follow the `actions` listed in `requirements` and read the updated requirements after each phase |
+| `presentation` | `FACE_LIVENESS_CONSENT_SETTINGS`, `CONSENT`, `WHITE_LABEL` | Present the returned content or branding, collect any required acknowledgement, and submit it |
+
+The examples below show two representative requirement shapes. For every other step, treat the response's `requirements` object and the Submit Workflow Step request schema as the source of truth. Multi-phase requirements include an `actions` array when the client must choose an action such as `start` or `complete`.
 
 #### ID_VERIFICATION requirements
 
@@ -147,11 +151,35 @@ Only these two step types can be run through the Workflow Runner API. A workflow
 | `challenge_type` | string | The liveness challenge method to run, e.g. `FaceMovementChallenge` |
 | `confidence_threshold` | number | Minimum liveness confidence score (0-100) required to pass |
 
+#### Server-auto phone requirements
+
+`PHONE_TRUST_CHECK`, `CARRIER_AGE_GATE`, and `PHONE_OWNERSHIP_MATCH` return the session fields they consume and an empty `submission_fields` array. Submit `{}` when one of these steps becomes current.
+
+```json
+{
+  "session_fields": ["phone", "first_name", "last_name"],
+  "submission_fields": []
+}
+```
+
+#### PHONE_VERIFICATION requirements
+
+```json
+{
+  "actions": ["start", "complete"],
+  "session_fields": ["phone"],
+  "asynchronous": true,
+  "poll_interval_seconds": 5
+}
+```
+
+Call `start` once to place the verification call. Then call `complete` after at least `poll_interval_seconds`; a `409` with `PHONE_VERIFICATION_RESULT_NOT_READY` means you should continue polling.
+
 ### Error responses
 
 | Status | Description |
 |---|---|
-| `400` | Invalid request body, or the workflow contains a step type not supported by the Workflow Runner API (response includes `invalid_steps`), or the workflow is not `active` |
+| `400` | Invalid request body, an inactive workflow, or a workflow containing a step the Runner does not support. Unsupported steps are returned in `invalid_steps` |
 | `401` | Invalid or missing API key |
 | `402` | Insufficient funds to run this workflow |
 | `403` | The workflow belongs to a different organization |
@@ -201,10 +229,30 @@ Only these two step types can be run through the Workflow Runner API. A workflow
 }
 ```
 
+```json 200 — Asynchronous call workflow
+{
+  "session_id": "80e801af-991b-425c-96fc-f5e07d794253",
+  "expires_at": "2026-09-09T14:00:00.000Z",
+  "steps": [
+    {
+      "step_id": "PHONE_VERIFICATION",
+      "status": "PENDING",
+      "requirements": {
+        "actions": ["start", "complete"],
+        "session_fields": ["phone"],
+        "asynchronous": true,
+        "poll_interval_seconds": 5
+      }
+    }
+  ],
+  "current_step": 0
+}
+```
+
 ```json 400 — Unsupported step
 {
   "error": "Invalid workflow step",
-  "invalid_steps": ["pep-sanctions"]
+  "invalid_steps": ["e-signature"]
 }
 ```
 

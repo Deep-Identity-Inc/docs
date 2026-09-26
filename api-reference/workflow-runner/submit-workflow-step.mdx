@@ -8,7 +8,7 @@ api: POST /v1/sessions/{session_id}/steps/{step_id}
 POST /v1/sessions/{session_id}/steps/{step_id}
 ```
 
-Submits the data for one workflow step and executes it synchronously. The request body's shape is **config-driven** — it depends on both `step_id` and the settings configured on that step within the workflow — see [Step submission schemas](#step-submission-schemas) below.
+Submits an action or data for one workflow step. The request body's shape is **config-driven** — it depends on `step_id`, its current phase, and the settings configured on the workflow. Asynchronous and multi-phase steps can return an in-progress state instead of completing synchronously.
 
 Steps must be submitted **in order**: the `step_id` in the URL must match the session's `current_step` (as returned by [Create Workflow Session](/api-reference/workflow-runner/create-workflow-session) or [Get Workflow State](/api-reference/workflow-runner/get-workflow-state)), and that step must be `PENDING` or `IN_PROGRESS`.
 
@@ -25,16 +25,37 @@ Steps must be submitted **in order**: the `step_id` in the URL must match the se
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `session_id` | string (uuid) | Yes | The session to submit a step for |
-| `step_id` | string | Yes | `ID_VERIFICATION` or `FACE_LIVENESS` — must match the session's current step |
+| `step_id` | string | Yes | A supported workflow step ID — must match the session's current step |
 
 ### Body parameters
 
-The request body depends on `step_id`:
+The generated OpenAPI request schema lists every supported step submission. Use the current step's `requirements` from [Create Workflow Session](/api-reference/workflow-runner/create-workflow-session) or [Get Workflow State](/api-reference/workflow-runner/get-workflow-state) to select the correct body.
 
-| `step_id` | Body schema |
+### Request pattern by step
+
+| Step ID | Submission body |
 |---|---|
-| `ID_VERIFICATION` | [ID_VERIFICATION submission](#id_verification) |
-| `FACE_LIVENESS` | [FACE_LIVENESS submission](#face_liveness) |
+| `ID_VERIFICATION` | Document types and an `uploads` map containing the required ID/selfie keys |
+| `FACE_LIVENESS` | `{ "action": "start" }`, `{ "action": "complete" }`, or the custom-provider `upload-url` action |
+| `FACE_LIVENESS_CONSENT_SETTINGS` | `{}` when consent is disabled; otherwise the same body as `CONSENT` |
+| `AGE_ESTIMATION` | `{ "uploads": { "selfie_front": "..." } }` |
+| `DEEPFAKE_DETECTION` | `start` to receive capture instructions, then `complete` with the returned frame/timeline upload keys |
+| `DEEP_AGE`, `ADDRESS_VERIFICATION`, `BACKGROUND_CHECK` | `{ "action": "start" }`, followed by `{ "action": "complete" }` after the hosted phase finishes |
+| `TITLE_SEARCH` | `{ "address": "..." }` |
+| `PEP_SANCTIONS` | `first_name`, `last_name`, `date_of_birth`, and optional `email` |
+| `ADVERSE_MEDIA` | `start` with the screening identity, then `complete` while polling |
+| `CUSTOM_PROMPT` | `uploads` keyed by the slots returned in `requirements` |
+| `CONSENT` | `accepted`; when accepted, `legal_name` and any required `signature_upload` |
+| `BANK_STATEMENT_UPLOAD` | `start` to receive the hosted request, then `complete` after upload finishes |
+| `AI_BANK_STATEMENT_ANALYSIS` | `{}` |
+| `DOCUMENT_UPLOAD` | `uploads` keyed by the configured document slots returned in `requirements` |
+| `WHITE_LABEL` | `{ "acknowledged": true }` after applying the returned presentation settings |
+| `PHONE_TRUST_CHECK`, `CARRIER_AGE_GATE`, `PHONE_OWNERSHIP_MATCH` | `{}`; these executors use applicant data already stored on the session |
+| `PHONE_VERIFICATION` | `{ "action": "start" }`, followed by `complete` polling |
+
+The detailed examples below cover upload, presentation, server-auto, and multi-phase execution. For larger schemas such as `DEEPFAKE_DETECTION`, use the generated request schema on this page together with the current step's `requirements`.
+
+For config-driven files, pass the requirement's exact slot to [Create Session Uploads](/api-reference/workflow-runner/create-session-uploads), upload the file, then use the returned `file_key` in the step body.
 
 ## Step submission schemas
 
@@ -179,22 +200,105 @@ complete = requests.post(base, headers=headers, json={"action": "complete"}).jso
 
 </CodeGroup>
 
+### Server-auto phone checks
+
+`PHONE_TRUST_CHECK`, `CARRIER_AGE_GATE`, and `PHONE_OWNERSHIP_MATCH` read the applicant data supplied when the headless session was created. Submit an empty JSON object when the step becomes current.
+
+```bash
+curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/PHONE_TRUST_CHECK \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+```json 200 — Phone Trust completed
+{
+  "step_id": "PHONE_TRUST_CHECK",
+  "step_status": "COMPLETED",
+  "failure_reason": null,
+  "current_step": 1,
+  "attempts_remaining": 3,
+  "session_status": "PENDING",
+  "session_progress": "STARTED",
+  "phone_trust_check": {
+    "tripped": false,
+    "tripReasons": [],
+    "simSwappedRisk": "LOW_RISK",
+    "forwardingRisk": "NO_RISK",
+    "sensitivity": "medium",
+    "statusMessage": "Response from one supplier",
+    "checkedAt": "2026-09-08T14:04:00.000Z"
+  }
+}
+```
+
+### CONSENT
+
+When `accepted` is `true`, `legal_name` is required. If the workflow configuration requires a signature, request an upload URL with `slot: "signature_upload"`, upload it, and include its session-owned key as `signature_upload`. A declined consent completes the attempt with `failure_reason: "CONSENT_DECLINED"`.
+
+```bash
+curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/CONSENT \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "accepted": true,
+    "legal_name": "Jane Doe"
+  }'
+```
+
+### PHONE_VERIFICATION
+
+Call `start` once. It returns `IN_PROGRESS` while the phone call is being placed. Wait for the `poll_interval_seconds` returned in the step requirements, then call `complete` until the result is ready.
+
+```bash cURL — start
+curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/PHONE_VERIFICATION \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "action": "start" }'
+```
+
+```json 200 — Call started
+{
+  "step_id": "PHONE_VERIFICATION",
+  "step_status": "IN_PROGRESS",
+  "failure_reason": null,
+  "current_step": 0,
+  "attempts_remaining": 3,
+  "session_status": "PENDING",
+  "session_progress": "STARTED",
+  "phone_verification": {
+    "status": "pending",
+    "reused": false
+  }
+}
+```
+
+```bash cURL — poll result
+curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/PHONE_VERIFICATION \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "action": "complete" }'
+```
+
+A pending result returns `409` with `failure_reason: "PHONE_VERIFICATION_RESULT_NOT_READY"`. A completed mismatch returns `200` with `PHONE_VERIFICATION_CHECK_FAILED` and consumes an attempt.
+
 ## Response
 
-The response is a common envelope for both step types; FACE_LIVENESS additionally includes a `liveness` object.
+The response uses a common envelope for every supported step. Individual executors can add step-specific result fields; for example, `FACE_LIVENESS` adds a `liveness` object.
 
 ### 200 — Success
 
 | Field | Type | Present when | Description |
 |---|---|---|---|
-| `step_id` | string | always | `ID_VERIFICATION` or `FACE_LIVENESS` |
+| `step_id` | string | always | The submitted workflow step ID |
 | `step_status` | string | always | `PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, or `SKIPPED` |
-| `failure_reason` | string \| null | always | Reason the step failed this attempt, or `null`. See [ID_VERIFICATION failure reasons](#id_verification-failure-reasons) and [FACE_LIVENESS failure reasons](#face_liveness-failure-reasons) |
+| `failure_reason` | string \| null | always | Step-specific reason the attempt failed, or `null`. The sections below list the ID verification and face-liveness values |
 | `current_step` | integer \| null | always | 0-based index of the next step to submit. `null` once the run has finished |
 | `attempts_remaining` | number \| null | always | Session-wide failure budget remaining. `null` when the workflow has no failure limit configured |
 | `session_status` | string | always | Session status: `PENDING`, `SUBMITTED`, `VERIFIED`, `REJECTED`, `VOIDED`, `EXPIRED`, or `FAILED` |
 | `session_progress` | string | always | `PENDING`, `STARTED`, or `COMPLETED` |
 | `liveness` | object | `step_id` is `FACE_LIVENESS` | Shape depends on the submitted `action` — see [FACE_LIVENESS results](#face_liveness-results) |
+| Step-specific result | object | executor-dependent | A snake_case key such as `phone_trust_check` or `phone_verification`. Treat new fields as additive |
 
 <Note>
   Advisory checks (age, expiry, document validity period, state) never fail an `ID_VERIFICATION` step and are not included in the response — only the blocking checks below can produce a `failure_reason`.
@@ -255,8 +359,8 @@ The response is a common envelope for both step types; FACE_LIVENESS additionall
 | `400` | Invalid `session_id`/`step_id` path parameters, the request body fails the step's schema, or an upload key in the body doesn't belong to this session |
 | `401` | Invalid or missing API key |
 | `403` | The session belongs to a different organization |
-| `404` | Session not found, `step_id` isn't `ID_VERIFICATION`/`FACE_LIVENESS`, the step isn't part of this session's workflow, or no workflow execution state exists for this session |
-| `409` | The session is terminal, the step is out of order or not in a submittable state, a concurrent submission conflict occurred, or (`FACE_LIVENESS` only) `complete` was called before `start` or before the result was ready |
+| `404` | Session or step not found, the step isn't part of this session's workflow, or no workflow execution state exists for this session |
+| `409` | The session is terminal, the step is out of order or not in a submittable state, a concurrent submission conflict occurred, or a multi-phase `complete` action was called before `start` or before its result was ready |
 | `429` | Too many requests |
 | `501` | This step type isn't runnable through the API yet |
 
