@@ -163,7 +163,7 @@
                   "pm.test('returns a workflow id', () => pm.expect(json.workflow && json.workflow.id).to.be.a('string').and.not.empty);",
                   "const expectedIds = [\"ID_VERIFICATION\",\"FACE_LIVENESS\",\"FACE_LIVENESS_CONSENT_SETTINGS\",\"AGE_ESTIMATION\",\"DEEPFAKE_DETECTION\",\"DEEP_AGE\",\"ADDRESS_VERIFICATION\",\"BACKGROUND_CHECK\",\"TITLE_SEARCH\",\"PEP_SANCTIONS\"];",
                   "pm.test('returns the requested public step ids in order', () => pm.expect(json.workflow.steps.map((step) => step.id)).to.eql(expectedIds));",
-                  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings)/));",
+                  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings|document-upload-instructions|document-analysis-settings|data-extraction-settings)/));",
                   "if (json.workflow && json.workflow.id) pm.collectionVariables.set('core_workflow_id', json.workflow.id);"
                 ]
               }
@@ -201,7 +201,7 @@
                   "const json = pm.response.json();",
                   "const expectedIds = [\"ID_VERIFICATION\",\"FACE_LIVENESS\",\"FACE_LIVENESS_CONSENT_SETTINGS\",\"AGE_ESTIMATION\",\"DEEPFAKE_DETECTION\",\"DEEP_AGE\",\"ADDRESS_VERIFICATION\",\"BACKGROUND_CHECK\",\"TITLE_SEARCH\",\"PEP_SANCTIONS\"];",
                   "pm.test('round-trips public step ids', () => pm.expect(json.workflow.steps.map((step) => step.id)).to.eql(expectedIds));",
-                  "pm.test('round-trips public config without database property groups', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings)/));"
+                  "pm.test('round-trips public config without database property groups', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings|document-upload-instructions|document-analysis-settings|data-extraction-settings)/));"
                 ]
               }
             }
@@ -225,7 +225,7 @@
                   "pm.test('returns a workflow id', () => pm.expect(json.workflow && json.workflow.id).to.be.a('string').and.not.empty);",
                   "const expectedIds = [\"ADVERSE_MEDIA\",\"CUSTOM_PROMPT\",\"CONSENT\",\"BANK_STATEMENT_UPLOAD\",\"AI_BANK_STATEMENT_ANALYSIS\",\"DOCUMENT_UPLOAD\",\"WHITE_LABEL\",\"PHONE_TRUST_CHECK\",\"CARRIER_AGE_GATE\",\"PHONE_OWNERSHIP_MATCH\"];",
                   "pm.test('returns the requested public step ids in order', () => pm.expect(json.workflow.steps.map((step) => step.id)).to.eql(expectedIds));",
-                  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings)/));",
+                  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings|document-upload-instructions|document-analysis-settings|data-extraction-settings)/));",
                   "if (json.workflow && json.workflow.id) pm.collectionVariables.set('extended_workflow_id', json.workflow.id);"
                 ]
               }
@@ -263,7 +263,7 @@
                   "const json = pm.response.json();",
                   "const expectedIds = [\"ADVERSE_MEDIA\",\"CUSTOM_PROMPT\",\"CONSENT\",\"BANK_STATEMENT_UPLOAD\",\"AI_BANK_STATEMENT_ANALYSIS\",\"DOCUMENT_UPLOAD\",\"WHITE_LABEL\",\"PHONE_TRUST_CHECK\",\"CARRIER_AGE_GATE\",\"PHONE_OWNERSHIP_MATCH\"];",
                   "pm.test('round-trips public step ids', () => pm.expect(json.workflow.steps.map((step) => step.id)).to.eql(expectedIds));",
-                  "pm.test('round-trips public config without database property groups', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings)/));"
+                  "pm.test('round-trips public config without database property groups', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings|document-upload-instructions|document-analysis-settings|data-extraction-settings)/));"
                 ]
               }
             }
@@ -287,7 +287,7 @@
                   "pm.test('returns a workflow id', () => pm.expect(json.workflow && json.workflow.id).to.be.a('string').and.not.empty);",
                   "const expectedIds = [\"PHONE_VERIFICATION\"];",
                   "pm.test('returns the requested public step ids in order', () => pm.expect(json.workflow.steps.map((step) => step.id)).to.eql(expectedIds));",
-                  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings)/));",
+                  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings|document-upload-instructions|document-analysis-settings|data-extraction-settings)/));",
                   "if (json.workflow && json.workflow.id) pm.collectionVariables.set('phone_workflow_id', json.workflow.id);"
                 ]
               }
@@ -768,7 +768,7 @@
                   "pm.test('returns a workflow id', () => pm.expect(json.workflow && json.workflow.id).to.be.a('string').and.not.empty);",
                   "const expectedIds = [\"FACE_LIVENESS_CONSENT_SETTINGS\",\"CONSENT\",\"WHITE_LABEL\"];",
                   "pm.test('returns the requested public step ids in order', () => pm.expect(json.workflow.steps.map((step) => step.id)).to.eql(expectedIds));",
-                  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings)/));",
+                  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings|document-upload-instructions|document-analysis-settings|data-extraction-settings)/));",
                   "if (json.workflow && json.workflow.id) pm.collectionVariables.set('runner_workflow_id', json.workflow.id);"
                 ]
               }
@@ -1210,7 +1210,7 @@
                   "pm.test('returns a workflow id', () => pm.expect(json.workflow && json.workflow.id).to.be.a('string').and.not.empty);",
                   "const expectedIds = [\"E_SIGNATURE\"];",
                   "pm.test('returns the requested public step ids in order', () => pm.expect(json.workflow.steps.map((step) => step.id)).to.eql(expectedIds));",
-                  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings)/));",
+                  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings|document-upload-instructions|document-analysis-settings|data-extraction-settings)/));",
                   "if (json.workflow && json.workflow.id) pm.collectionVariables.set('esign_workflow_id', json.workflow.id);"
                 ]
               }

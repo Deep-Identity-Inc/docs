@@ -61,7 +61,7 @@ const createWorkflowTests = (variable, expectedIds) => [
   "pm.test('returns a workflow id', () => pm.expect(json.workflow && json.workflow.id).to.be.a('string').and.not.empty);",
   `const expectedIds = ${JSON.stringify(expectedIds)};`,
   "pm.test('returns the requested public step ids in order', () => pm.expect(json.workflow.steps.map((step) => step.id)).to.eql(expectedIds));",
-  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings)/));",
+  "pm.test('does not expose database property-group names', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings|document-upload-instructions|document-analysis-settings|data-extraction-settings)/));",
   `if (json.workflow && json.workflow.id) pm.collectionVariables.set('${variable}', json.workflow.id);`,
 ];
 
@@ -70,7 +70,7 @@ const retrieveWorkflowTests = (expectedIds) => [
   'const json = pm.response.json();',
   `const expectedIds = ${JSON.stringify(expectedIds)};`,
   "pm.test('round-trips public step ids', () => pm.expect(json.workflow.steps.map((step) => step.id)).to.eql(expectedIds));",
-  "pm.test('round-trips public config without database property groups', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings)/));",
+  "pm.test('round-trips public config without database property groups', () => pm.expect(JSON.stringify(json.workflow.steps)).not.to.match(/(?:phone-verification-settings|age-restriction-settings|consent-settings|document-upload-instructions|document-analysis-settings|data-extraction-settings)/));",
 ];
 
 const coreStepIds = [
