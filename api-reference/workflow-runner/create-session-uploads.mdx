@@ -1,6 +1,6 @@
 ---
 title: Create Session Uploads
-description: Get presigned URLs to upload document and selfie images for a workflow session
+description: Get presigned URLs for files required by the current workflow step
 api: POST /v1/sessions/{session_id}/uploads
 ---
 
@@ -8,7 +8,13 @@ api: POST /v1/sessions/{session_id}/uploads
 POST /v1/sessions/{session_id}/uploads
 ```
 
-Mints presigned S3 upload URLs for the images an `ID_VERIFICATION` step needs. Upload each image directly to its `upload_url`, then pass the returned `file_key` values in the `uploads` object when you call [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step).
+Mints session-scoped presigned S3 upload URLs. Use this endpoint for ID/selfie captures and for config-driven files such as custom prompts, consent signatures, and document uploads.
+
+Upload each file directly to its `upload_url`, then pass the returned `file_key` under the corresponding `slot` when you call [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step).
+
+<Info>
+  For a config-driven upload, copy the exact slot from the current step's `requirements`. The endpoint validates it against that step and rejects slots belonging to another step or workflow configuration.
+</Info>
 
 ## Request
 
@@ -22,18 +28,21 @@ Mints presigned S3 upload URLs for the images an `ID_VERIFICATION` step needs. U
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `session_id` | string (uuid) | Yes | The session to upload images for |
+| `session_id` | string (uuid) | Yes | The workflow session to upload files for |
 
 ### Body parameters
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `files` | array | Yes | At least one file to request an upload URL for. No two entries may share the same `upload_type` |
+| `files` | array | Yes | At least one file. No two entries may resolve to the same logical slot |
 | `files[].file_name` | string | Yes | Original file name, used to derive the stored file extension |
 | `files[].content_type` | string | Yes | MIME type of the file, e.g. `image/jpeg` |
-| `files[].upload_type` | string | Yes | One of `id_front`, `id_back`, `secondary_id_front`, `secondary_id_back`, `tertiary_id_front`, `tertiary_id_back`, `selfie_front` |
+| `files[].upload_type` | string | One of `upload_type` or `slot` | Legacy ID/selfie slot: `id_front`, `id_back`, `secondary_id_front`, `secondary_id_back`, `tertiary_id_front`, `tertiary_id_back`, or `selfie_front` |
+| `files[].slot` | string | One of `upload_type` or `slot` | Exact config-driven slot returned by the current step's `requirements`. Maximum 255 characters |
 
-### Example request
+Do not provide both `upload_type` and `slot` for the same file.
+
+### Example: ID and selfie captures
 
 <CodeGroup>
 
@@ -89,6 +98,68 @@ signed_urls = response.json()["signed_urls"]
 
 </CodeGroup>
 
+### Example: config-driven document slot
+
+Suppose the current `DOCUMENT_UPLOAD` step returns this requirement:
+
+```json
+{
+  "documents": [
+    {
+      "id": "employment_letter",
+      "description": "Upload a recent employment letter",
+      "optional": false,
+      "extractions": []
+    }
+  ]
+}
+```
+
+Request a URL using that exact `id` as `slot`:
+
+```bash
+curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/uploads \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "files": [
+      {
+        "file_name": "employment-letter.pdf",
+        "content_type": "application/pdf",
+        "slot": "employment_letter"
+      }
+    ]
+  }'
+```
+
+The same pattern applies to:
+
+| Step | Where the slot comes from |
+|---|---|
+| `CUSTOM_PROMPT` | `requirements.upload_slots[]` or `requirements.prompts[].slot` |
+| `DOCUMENT_UPLOAD` | `requirements.documents[].id` |
+| `CONSENT`, `FACE_LIVENESS_CONSENT_SETTINGS` | `signature_upload` when `requirements.signature_required` is `true` |
+
+### Upload the file
+
+Send the raw bytes to the returned URL with the same `Content-Type` used when requesting it:
+
+```bash
+curl -X PUT "PRESIGNED_UPLOAD_URL" \
+  -H "Content-Type: application/pdf" \
+  --data-binary @employment-letter.pdf
+```
+
+Then submit the step using the returned `file_key`:
+
+```json
+{
+  "uploads": {
+    "employment_letter": "org-id/session-id/1717000000000-0-employment_letter.pdf"
+  }
+}
+```
+
 ## Response
 
 ### 200 — Success
@@ -96,8 +167,9 @@ signed_urls = response.json()["signed_urls"]
 | Field | Type | Description |
 |---|---|---|
 | `signed_urls` | array | One entry per requested file |
-| `signed_urls[].file_key` | string | Pass this value back as the corresponding field in the `uploads` object of [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step) |
-| `signed_urls[].upload_type` | string | Echoes the requested `upload_type` |
+| `signed_urls[].file_key` | string | Pass this value under `signed_urls[].slot` when submitting the current step |
+| `signed_urls[].slot` | string | Logical step slot for this file. Always present |
+| `signed_urls[].upload_type` | string | Echoes the requested legacy `upload_type`. Omitted for config-driven `slot` requests |
 | `signed_urls[].upload_url` | string | Presigned URL — upload the raw file bytes to this URL with an HTTP `PUT` |
 
 <Note>
@@ -108,10 +180,10 @@ signed_urls = response.json()["signed_urls"]
 
 | Status | Description |
 |---|---|
-| `400` | Invalid request body |
+| `400` | Invalid request body, duplicate slot, or a dynamic slot not required by the current step. Invalid-slot responses include `invalid_slots` and `allowed_slots` |
 | `401` | Invalid or missing API key |
 | `404` | Session not found |
-| `409` | Session is already in a terminal state |
+| `409` | Session is terminal or has no active workflow step for a dynamic upload |
 | `429` | Too many requests |
 
 <ResponseExample>
@@ -121,15 +193,25 @@ signed_urls = response.json()["signed_urls"]
   "signed_urls": [
     {
       "file_key": "3f9c1e2a-org/80e801af-991b-425c-96fc-f5e07d794253/1717000000000-id_front.jpg",
+      "slot": "id_front",
       "upload_type": "id_front",
       "upload_url": "https://deepidv-sessions-uploads.s3.amazonaws.com/..."
     },
     {
-      "file_key": "3f9c1e2a-org/80e801af-991b-425c-96fc-f5e07d794253/1717000000001-selfie_front.jpg",
+      "file_key": "3f9c1e2a-org/80e801af-991b-425c-96fc-f5e07d794253/1717000000000-selfie_front.jpg",
+      "slot": "selfie_front",
       "upload_type": "selfie_front",
       "upload_url": "https://deepidv-sessions-uploads.s3.amazonaws.com/..."
     }
   ]
+}
+```
+
+```json 400 — Slot not valid for current step
+{
+  "error": "Upload slot is not required by the current workflow step",
+  "invalid_slots": ["employment_letter"],
+  "allowed_slots": ["custom-prompts-list_0"]
 }
 ```
 

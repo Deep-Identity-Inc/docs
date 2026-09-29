@@ -199,7 +199,7 @@ export const WorkflowBuilderApp = (props) => {
   const d = (props && props.deps) || {};
   const App = useMemo(() => {
     if (typeof d.makeApp !== 'function') return () => <div className="wb-boot-error">Workflow Builder failed to load.</div>;
-    const WB = typeof d.makeWB === 'function' ? d.makeWB(d.generated) : d.WB;
+    const WB = typeof d.makeWB === 'function' ? d.makeWB(d.generated, d.WB_LOCAL) : d.WB;
     const ui = d.makeUi();
     const utils = d.makeUtils({ WB });
     const geometry = d.makeGeometry({ WB });
