@@ -552,6 +552,11 @@ components:
       properties:
         error:
           type: string
+        code:
+          type: string
+          description: Machine-readable error code, when the failure has one. Unexpected
+            server errors carry `INTERNAL_ERROR`.
+          example: INTERNAL_ERROR
       required:
         - error
       description: Error returned for authentication failures, image format errors,
@@ -1279,9 +1284,36 @@ components:
           enum:
             - AUTO_APPROVE
             - DECLINED
-          description: Set only when an AI decision produced the status. AUTO_APPROVE is
-            returned as VERIFIED and DECLINED as REJECTED. Absent when a person
-            set VERIFIED or REJECTED.
+            - INSTANT_DECISION
+          description: Set only when an automated decision produced the status.
+            AUTO_APPROVE is returned as VERIFIED and DECLINED as REJECTED.
+            INSTANT_DECISION means the workflow's instant-decision rules set the
+            status (VERIFIED, REJECTED, or SUBMITTED for manual review). Absent
+            when a person set the status.
+        decision_reasons:
+          type: array
+          items:
+            type: string
+            enum:
+              - FACE_MISMATCH
+              - LIVENESS_FACE_MISMATCH
+              - LIVENESS_FAILED
+              - DOCUMENT_EXPIRED
+              - AGE_OUT_OF_RANGE
+              - DOCUMENT_TYPE_NOT_ACCEPTED
+              - DOCUMENT_UNREADABLE
+              - EXPIRY_UNREADABLE
+              - DOB_UNREADABLE
+              - FACE_MATCH_BORDERLINE
+              - AMBIGUOUS_FACE
+              - REQUIRED_DOCUMENT_MISSING
+              - LIVENESS_NOT_BOUND
+          description: Instant-decision reason codes that fired, in a stable order.
+            Present whenever the workflow's instant decision ran, including when
+            it sent the session to manual review; empty for an approval.
+            FACE_MISMATCH, LIVENESS_FACE_MISMATCH, LIVENESS_FAILED,
+            DOCUMENT_EXPIRED, AGE_OUT_OF_RANGE and DOCUMENT_TYPE_NOT_ACCEPTED
+            reject; the others send the session to manual review.
         type:
           type: string
         session_progress:
@@ -1406,6 +1438,85 @@ components:
         - file_key
         - upload_type
         - upload_url
+    WorkflowRunnerErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Human-readable description of the failure.
+        message:
+          type: string
+          description: Set on validation failures, together with `hints`.
+        hints:
+          type: array
+          items: {}
+          description: The underlying validation issues.
+        code:
+          anyOf:
+            - type: string
+              enum:
+                - VALIDATION_ERROR
+                - WORKFLOW_INACTIVE
+                - UNSUPPORTED_WORKFLOW_STEPS
+                - INVALID_UPLOAD_KEY
+                - INVALID_MEDIA
+                - UPLOAD_SLOT_NOT_REQUIRED
+                - INSUFFICIENT_FUNDS
+                - FORBIDDEN
+                - ORGANIZATION_NOT_FOUND
+                - WORKFLOW_NOT_FOUND
+                - SESSION_NOT_FOUND
+                - EXECUTION_STATE_NOT_FOUND
+                - STEP_NOT_FOUND
+                - SESSION_TERMINAL
+                - SESSION_ALREADY_STARTED
+                - NO_ACTIVE_STEP
+                - STEP_OUT_OF_ORDER
+                - STEP_NOT_SUBMITTABLE
+                - STEP_CONFLICT
+                - LIVENESS_NOT_STARTED
+                - LIVENESS_RESULT_NOT_READY
+                - LIVENESS_UPLOAD_INCOMPLETE
+                - STEP_NOT_READY
+                - STEP_NOT_RUNNABLE
+                - INTERNAL_ERROR
+            - type: string
+          description: "Machine-readable reason the request was refused. One of:
+            VALIDATION_ERROR, WORKFLOW_INACTIVE, UNSUPPORTED_WORKFLOW_STEPS,
+            INVALID_UPLOAD_KEY, INVALID_MEDIA, UPLOAD_SLOT_NOT_REQUIRED,
+            INSUFFICIENT_FUNDS, FORBIDDEN, ORGANIZATION_NOT_FOUND,
+            WORKFLOW_NOT_FOUND, SESSION_NOT_FOUND, EXECUTION_STATE_NOT_FOUND,
+            STEP_NOT_FOUND, SESSION_TERMINAL, SESSION_ALREADY_STARTED,
+            NO_ACTIVE_STEP, STEP_OUT_OF_ORDER, STEP_NOT_SUBMITTABLE,
+            STEP_CONFLICT, LIVENESS_NOT_STARTED, LIVENESS_RESULT_NOT_READY,
+            LIVENESS_UPLOAD_INCOMPLETE, STEP_NOT_READY, STEP_NOT_RUNNABLE,
+            INTERNAL_ERROR. Clients must tolerate values outside this list, and
+            its absence: authentication failures raised before the request
+            reaches the runner carry no code or a different one."
+          example: STEP_OUT_OF_ORDER
+        current_step:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          description: Zero-based index of the session's current step; null when the run
+            is finished.
+        step_id:
+          type:
+            - string
+            - "null"
+          description: The step the session expects next, in API form.
+        failure_reason:
+          type: string
+          description: Legacy reason string on retryable 409 responses. Frozen; use `code`.
+        invalid_steps:
+          type: array
+          items:
+            type: string
+          description: The step ids the runner does not support, when the workflow
+            contains any.
+      description: Error envelope returned by the workflow-runner endpoints. `code`
+        identifies the failure; the remaining fields depend on it.
     SessionUploadsRequest:
       type: object
       properties:
@@ -1670,6 +1781,26 @@ components:
                           re-verification flow. Has no effect on face-search
                           re-verification (POST /v1/re-verifications), which
                           uses a fixed platform threshold.
+                      instant_decision_enabled:
+                        type: boolean
+                        description: "Decide the session deterministically when its last step completes:
+                          AUTO_APPROVE (public VERIFIED), DECLINED (public
+                          REJECTED) or SUBMITTED for manual review. Replaces the
+                          AI auto-decision for this workflow. Default false."
+                      instant_decision_face_match_threshold:
+                        type: integer
+                        minimum: 0
+                        maximum: 100
+                        description: Minimum ID↔selfie and ID↔liveness similarity for an instant
+                          approval. The 10 points below it go to manual review;
+                          lower scores are rejected. Default 90.
+                      instant_decision_ocr_confidence_threshold:
+                        type: integer
+                        minimum: 0
+                        maximum: 100
+                        description: Minimum OCR confidence for a printed date of birth or expiry date
+                          to count as read. A passport MRZ with valid check
+                          digits always counts. Default 90.
                     additionalProperties: false
                 required:
                   - id
@@ -2218,6 +2349,8 @@ components:
           description: Session-wide failure budget remaining when failureSettings.active;
             null when unlimited.
           example: 2
+        session_failure:
+          $ref: "#/components/schemas/WorkflowSessionFailure"
       required:
         - session_id
         - status
@@ -2225,6 +2358,7 @@ components:
         - steps
         - current_step
         - attempts_remaining
+        - session_failure
       description: Read-only workflow execution state for an SDK-run session. Safe to
         poll; used as the SDK resume path after app kill.
     GetSessionWorkflowStep:
@@ -2262,6 +2396,9 @@ components:
             - string
             - "null"
           description: Set when the step last failed a blocking check; null otherwise.
+            Legacy value, frozen. Use `failure.code`.
+        failure:
+          $ref: "#/components/schemas/WorkflowFailure"
         requirements:
           allOf:
             - $ref: "#/components/schemas/WorkflowStepRequirements"
@@ -2274,7 +2411,115 @@ components:
         - started_at
         - completed_at
         - failure_reason
+        - failure
         - requirements
+    WorkflowFailure:
+      type:
+        - object
+        - "null"
+      properties:
+        code:
+          type: string
+          enum:
+            - ID_FACE_NOT_DETECTED
+            - ID_TEXT_NOT_READABLE
+            - DOCUMENT_TYPE_NOT_ACCEPTED
+            - DOCUMENT_TYPE_UNRECOGNIZED
+            - DOCUMENT_TYPE_LOW_CONFIDENCE
+            - SELFIE_FACE_NOT_DETECTED
+            - SELFIE_MULTIPLE_FACES
+            - SELFIE_ID_FACE_MISMATCH
+            - LIVENESS_ID_MISMATCH
+            - LIVENESS_FAILED
+            - UNKNOWN
+          description: Stable, machine-readable cause of the failure. New values may be
+            added; clients must tolerate values they do not know.
+          example: SELFIE_ID_FACE_MISMATCH
+        category:
+          type: string
+          enum:
+            - DOCUMENT
+            - SELFIE
+            - FACE_MATCH
+            - LIVENESS
+            - OTHER
+          description: Coarse grouping of the cause. New values may be added; clients must
+            tolerate values they do not know.
+          example: FACE_MATCH
+        user_action:
+          type: string
+          enum:
+            - RETAKE_DOCUMENT
+            - USE_DIFFERENT_DOCUMENT
+            - RETAKE_SELFIE
+            - RETRY_LIVENESS
+            - RETRY_STEP
+            - NONE
+          description: What the applicant should do to fix the cause. Whether another
+            attempt is still allowed is `retryable`. New values may be added;
+            clients must tolerate values they do not know.
+          example: RETAKE_SELFIE
+        retryable:
+          type: boolean
+          description: True while the step can still be submitted again; false once the
+            step has failed for good.
+        slot:
+          type:
+            - string
+            - "null"
+          enum:
+            - PRIMARY
+            - SECONDARY
+            - TERTIARY
+            - null
+          description: The document the failure applies to, when it is document-specific.
+          example: PRIMARY
+        message:
+          type: string
+          description: Developer-facing English description of the failure. Not intended
+            to be shown to applicants.
+          example: The selfie does not match the face on the ID document.
+      required:
+        - code
+        - category
+        - user_action
+        - retryable
+        - slot
+        - message
+      description: The step's most recent failed attempt. Resets to null when a new
+        attempt starts and when the step completes.
+    WorkflowSessionFailure:
+      type:
+        - object
+        - "null"
+      properties:
+        code:
+          type: string
+          enum:
+            - ATTEMPTS_EXHAUSTED
+            - STEP_BLOCKED
+            - SESSION_EXPIRED
+          description: "Why the run ended: the failure budget ran out
+            (`ATTEMPTS_EXHAUSTED`), a step ended the run outright
+            (`STEP_BLOCKED`), or the session expired (`SESSION_EXPIRED`). New
+            values may be added; clients must tolerate values they do not know."
+          example: ATTEMPTS_EXHAUSTED
+        step_id:
+          type:
+            - string
+            - "null"
+          description: The step that ended the run, in API form, or null when no step did.
+          example: FACE_LIVENESS
+        failure:
+          allOf:
+            - $ref: "#/components/schemas/WorkflowFailure"
+            - description: The last failure of that step, or null when it has none.
+      required:
+        - code
+        - step_id
+        - failure
+      description: Why the run ended, when the session failed or expired. Null for
+        every other session status.
     SubmitWorkflowStepResponse:
       type: object
       properties:
@@ -2297,7 +2542,19 @@ components:
             - string
             - "null"
           description: Set when a blocking check failed this attempt; null on success.
+            Legacy value, frozen. Use `failure.code`.
           example: null
+        failure:
+          allOf:
+            - $ref: "#/components/schemas/WorkflowFailure"
+            - description: Set when a blocking check failed this attempt, whether the step can
+                be retried (`PENDING`) or not (`FAILED`). Null on success and on
+                intermediate transitions such as liveness `start`.
+        session_failure:
+          allOf:
+            - $ref: "#/components/schemas/WorkflowSessionFailure"
+            - description: Set when this submission ended the run in a failed session; null
+                otherwise.
         current_step:
           type:
             - integer
@@ -2335,6 +2592,8 @@ components:
         - step_id
         - step_status
         - failure_reason
+        - failure
+        - session_failure
         - current_step
         - attempts_remaining
         - session_status
@@ -5664,44 +5923,59 @@ paths:
               schema:
                 $ref: "#/components/schemas/SessionUploadsResponse"
         "400":
-          description: The request body failed schema validation or contained an
-            unsupported image format.
+          description: The path params or request body failed validation, or the request
+            cannot be served as sent. `code` identifies the cause.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "401":
           description: API key is invalid.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "402":
+          description: "The organization cannot fund the request (`code:
+            INSUFFICIENT_FUNDS`). The body is JSON."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "403":
-          description: API key is missing, or the referenced resource does not belong to
-            this organization.
+          description: "API key is missing, or the referenced resource does not belong to
+            this organization (`code: FORBIDDEN`)."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "404":
-          description: Referenced resource was not found.
+          description: Referenced resource was not found. `code` names which one.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "409":
           description: "Session is terminal (`sessionProgress: COMPLETED` or a terminal
-            status)."
+            status; `code: SESSION_TERMINAL`), or it has no current step that
+            accepts dynamic uploads (`code: NO_ACTIVE_STEP`)."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "500":
-          description: Unexpected server error.
+          description: "Unexpected server error (`code: INTERNAL_ERROR`)."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "501":
+          description: "The step cannot be run through the API yet (`code:
+            STEP_NOT_RUNNABLE`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
   /v1/idv:
     post:
       tags:
@@ -6014,37 +6288,58 @@ paths:
               schema:
                 $ref: "#/components/schemas/CreateWorkflowSessionResponse"
         "400":
-          description: The request body failed schema validation or contained an
-            unsupported image format.
+          description: The path params or request body failed validation, or the request
+            cannot be served as sent. `code` identifies the cause.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "401":
           description: API key is invalid.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "402":
+          description: "The organization cannot fund the request (`code:
+            INSUFFICIENT_FUNDS`). The body is JSON."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "403":
-          description: API key is missing, or the referenced resource does not belong to
-            this organization.
+          description: "API key is missing, or the referenced resource does not belong to
+            this organization (`code: FORBIDDEN`)."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "404":
-          description: Referenced resource was not found.
+          description: Referenced resource was not found. `code` names which one.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "409":
+          description: The request conflicts with the current state of the session. `code`
+            identifies the cause.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "500":
-          description: Unexpected server error.
+          description: "Unexpected server error (`code: INTERNAL_ERROR`)."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "501":
+          description: "The step cannot be run through the API yet (`code:
+            STEP_NOT_RUNNABLE`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
   /v1/sessions/{session_id}/workflow:
     get:
       tags:
@@ -6064,43 +6359,66 @@ paths:
           in: path
       responses:
         "200":
-          description: Current workflow execution state.
+          description: Current workflow execution state. Each step carries the `failure`
+            of its most recent failed attempt, and `session_failure` explains
+            why a failed or expired run ended.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GetSessionWorkflowResponse"
         "400":
-          description: The request body failed schema validation or contained an
-            unsupported image format.
+          description: The path params or request body failed validation, or the request
+            cannot be served as sent. `code` identifies the cause.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "401":
           description: API key is invalid.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "402":
+          description: "The organization cannot fund the request (`code:
+            INSUFFICIENT_FUNDS`). The body is JSON."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "403":
-          description: API key is missing, or the referenced resource does not belong to
-            this organization.
+          description: "API key is missing, or the referenced resource does not belong to
+            this organization (`code: FORBIDDEN`)."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "404":
-          description: Referenced resource was not found.
+          description: Referenced resource was not found. `code` names which one.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "409":
+          description: The request conflicts with the current state of the session. `code`
+            identifies the cause.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "500":
-          description: Unexpected server error.
+          description: "Unexpected server error (`code: INTERNAL_ERROR`)."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "501":
+          description: "The step cannot be run through the API yet (`code:
+            STEP_NOT_RUNNABLE`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
   /v1/sessions/{session_id}/workflow/start:
     post:
       tags:
@@ -6127,51 +6445,67 @@ paths:
       responses:
         "200":
           description: Session is runnable. Returns the current workflow execution state —
-            identical shape to the GET.
+            identical shape to the GET, including each step's `failure` and the
+            run's `session_failure`.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/GetSessionWorkflowResponse"
         "400":
-          description: Invalid `session_id`, or the session's snapshotted execution plan
-            contains steps this runner does not support (`invalid_steps` lists
-            them in API form).
+          description: "Invalid `session_id` (`code: VALIDATION_ERROR`), or the session's
+            snapshotted execution plan contains steps this runner does not
+            support (`code: UNSUPPORTED_WORKFLOW_STEPS`; `invalid_steps` lists
+            them in API form)."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "401":
           description: API key is invalid.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "402":
+          description: "The organization cannot fund the request (`code:
+            INSUFFICIENT_FUNDS`). The body is JSON."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "403":
-          description: API key is missing, or the referenced resource does not belong to
-            this organization.
+          description: "API key is missing, or the referenced resource does not belong to
+            this organization (`code: FORBIDDEN`)."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "404":
-          description: Referenced resource was not found.
+          description: Referenced resource was not found. `code` names which one.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "409":
-          description: Session is not `PENDING` / un-started — already started, terminal,
-            or expired.
+          description: "Session is not `PENDING` / un-started — already started, terminal,
+            or expired (`code: SESSION_ALREADY_STARTED`)."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "500":
-          description: Unexpected server error.
+          description: "Unexpected server error (`code: INTERNAL_ERROR`)."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "501":
+          description: "The step cannot be run through the API yet (`code:
+            STEP_NOT_RUNNABLE`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
   /v1/sessions/{session_id}/steps/{step_id}:
     post:
       tags:
@@ -6214,52 +6548,75 @@ paths:
               $ref: "#/components/schemas/WorkflowStepSubmission"
       responses:
         "200":
-          description: Step executed. Common envelope for all step types; FACE_LIVENESS
+          description: "Step executed. Common envelope for all step types; FACE_LIVENESS
             additionally returns a `liveness` payload (`start` → credentials,
-            `complete` → pass/fail).
+            `complete` → pass/fail). When the attempt failed a blocking check,
+            `failure` describes the cause whether the step can be retried
+            (`step_status: PENDING`) or not (`FAILED`), and `session_failure` is
+            set when the failure ended the run."
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SubmitWorkflowStepResponse"
         "400":
-          description: The request body failed schema validation or contained an
-            unsupported image format.
+          description: The path params or request body failed validation, or the request
+            cannot be served as sent. `code` identifies the cause.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "401":
           description: API key is invalid.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "402":
+          description: "The organization cannot fund the request (`code:
+            INSUFFICIENT_FUNDS`). The body is JSON."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "403":
-          description: API key is missing, or the referenced resource does not belong to
-            this organization.
+          description: "API key is missing, or the referenced resource does not belong to
+            this organization (`code: FORBIDDEN`)."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "404":
-          description: Referenced resource was not found.
+          description: Referenced resource was not found. `code` names which one.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "409":
-          description: Out-of-order submission, concurrent duplicate, liveness result not
-            ready, or session is terminal.
+          description: Out-of-order submission (`STEP_OUT_OF_ORDER`), step not submittable
+            (`STEP_NOT_SUBMITTABLE`), concurrent duplicate (`STEP_CONFLICT`),
+            liveness not started, result not ready or upload incomplete
+            (`LIVENESS_NOT_STARTED`, `LIVENESS_RESULT_NOT_READY`,
+            `LIVENESS_UPLOAD_INCOMPLETE`), another step waiting on state that
+            does not exist yet (`STEP_NOT_READY`), or session is terminal
+            (`SESSION_TERMINAL`). The not-ready conflicts are retryable and
+            consume no attempt.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
         "500":
-          description: Unexpected server error.
+          description: "Unexpected server error (`code: INTERNAL_ERROR`)."
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "501":
+          description: "The step cannot be run through the API yet (`code:
+            STEP_NOT_RUNNABLE`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
   /v1/financial:
     post:
       tags:
