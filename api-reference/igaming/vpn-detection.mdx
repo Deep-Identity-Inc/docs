@@ -1,0 +1,158 @@
+---
+title: VPN Detection
+description: Detect VPNs, proxies, Tor exit nodes, and datacenter IPs
+api: POST /v1/igaming/vpn-detection
+---
+
+```
+POST /v1/igaming/vpn-detection
+```
+
+Checks the applicant's IP address against the anonymizer feed — Tor exit nodes, VPN ranges, and datacenter ranges — using the session's `vpn-detection` step configuration. Persists its result to the session.
+
+Each match type carries a fixed confidence — Tor `95`, datacenter `90`, VPN `85` — and is checked in that order; the first enabled match wins and is compared against `confidence_threshold` (default `70`). A threshold above a type's confidence effectively disables that type. `trusted_ip_list` (CIDRs) and `trusted_asn_list` short-circuit to `CLEAR`.
+
+<Note>
+  This check fails **soft**. If an internal error occurs, or the supplied
+  `ip_address` isn't a valid IPv4 address, it returns `200` with
+  `verdict: "UNAVAILABLE"` and `action: "allow"` rather than blocking or
+  erroring.
+</Note>
+
+## Request
+
+### Headers
+
+| Header         | Required | Description        |
+| -------------- | -------- | ------------------ |
+| `x-api-key`    | Yes      | Your API key       |
+| `Content-Type` | Yes      | `application/json` |
+
+### Body parameters
+
+Bodies use **snake_case** field names — there are no camelCase aliases.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `session_id` | string | Yes | The session to score |
+| `ip_address` | string | Yes | The applicant's public **IPv4** address as seen by your server — not your server's own egress IP. A non-IPv4 value returns `UNAVAILABLE` (fails soft to `allow`) |
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.deepidv.com/v1/igaming/vpn-detection \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "session_id": "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+    "ip_address": "203.0.113.42"
+  }'
+```
+
+```javascript Node.js
+const response = await fetch("https://api.deepidv.com/v1/igaming/vpn-detection", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "x-api-key": "YOUR_API_KEY",
+  },
+  body: JSON.stringify({
+    session_id: "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+    ip_address: "203.0.113.42",
+  }),
+});
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://api.deepidv.com/v1/igaming/vpn-detection",
+    headers={
+        "Content-Type": "application/json",
+        "x-api-key": "YOUR_API_KEY",
+    },
+    json={
+        "session_id": "b8991ba9-2566-4fe5-b758-66f387c3e28b",
+        "ip_address": "203.0.113.42",
+    },
+)
+```
+
+</CodeGroup>
+
+## Response
+
+### 200 — Success
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `verdict` | string | `HIT`, `CLEAR`, or `UNAVAILABLE` |
+| `action` | string | `allow`, `flag`, `step-up`, or `block` |
+| `evidence` | object | Details behind the verdict — see [Evidence](#evidence) below |
+| `escalation` | object \| null | `{ decision: "ESCALATE", type: string, reason: string }` — present only when `action` is `step-up`. A `step-up` is returned only when the step configures an `escalation_type`; otherwise the check downgrades `step-up` to `flag` |
+
+### Verdicts
+
+| Verdict | Meaning |
+| --- | --- |
+| `HIT` | The IP matched an enabled Tor, datacenter, or VPN rule at or above `confidence_threshold` |
+| `CLEAR` | No match against the anonymizer feed, or the IP/ASN is trusted |
+| `UNAVAILABLE` | The step isn't configured on the workflow, the IP wasn't valid IPv4, or the anonymizer feed couldn't be loaded — fails soft to `allow` |
+
+### Evidence
+
+| Field | Present | Description |
+| --- | --- | --- |
+| `asn`, `asnOrg` | always (may be `null`) | Autonomous system of the IP |
+| `matched` | always | `tor-exit-list`, `datacenter-ranges`, `vpn-ranges`, `trusted-cidr`, `trusted-asn`, or `null` when nothing matched |
+| `type` | on `HIT` | `TOR`, `DATACENTER`, or `VPN` |
+| `confidence` | on `HIT` | `95`, `90`, or `85` respectively |
+| `feedVersion`, `stale` | always | Version of the anonymizer feed used, and whether it is older than the freshness window |
+| `reason` | when the step is absent | `"step-not-configured"` |
+
+### Error responses
+
+| Status | Description |
+| --- | --- |
+| `400 Bad Request` | Invalid request body — check required fields |
+| `401 Unauthorized` | Invalid or revoked API key |
+| `403 Forbidden` | `x-api-key` header missing |
+| `404 Not Found` | Session not found, or not in your org |
+
+<ResponseExample>
+```json clear
+{
+  "verdict": "CLEAR",
+  "action": "allow",
+  "evidence": {
+    "asn": 64496,
+    "asnOrg": "EXAMPLE-ISP",
+    "matched": null,
+    "feedVersion": "3f9c2a7e1b5d4c08",
+    "stale": false
+  },
+  "escalation": null
+}
+```
+
+```json datacenter hit
+{
+  "verdict": "HIT",
+  "action": "flag",
+  "evidence": {
+    "asn": 64500,
+    "asnOrg": "EXAMPLE-HOSTING",
+    "matched": "datacenter-ranges",
+    "type": "DATACENTER",
+    "confidence": 90,
+    "feedVersion": "3f9c2a7e1b5d4c08",
+    "stale": false
+  },
+  "escalation": null
+}
+```
+</ResponseExample>

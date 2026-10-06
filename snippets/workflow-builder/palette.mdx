@@ -1,0 +1,159 @@
+export const makePalette = (deps) => {
+  const { WB, utils, store, ui, dnd } = deps;
+  const wb = WB || {};
+  const I18N = wb.I18N || {};
+  const t = (key, fallback) => (typeof I18N[key] === 'string' ? I18N[key] : fallback);
+  const CATEGORY_TABS = [
+    { value: 'All', key: 'builderCategoryAll', label: 'All' },
+    { value: 'Verify', key: 'builderCategoryVerify', label: 'Verify' },
+    { value: 'Docs', key: 'builderCategoryDocs', label: 'Docs' },
+    { value: 'Screen', key: 'builderCategoryScreen', label: 'Screen' },
+    { value: 'Crypto', key: 'builderCategoryCrypto', label: 'Crypto' },
+    { value: 'Gaming', key: 'builderCategoryGaming', label: 'Gaming' },
+  ];
+  const DRAG_MIME = 'application/workflow-step';
+  const { useWorkflow } = store;
+  const { StepIcon, MuiTextField } = ui;
+  const { useDraggable } = dnd;
+
+  const labelOf = (service) => {
+    const key = (wb.WORKFLOW_STEP_I18N_KEYS || {})[service.id];
+    return (key && I18N[key]) || service.label;
+  };
+  const descriptionOf = (service) => {
+    const key = (wb.WORKFLOW_STEP_DESCRIPTION_I18N_KEYS || {})[service.id];
+    return (key && I18N[key]) || service.description || '';
+  };
+
+  const CostColumn = ({ service, covered }) => {
+    const included = t('builderServiceIncluded', 'Included');
+    if (service.coupled) return <span className="wb-pal-included">{included}</span>;
+    return (
+      <>
+        <span className="wb-pal-cost" data-covered={covered ? 'true' : 'false'}>{utils.fCurrency(utils.getStepCost(service))}</span>
+        {covered ? <span className="wb-pal-included-covered">{included}</span> : null}
+      </>
+    );
+  };
+
+  const CardBody = ({ service, covered, shadow }) => (
+    <>
+      <span className={'wb-tile' + (shadow ? ' wb-tile-shadow' : '')} style={{ background: utils.getStepGradient(service.id) }} aria-hidden="true">
+        <StepIcon icon={service.icon} size={20} color="#ffffff" />
+      </span>
+      <span className="wb-pal-body">
+        <span className="wb-pal-row">
+          <span className="wb-pal-name">{labelOf(service)}</span>
+          <span className="wb-pal-right"><CostColumn service={service} covered={covered} /></span>
+        </span>
+        <span className="wb-pal-desc">{descriptionOf(service)}</span>
+      </span>
+    </>
+  );
+
+  const ServicePaletteCard = ({ service, covered, disabled }) => {
+    const { setNodeRef, listeners, isDragging } = useDraggable({ id: 'palette:' + service.id, data: { service }, disabled });
+    return (
+      <div
+        ref={setNodeRef}
+        className="wb-pal-card wb-palette-card"
+        data-testid={'wb-palette-card-' + service.id}
+        data-step-id={service.id}
+        data-dragging={isDragging ? 'true' : 'false'}
+        data-disabled={disabled ? 'true' : 'false'}
+        role="button"
+        tabIndex={0}
+        aria-label={'Drag ' + labelOf(service) + ' into the workflow'}
+        {...listeners}
+      >
+        <CardBody service={service} covered={covered} />
+      </div>
+    );
+  };
+
+  const CanvasPaletteCard = ({ service, covered, disabled }) => {
+    const onDragStart = (e) => {
+      try {
+        e.dataTransfer.setData(DRAG_MIME, service.id);
+        e.dataTransfer.setData('text/plain', service.id);
+        e.dataTransfer.effectAllowed = 'copy';
+      } catch (err) {}
+    };
+    return (
+      <div
+        className="wb-pal-card wb-palette-card"
+        data-testid={'wb-palette-card-' + service.id}
+        data-step-id={service.id}
+        data-disabled={disabled ? 'true' : 'false'}
+        draggable={!disabled}
+        onDragStart={disabled ? undefined : onDragStart}
+        role="button"
+        tabIndex={0}
+        aria-label={'Drag ' + labelOf(service) + ' onto the canvas'}
+      >
+        <CardBody service={service} covered={covered} shadow />
+      </div>
+    );
+  };
+
+  const Palette = ({ viewMode, availableServices, disabled }) => {
+    const { state } = useWorkflow();
+    const steps = (state && state.workflow && state.workflow.steps) || [];
+    const [searchQuery, setSearchQuery] = useState('');
+    const [categoryTab, setCategoryTab] = useState('All');
+    const canvasMode = viewMode === 'canvas';
+
+    const services = useMemo(() => utils.getAvailableServiceData(availableServices) || [], [Array.isArray(availableServices) ? availableServices.join('|') : '']);
+
+    const filtered = useMemo(() => {
+      const q = searchQuery.toLowerCase();
+      return services.filter((service) => {
+        const matchesSearch = String(service.label || '').toLowerCase().includes(q);
+        const matchesCategory = categoryTab === 'All' || service.category === categoryTab;
+        const alreadyInWorkflow = steps.some((s) => s.id === service.id);
+        return matchesSearch && matchesCategory && !alreadyInWorkflow;
+      });
+    }, [services, searchQuery, categoryTab, steps]);
+
+    const Card = canvasMode ? CanvasPaletteCard : ServicePaletteCard;
+
+    return (
+      <aside className="wb-pal" data-testid="wb-palette" data-viewmode={viewMode || 'builder'} data-count={filtered.length} aria-label={t('builderAvailableServices', 'Available Services')}>
+        <div className="wb-pal-head">
+          <h6 className="wb-pal-title">{t('builderAvailableServices', 'Available Services')}</h6>
+          <MuiTextField
+            fullWidth
+            size="small"
+            placeholder={t('builderSearchPlaceholder', 'Search...')}
+            value={searchQuery}
+            onChange={setSearchQuery}
+            startAdornment={<StepIcon icon="eva:search-fill" size={20} color="currentColor" />}
+            testId="wb-palette-search"
+          />
+        </div>
+        <div className="wb-pal-tabs" role="tablist">
+          {CATEGORY_TABS.map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              role="tab"
+              className="wb-pal-tab"
+              aria-selected={categoryTab === tab.value ? 'true' : 'false'}
+              data-testid={'wb-palette-tab-' + tab.value}
+              onClick={() => setCategoryTab(tab.value)}
+            >
+              {t(tab.key, tab.label)}
+            </button>
+          ))}
+        </div>
+        <div className={'wb-pal-list' + (canvasMode ? ' wb-pal-list-canvas' : '')} data-testid="wb-palette-list">
+          {filtered.map((service) => (
+            <Card key={service.id} service={service} covered={false} disabled={!!disabled} />
+          ))}
+        </div>
+      </aside>
+    );
+  };
+
+  return { Palette };
+};

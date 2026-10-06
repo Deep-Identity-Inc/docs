@@ -1,0 +1,773 @@
+export const makeStore = (deps) => {
+  const { WB, utils, geometry } = deps;
+
+  const START = (WB && WB.START_NODE_ID) || '__start__';
+  const CV = (WB && WB.CANVAS) || {};
+  const NODE_W = CV.NODE_WIDTH || 280;
+  const NODE_H = CV.NODE_HEIGHT || 100;
+  const ROW_GAP = CV.ROW_GAP || 140;
+  const GRID = CV.GRID_SIZE || 20;
+  const STORAGE_KEY = 'deepidv-wb-workflow-v1';
+  const PERSIST_DELAY = 300;
+  const VIEW_MODES = ['builder'];
+  const IS_DEV = !!(WB && WB.IS_DEV);
+  const COUPLED = (WB && WB.COUPLED_STEPS) || {};
+  const OVERRIDES = (WB && WB.COUPLED_PROPERTY_OVERRIDES) || {};
+  const PINNED = (WB && WB.BOTTOM_PINNED_STEPS) || [];
+  const CATALOG = (WB && WB.WORKFLOW_STEPS_OPTIONS) || [];
+  const TEMPLATES = (WB && WB.WORKFLOW_TEMPLATES) || [];
+
+  const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const stepKey = (s) => (s ? s.instanceId || s.id : undefined);
+  const clone = (v) => {
+    if (utils && typeof utils.deepClone === 'function') return utils.deepClone(v);
+    return v === undefined ? v : JSON.parse(JSON.stringify(v));
+  };
+  const snapV = (v) => {
+    if (geometry && typeof geometry.snap === 'function') return geometry.snap(v);
+    return Math.round(v / GRID) * GRID;
+  };
+  const numOr = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+
+  const U = (name, fallback) => (utils && typeof utils[name] === 'function' ? utils[name] : fallback);
+
+  const fbGetStepById = (id) => CATALOG.find((s) => s.id === id) || null;
+  const fbGetStepTemplate = (id) => {
+    const def = fbGetStepById(id);
+    return def ? { ...def } : null;
+  };
+  const fbSanitize = (step) => {
+    if (!step) return null;
+    const out = { id: step.id, label: step.label, icon: step.icon };
+    if (step.propertyGroups) out.propertyGroups = clone(step.propertyGroups);
+    return out;
+  };
+  const fbMakeInstanceId = (id) => `${id}-${Date.now()}`;
+  const fbApplyOverrides = (step) => {
+    const ov = OVERRIDES[step.id];
+    if (!ov || !isObj(ov) || !Array.isArray(step.propertyGroups)) return step;
+    let changed = false;
+    const groups = step.propertyGroups.map((g) => {
+      const gOv = ov[g.groupId];
+      if (!isObj(gOv)) return g;
+      changed = true;
+      return { ...g, properties: (g.properties || []).map((p) => (p.id in gOv ? { ...p, value: gOv[p.id] } : p)) };
+    });
+    return changed ? { ...step, propertyGroups: groups } : step;
+  };
+  const fbApplyCoupled = (steps, newStep) => {
+    const list = [...steps];
+    const added = [];
+    const wanted = COUPLED[newStep.id] || [];
+    wanted.forEach((cid) => {
+      if (list.some((s) => s.id === cid)) return;
+      const tpl = U('getStepTemplate', fbGetStepTemplate)(cid);
+      if (!tpl) return;
+      const base = U('sanitizeStepForWorkflow', fbSanitize)(tpl) || {};
+      const inst = fbApplyOverrides({ ...base, instanceId: U('makeInstanceId', fbMakeInstanceId)(cid) });
+      list.push(inst);
+      added.push(inst);
+    });
+    return { steps: list, added };
+  };
+  const fbEnforcePinning = (steps) => {
+    const unpinned = steps.filter((s) => !PINNED.includes(s.id));
+    const pinned = steps.filter((s) => PINNED.includes(s.id));
+    pinned.sort((a, b) => PINNED.indexOf(a.id) - PINNED.indexOf(b.id));
+    return [...unpinned, ...pinned];
+  };
+  const fbEnforceOverrides = (steps) => steps.map(fbApplyOverrides);
+  const fbRemoveWithCoupled = (steps, instanceId) => {
+    const target = steps.find((s) => stepKey(s) === instanceId);
+    if (!target) return steps;
+    const cascade = new Set([target.id]);
+    const wanted = COUPLED[target.id] || [];
+    wanted.forEach((cid) => {
+      if ((COUPLED[cid] || []).includes(target.id)) cascade.add(cid);
+    });
+    return steps.filter((s) => !cascade.has(s.id));
+  };
+  const fbIsReorderValid = (steps, from, to) => {
+    if (from === to) return true;
+    if (from < 0 || to < 0 || from >= steps.length || to >= steps.length) return false;
+    const moved = steps[from];
+    const list = [...steps];
+    list.splice(from, 1);
+    list.splice(to, 0, moved);
+    const firstPinned = list.findIndex((s) => PINNED.includes(s.id));
+    if (firstPinned === -1) return true;
+    return list.slice(firstPinned).every((s) => PINNED.includes(s.id));
+  };
+  const fbRebuildChain = (steps) => {
+    const ordered = fbEnforcePinning(steps);
+    const conns = [];
+    let prev = START;
+    ordered.forEach((s, i) => {
+      const key = stepKey(s);
+      conns.push({ id: `conn-${prev}-${key}-${i}`, sourceId: prev, sourceAnchor: 'bottom', targetId: key, targetAnchor: 'top', waypoints: [], label: '' });
+      prev = key;
+    });
+    return conns;
+  };
+  const fbResolveOrder = (steps, connections) => {
+    const byKey = new Map(steps.map((s) => [stepKey(s), s]));
+    const warnings = [];
+    const orderedSteps = [];
+    const seen = new Set([START]);
+    let cur = START;
+    for (let guard = 0; guard <= steps.length + 1; guard += 1) {
+      const out = (connections || []).find((c) => c.sourceId === cur);
+      if (!out) break;
+      if (seen.has(out.targetId)) { warnings.push('Cycle detected'); break; }
+      seen.add(out.targetId);
+      const step = byKey.get(out.targetId);
+      if (step) orderedSteps.push(step);
+      cur = out.targetId;
+    }
+    return { orderedSteps, warnings };
+  };
+  const fbComputeResolvedOrder = (steps, connections) => {
+    const { orderedSteps } = fbResolveOrder(steps, connections);
+    const out = {};
+    orderedSteps.forEach((s, i) => { out[stepKey(s)] = i + 1; });
+    return out;
+  };
+  const fbRemoveWithBridge = (steps, connections, instanceIds) => {
+    const gone = new Set(instanceIds);
+    let conns = [...(connections || [])];
+    instanceIds.forEach((id) => {
+      const incoming = conns.filter((c) => c.targetId === id);
+      const outgoing = conns.filter((c) => c.sourceId === id);
+      conns = conns.filter((c) => c.sourceId !== id && c.targetId !== id);
+      if (incoming.length === 1 && outgoing.length === 1) {
+        const a = incoming[0];
+        const b = outgoing[0];
+        if (!gone.has(a.sourceId) && !gone.has(b.targetId) && a.sourceId !== b.targetId) {
+          const already = conns.some((c) => c.sourceId === a.sourceId) || conns.some((c) => c.targetId === b.targetId);
+          if (!already) conns.push({ ...a, id: `conn-${a.sourceId}-${b.targetId}-${Date.now()}`, targetId: b.targetId, targetAnchor: b.targetAnchor, waypoints: [], label: '' });
+        }
+      }
+    });
+    return { steps: steps.filter((s) => !gone.has(stepKey(s))), connections: conns };
+  };
+  const fbAddConnectionIfLinear = (connections, conn) => {
+    if (!conn || !conn.sourceId || !conn.targetId) return null;
+    if (conn.sourceId === conn.targetId || conn.targetId === START) return null;
+    const list = connections || [];
+    if (list.some((c) => c.sourceId === conn.sourceId)) return null;
+    if (list.some((c) => c.targetId === conn.targetId)) return null;
+    return [...list, { waypoints: [], label: '', ...conn }];
+  };
+  const fbComputeCost = (steps) => {
+    const getCost = U('getStepCost', (s) => {
+      const def = fbGetStepById(s.id);
+      if (!def || def.coupled) return def && def.coupled ? 0 : null;
+      return typeof def.cost === 'number' ? def.cost : null;
+    });
+    return steps.reduce((sum, s) => {
+      const c = getCost(s);
+      return typeof c === 'number' && Number.isFinite(c) ? sum + c : sum;
+    }, 0);
+  };
+  const fbUpdatePropertyValue = (steps, key, groupId, propId, value) => steps.map((s) => (stepKey(s) === key
+    ? { ...s, propertyGroups: (s.propertyGroups || []).map((g) => (g.groupId === groupId
+      ? { ...g, properties: (g.properties || []).map((p) => (p.id === propId ? { ...p, value } : p)) }
+      : g)) }
+    : s));
+  const fbUpdatePropertyValues = (steps, key, groupId, values) => steps.map((s) => (stepKey(s) === key
+    ? { ...s, propertyGroups: (s.propertyGroups || []).map((g) => (g.groupId === groupId
+      ? { ...g, properties: (g.properties || []).map((p) => (isObj(values) && p.id in values ? { ...p, value: values[p.id] } : p)) }
+      : g)) }
+    : s));
+  const fbUpdateLinkedWeights = (steps, key, groupId, changedId, value) => steps.map((s) => {
+    if (stepKey(s) !== key) return s;
+    return { ...s, propertyGroups: (s.propertyGroups || []).map((g) => {
+      if (g.groupId !== groupId) return g;
+      const props = g.properties || [];
+      const linked = props.filter((p) => p.type === 'slider' && p.linkedGroup);
+      if (!linked.some((p) => p.id === changedId)) return g;
+      const next = Math.max(0, Math.min(100, Math.round(numOr(value, 0) / 5) * 5));
+      const others = linked.filter((p) => p.id !== changedId);
+      const remaining = 100 - next;
+      const otherSum = others.reduce((a, p) => a + numOr(p.value, 0), 0);
+      const newVals = { [changedId]: next };
+      let acc = 0;
+      others.forEach((p, i) => {
+        let v;
+        if (i === others.length - 1) v = remaining - acc;
+        else {
+          const share = otherSum > 0 ? numOr(p.value, 0) / otherSum : 1 / others.length;
+          v = Math.round((remaining * share) / 5) * 5;
+          acc += v;
+        }
+        newVals[p.id] = Math.max(0, v);
+      });
+      return { ...g, properties: props.map((p) => (p.id in newVals ? { ...p, value: newVals[p.id] } : p)) };
+    }) };
+  });
+  const fbInitialLayout = (steps) => {
+    const out = { [START]: { x: snapV(NODE_W / 2 - (CV.START_NODE_WIDTH || 120) / 2), y: 20 } };
+    steps.forEach((s, i) => { out[stepKey(s)] = { x: 0, y: snapV(120 + i * ROW_GAP) }; });
+    return out;
+  };
+
+  const getStepTemplate = U('getStepTemplate', fbGetStepTemplate);
+  const sanitizeStep = U('sanitizeStepForWorkflow', fbSanitize);
+  const makeInstanceId = U('makeInstanceId', fbMakeInstanceId);
+  const applyCoupledSteps = U('applyCoupledSteps', fbApplyCoupled);
+  const enforcePinning = U('enforceBottomPinningOnSteps', fbEnforcePinning);
+  const enforceOverrides = U('enforceCoupledOverridesOnSteps', fbEnforceOverrides);
+  const removeWithCoupled = U('removeWithCoupled', fbRemoveWithCoupled);
+  const isReorderValid = U('isReorderValidWithPinning', fbIsReorderValid);
+  const rebuildChain = U('rebuildChainWithPinning', fbRebuildChain);
+  const resolveOrder = U('resolveStepOrderFromConnections', fbResolveOrder);
+  const computeResolvedOrder = U('computeResolvedOrder', fbComputeResolvedOrder);
+  const removeWithBridge = U('removeStepsWithBridge', fbRemoveWithBridge);
+  const addConnectionIfLinear = U('addConnectionIfLinear', fbAddConnectionIfLinear);
+  const computeCost = U('computeWorkflowCost', fbComputeCost);
+  const updatePropertyValueInSteps = U('updatePropertyValueInSteps', fbUpdatePropertyValue);
+  const updatePropertyValuesInSteps = U('updatePropertyValuesInSteps', fbUpdatePropertyValues);
+  const updateLinkedWeightsInSteps = U('updateLinkedWeightsInSteps', fbUpdateLinkedWeights);
+  const initialLayout = geometry && typeof geometry.initialLayout === 'function' ? geometry.initialLayout : fbInitialLayout;
+
+  const blankViewport = () => ({ x: 0, y: 0, zoom: 1 });
+  const blankCanvasData = () => ({ connections: [], nodePositions: {}, viewport: blankViewport() });
+  const blankWorkflow = () => ({ name: '', steps: [], canvasData: blankCanvasData() });
+  const initialState = {
+    workflow: blankWorkflow(),
+    selectedStepId: null,
+    selectedConnectionId: null,
+    viewMode: 'builder',
+    hydrated: false,
+    toasts: [],
+  };
+
+  const normalizeConnection = (c) => {
+    if (!isObj(c) || !c.sourceId || !c.targetId) return null;
+    return {
+      id: c.id || `conn-${c.sourceId}-${c.targetId}`,
+      sourceId: String(c.sourceId),
+      sourceAnchor: c.sourceAnchor || 'bottom',
+      targetId: String(c.targetId),
+      targetAnchor: c.targetAnchor || 'top',
+      waypoints: Array.isArray(c.waypoints) ? c.waypoints.filter((p) => isObj(p) && typeof p.x === 'number' && typeof p.y === 'number') : [],
+      label: typeof c.label === 'string' ? c.label : '',
+    };
+  };
+
+  const normalizeWorkflow = (raw) => {
+    const w = blankWorkflow();
+    if (!isObj(raw)) return w;
+    if (typeof raw.name === 'string') w.name = raw.name;
+    if (Array.isArray(raw.steps)) {
+      const seen = new Set();
+      raw.steps.forEach((s) => {
+        if (!isObj(s) || typeof s.id !== 'string') return;
+        const step = { ...s };
+        if (typeof step.instanceId !== 'string' || !step.instanceId) step.instanceId = makeInstanceId(step.id);
+        if (seen.has(step.instanceId)) return;
+        seen.add(step.instanceId);
+        if (typeof step.label !== 'string') {
+          const def = fbGetStepById(step.id);
+          step.label = def ? def.label : step.id;
+        }
+        if (typeof step.icon !== 'string') {
+          const def = fbGetStepById(step.id);
+          step.icon = def ? def.icon : (WB && WB.ICONS && WB.ICONS.fallback) || '';
+        }
+        if (step.propertyGroups !== undefined && !Array.isArray(step.propertyGroups)) delete step.propertyGroups;
+        w.steps.push(step);
+      });
+    }
+    const cd = isObj(raw.canvasData) ? raw.canvasData : {};
+    const keys = new Set(w.steps.map(stepKey));
+    keys.add(START);
+    if (Array.isArray(cd.connections)) {
+      const seenIds = new Set();
+      cd.connections.forEach((c) => {
+        const n = normalizeConnection(c);
+        if (!n || seenIds.has(n.id)) return;
+        if (!keys.has(n.sourceId) || !keys.has(n.targetId)) return;
+        seenIds.add(n.id);
+        w.canvasData.connections.push(n);
+      });
+    }
+    if (isObj(cd.nodePositions)) {
+      Object.keys(cd.nodePositions).forEach((k) => {
+        const p = cd.nodePositions[k];
+        if (keys.has(k) && isObj(p) && typeof p.x === 'number' && typeof p.y === 'number') w.canvasData.nodePositions[k] = { x: p.x, y: p.y };
+      });
+    }
+    if (isObj(cd.viewport)) {
+      const minZ = CV.MIN_ZOOM || 0.15;
+      const maxZ = CV.MAX_ZOOM || 2.5;
+      w.canvasData.viewport = {
+        x: numOr(cd.viewport.x, 0),
+        y: numOr(cd.viewport.y, 0),
+        zoom: Math.min(maxZ, Math.max(minZ, numOr(cd.viewport.zoom, 1))),
+      };
+    }
+    return w;
+  };
+
+  const withWorkflow = (state, patch) => ({ ...state, workflow: { ...state.workflow, ...patch } });
+  const withCanvas = (state, patch) => withWorkflow(state, { canvasData: { ...state.workflow.canvasData, ...patch } });
+
+  const prunePositions = (positions, steps) => {
+    const keep = new Set(steps.map(stepKey));
+    keep.add(START);
+    const out = {};
+    Object.keys(positions || {}).forEach((k) => { if (keep.has(k)) out[k] = positions[k]; });
+    return out;
+  };
+
+  const positionTaken = (positions, x, y, ignoreKey) => Object.keys(positions).some((k) => {
+    if (k === ignoreKey) return false;
+    const p = positions[k];
+    return p && Math.abs(p.x - x) < GRID && Math.abs(p.y - y) < GRID;
+  });
+
+  const ensurePositions = (steps, positions) => {
+    const existing = prunePositions(positions, steps);
+    const missing = steps.map(stepKey).filter((k) => !existing[k]);
+    const needStart = !existing[START];
+    if (!missing.length && !needStart) return existing;
+    const layout = initialLayout(steps) || {};
+    const out = { ...existing };
+    if (needStart) out[START] = layout[START] || { x: 0, y: 20 };
+    missing.forEach((k) => {
+      const base = layout[k] || { x: 0, y: 120 };
+      let x = snapV(base.x);
+      let y = snapV(base.y);
+      let guard = 0;
+      while (positionTaken(out, x, y, k) && guard < 200) { y += ROW_GAP; guard += 1; }
+      out[k] = { x, y };
+    });
+    return out;
+  };
+
+  const buildInstance = (stepId) => {
+    const tpl = getStepTemplate(stepId);
+    if (!tpl) return null;
+    const base = sanitizeStep(tpl) || { id: tpl.id, label: tpl.label, icon: tpl.icon };
+    const inst = { ...base, id: base.id || stepId, instanceId: makeInstanceId(stepId) };
+    if (inst.propertyGroups === undefined) delete inst.propertyGroups;
+    return inst;
+  };
+
+  const applyStepRules = (steps, newStep) => {
+    const res = applyCoupledSteps(steps, newStep) || { steps, added: [] };
+    let list = Array.isArray(res.steps) ? res.steps : (Array.isArray(res) ? res : steps);
+    const added = Array.isArray(res.added) ? res.added : [];
+    list = enforcePinning(list) || list;
+    list = enforceOverrides(list) || list;
+    return { steps: list, added };
+  };
+
+  const clampIndex = (index, len) => {
+    if (typeof index !== 'number' || !Number.isFinite(index)) return len;
+    return Math.max(0, Math.min(len, Math.round(index)));
+  };
+
+  const reduceAddStep = (state, a) => {
+    const stepId = a.stepId || a.id;
+    if (!stepId) return state;
+    const steps = state.workflow.steps;
+    const existing = steps.find((s) => s.id === stepId);
+    if (existing) {
+      return { ...state, selectedStepId: stepKey(existing), selectedConnectionId: null };
+    }
+    const newStep = buildInstance(stepId);
+    if (!newStep) return state;
+    const mode = a.mode || (state.viewMode === 'canvas' ? 'canvas' : 'list');
+    const cd = state.workflow.canvasData;
+
+    if (mode === 'canvas') {
+      const { steps: nextSteps, added } = applyStepRules([...steps, newStep], newStep);
+      let positions = prunePositions(cd.nodePositions, nextSteps);
+      const pos = a.position;
+      if (isObj(pos) && typeof pos.x === 'number' && typeof pos.y === 'number') {
+        const x = snapV(pos.x - NODE_W / 2);
+        const y = snapV(pos.y - NODE_H / 2);
+        positions = { ...positions, [newStep.instanceId]: { x, y } };
+        added.forEach((s, i) => {
+          if (!positions[stepKey(s)]) positions[stepKey(s)] = { x, y: y + ROW_GAP * (i + 1) };
+        });
+      }
+      positions = ensurePositions(nextSteps, positions);
+      return {
+        ...withCanvas({ ...state, workflow: { ...state.workflow, steps: nextSteps } }, { nodePositions: positions }),
+        selectedStepId: newStep.instanceId,
+        selectedConnectionId: null,
+      };
+    }
+
+    const list = [...steps];
+    list.splice(clampIndex(a.index, list.length), 0, newStep);
+    const { steps: nextSteps } = applyStepRules(list, newStep);
+    const connections = rebuildChain(nextSteps) || [];
+    const positions = ensurePositions(nextSteps, cd.nodePositions);
+    return {
+      ...withCanvas({ ...state, workflow: { ...state.workflow, steps: nextSteps } }, { connections, nodePositions: positions }),
+      selectedStepId: newStep.instanceId,
+      selectedConnectionId: null,
+    };
+  };
+
+  const reduceApplyTemplate = (state, a) => {
+    if (a.templateId === 'scratch') {
+      return {
+        ...state,
+        workflow: { name: '', steps: [], canvasData: { connections: [], nodePositions: { [START]: { x: 400, y: 40 } }, viewport: blankViewport() } },
+        selectedStepId: null,
+        selectedConnectionId: null,
+      };
+    }
+    const build = U('buildWorkflowFromTemplate', null);
+    const tpl = TEMPLATES.find((t) => t.id === a.templateId);
+    if (!tpl || typeof build !== 'function') return state;
+    const built = build(a.templateId);
+    const workflow = normalizeWorkflow(built);
+    return { ...state, workflow, selectedStepId: null, selectedConnectionId: null };
+  };
+
+  const reduceRemoveStep = (state, a) => {
+    const instanceId = a.instanceId;
+    const steps = state.workflow.steps;
+    if (!instanceId || !steps.some((s) => stepKey(s) === instanceId)) return state;
+    const remaining = removeWithCoupled(steps, instanceId) || steps.filter((s) => stepKey(s) !== instanceId);
+    const keep = new Set(remaining.map(stepKey));
+    const removedIds = steps.map(stepKey).filter((k) => !keep.has(k));
+    if (!removedIds.includes(instanceId)) removedIds.push(instanceId);
+    const cd = state.workflow.canvasData;
+    const res = removeWithBridge(steps, cd.connections, removedIds) || {};
+    const nextSteps = Array.isArray(res.steps) ? res.steps : steps.filter((s) => !removedIds.includes(stepKey(s)));
+    const gone = new Set(removedIds);
+    const nextConns = (Array.isArray(res.connections) ? res.connections : cd.connections)
+      .filter((c) => !gone.has(c.sourceId) && !gone.has(c.targetId));
+    const positions = prunePositions(cd.nodePositions, nextSteps);
+    const selectedStepId = gone.has(state.selectedStepId) ? null : state.selectedStepId;
+    const selectedConnectionId = nextConns.some((c) => c.id === state.selectedConnectionId) ? state.selectedConnectionId : null;
+    return {
+      ...withCanvas({ ...state, workflow: { ...state.workflow, steps: nextSteps } }, { connections: nextConns, nodePositions: positions }),
+      selectedStepId,
+      selectedConnectionId,
+    };
+  };
+
+  const reduceReorder = (state, a) => {
+    const steps = state.workflow.steps;
+    const from = a.from;
+    const to = a.to;
+    if (typeof from !== 'number' || typeof to !== 'number') return state;
+    if (from === to || from < 0 || to < 0 || from >= steps.length || to >= steps.length) return state;
+    if (!isReorderValid(steps, from, to)) return state;
+    const moved = steps[from];
+    const displaced = steps[to];
+    const list = [...steps];
+    list.splice(from, 1);
+    list.splice(to, 0, moved);
+    const nextSteps = enforcePinning(list) || list;
+    const connections = rebuildChain(nextSteps) || [];
+    const cd = state.workflow.canvasData;
+    const positions = { ...cd.nodePositions };
+    const kA = stepKey(moved);
+    const kB = stepKey(displaced);
+    if (positions[kA] && positions[kB]) {
+      const tmp = positions[kA];
+      positions[kA] = positions[kB];
+      positions[kB] = tmp;
+    }
+    return withCanvas({ ...state, workflow: { ...state.workflow, steps: nextSteps } }, { connections, nodePositions: ensurePositions(nextSteps, positions) });
+  };
+
+  const reduceSyncOrder = (state, a) => {
+    const order = Array.isArray(a.order) ? a.order : [];
+    const steps = state.workflow.steps;
+    const byKey = new Map(steps.map((s) => [stepKey(s), s]));
+    const next = [];
+    const used = new Set();
+    order.forEach((k) => {
+      const s = byKey.get(k);
+      if (s && !used.has(k)) { used.add(k); next.push(s); }
+    });
+    steps.forEach((s) => { if (!used.has(stepKey(s))) next.push(s); });
+    if (next.length === steps.length && next.every((s, i) => s === steps[i])) return state;
+    return withWorkflow(state, { steps: next });
+  };
+
+  const reducer = (state, action) => {
+    if (!action || typeof action.type !== 'string') return state;
+    const a = isObj(action.payload) ? { ...action.payload, type: action.type } : action;
+    const cd = state.workflow.canvasData;
+    switch (a.type) {
+      case 'LOAD': {
+        const workflow = normalizeWorkflow(a.workflow);
+        const viewMode = VIEW_MODES.includes(a.viewMode) ? a.viewMode : state.viewMode;
+        if (a.keepSelection) {
+          const keys = new Set(workflow.steps.map(stepKey));
+          const selectedStepId = keys.has(state.selectedStepId) ? state.selectedStepId : null;
+          const selectedConnectionId = workflow.canvasData.connections.some((c) => c.id === state.selectedConnectionId) ? state.selectedConnectionId : null;
+          return { ...state, workflow, viewMode, hydrated: true, selectedStepId, selectedConnectionId };
+        }
+        return { ...state, workflow, viewMode, hydrated: true, selectedStepId: null, selectedConnectionId: null };
+      }
+      case 'RESET':
+        return { ...state, workflow: blankWorkflow(), selectedStepId: null, selectedConnectionId: null, viewMode: 'builder' };
+      case 'SET_NAME':
+        return withWorkflow(state, { name: typeof a.name === 'string' ? a.name : '' });
+      case 'APPLY_TEMPLATE':
+        return reduceApplyTemplate(state, a);
+      case 'ADD_STEP':
+        return reduceAddStep(state, a);
+      case 'REMOVE_STEP':
+        return reduceRemoveStep(state, a);
+      case 'REORDER':
+        return reduceReorder(state, a);
+      case 'SYNC_STEP_ORDER':
+        return reduceSyncOrder(state, a);
+      case 'SET_CONNECTIONS': {
+        const connections = (Array.isArray(a.connections) ? a.connections : []).map(normalizeConnection).filter(Boolean);
+        const selectedConnectionId = connections.some((c) => c.id === state.selectedConnectionId) ? state.selectedConnectionId : null;
+        return { ...withCanvas(state, { connections }), selectedConnectionId };
+      }
+      case 'ADD_CONNECTION': {
+        const conn = normalizeConnection(a.connection);
+        if (!conn) return state;
+        if (conn.sourceId === conn.targetId || conn.targetId === START) return state;
+        const known = new Set(state.workflow.steps.map(stepKey));
+        known.add(START);
+        if (!known.has(conn.sourceId) || !known.has(conn.targetId)) return state;
+        if (cd.connections.some((c) => c.id === conn.id)) return state;
+        const next = addConnectionIfLinear(cd.connections, conn);
+        if (!Array.isArray(next)) return state;
+        return withCanvas(state, { connections: next });
+      }
+      case 'REMOVE_CONNECTION': {
+        if (!cd.connections.some((c) => c.id === a.id)) return state;
+        const connections = cd.connections.filter((c) => c.id !== a.id);
+        const selectedConnectionId = state.selectedConnectionId === a.id ? null : state.selectedConnectionId;
+        return { ...withCanvas(state, { connections }), selectedConnectionId };
+      }
+      case 'UPDATE_CONNECTION': {
+        if (!isObj(a.patch) || !cd.connections.some((c) => c.id === a.id)) return state;
+        const patch = { ...a.patch };
+        delete patch.id;
+        return withCanvas(state, { connections: cd.connections.map((c) => (c.id === a.id ? { ...c, ...patch } : c)) });
+      }
+      case 'SET_NODE_POSITION': {
+        if (!a.instanceId || typeof a.x !== 'number' || typeof a.y !== 'number') return state;
+        const prev = cd.nodePositions[a.instanceId];
+        if (prev && prev.x === a.x && prev.y === a.y) return state;
+        return withCanvas(state, { nodePositions: { ...cd.nodePositions, [a.instanceId]: { x: a.x, y: a.y } } });
+      }
+      case 'SET_NODE_POSITIONS': {
+        if (!isObj(a.positions)) return state;
+        const merged = { ...cd.nodePositions };
+        Object.keys(a.positions).forEach((k) => {
+          const p = a.positions[k];
+          if (isObj(p) && typeof p.x === 'number' && typeof p.y === 'number') merged[k] = { x: p.x, y: p.y };
+        });
+        return withCanvas(state, { nodePositions: merged });
+      }
+      case 'SET_VIEWPORT': {
+        if (!isObj(a.viewport)) return state;
+        const vp = {
+          x: numOr(a.viewport.x, cd.viewport.x),
+          y: numOr(a.viewport.y, cd.viewport.y),
+          zoom: numOr(a.viewport.zoom, cd.viewport.zoom),
+        };
+        if (vp.x === cd.viewport.x && vp.y === cd.viewport.y && vp.zoom === cd.viewport.zoom) return state;
+        return withCanvas(state, { viewport: vp });
+      }
+      case 'SELECT_STEP': {
+        const id = a.instanceId === undefined ? null : a.instanceId;
+        const valid = id === null || state.workflow.steps.some((s) => stepKey(s) === id);
+        const nextId = valid ? id : null;
+        if (nextId === state.selectedStepId && (nextId === null || state.selectedConnectionId === null)) return state;
+        return { ...state, selectedStepId: nextId, selectedConnectionId: nextId === null ? state.selectedConnectionId : null };
+      }
+      case 'SELECT_CONNECTION': {
+        const id = a.id === undefined ? null : a.id;
+        const valid = id === null || cd.connections.some((c) => c.id === id);
+        const nextId = valid ? id : null;
+        if (nextId === state.selectedConnectionId && (nextId === null || state.selectedStepId === null)) return state;
+        return { ...state, selectedConnectionId: nextId, selectedStepId: nextId === null ? state.selectedStepId : null };
+      }
+      case 'SET_VIEW_MODE': {
+        if (!VIEW_MODES.includes(a.viewMode) || a.viewMode === state.viewMode) return state;
+        return { ...state, viewMode: a.viewMode };
+      }
+      case 'UPDATE_PROPERTY_VALUE': {
+        if (!a.stepKey || !a.groupId || !a.propId) return state;
+        return withWorkflow(state, { steps: updatePropertyValueInSteps(state.workflow.steps, a.stepKey, a.groupId, a.propId, a.value) });
+      }
+      case 'UPDATE_PROPERTY_VALUES': {
+        if (!a.stepKey || !a.groupId || !isObj(a.values)) return state;
+        return withWorkflow(state, { steps: updatePropertyValuesInSteps(state.workflow.steps, a.stepKey, a.groupId, a.values) });
+      }
+      case 'PATCH_STEP': {
+        const key = a.stepKey;
+        const nextStep = a.step;
+        if (!key || !isObj(nextStep)) return state;
+        const steps = state.workflow.steps;
+        if (!steps.some((s) => stepKey(s) === key)) return state;
+        return withWorkflow(state, { steps: steps.map((s) => (stepKey(s) === key ? { ...s, ...nextStep, instanceId: s.instanceId } : s)) });
+      }
+      case 'UPDATE_LINKED_WEIGHTS': {
+        if (!a.stepKey || !a.groupId || !a.changedId) return state;
+        return withWorkflow(state, { steps: updateLinkedWeightsInSteps(state.workflow.steps, a.stepKey, a.groupId, a.changedId, a.value) });
+      }
+      default:
+        return state;
+    }
+  };
+
+  const orderFromConnections = (steps, connections) => {
+    if (!steps.length) return { ordered: [], warnings: [] };
+    let res;
+    try { res = resolveOrder(steps, connections) || {}; } catch (e) { res = {}; }
+    const reachable = Array.isArray(res.orderedSteps) ? res.orderedSteps : [];
+    const byKey = new Map(steps.map((s) => [stepKey(s), s]));
+    const used = new Set();
+    const ordered = [];
+    reachable.forEach((s) => {
+      const k = typeof s === 'string' ? s : stepKey(s);
+      const real = byKey.get(k);
+      if (real && !used.has(k)) { used.add(k); ordered.push(real); }
+    });
+    steps.forEach((s) => { if (!used.has(stepKey(s))) ordered.push(s); });
+    return { ordered, warnings: Array.isArray(res.warnings) ? res.warnings : [] };
+  };
+
+  const ACTION_DEFS = {
+    load: ['LOAD', ['workflow', 'viewMode', 'keepSelection']],
+    reset: ['RESET', []],
+    setName: ['SET_NAME', ['name']],
+    applyTemplate: ['APPLY_TEMPLATE', ['templateId']],
+    addStep: ['ADD_STEP', ['stepId', 'index', 'position', 'mode']],
+    removeStep: ['REMOVE_STEP', ['instanceId']],
+    reorder: ['REORDER', ['from', 'to']],
+    setConnections: ['SET_CONNECTIONS', ['connections']],
+    addConnection: ['ADD_CONNECTION', ['connection']],
+    removeConnection: ['REMOVE_CONNECTION', ['id']],
+    updateConnection: ['UPDATE_CONNECTION', ['id', 'patch']],
+    setNodePosition: ['SET_NODE_POSITION', ['instanceId', 'x', 'y']],
+    setNodePositions: ['SET_NODE_POSITIONS', ['positions']],
+    setViewport: ['SET_VIEWPORT', ['viewport']],
+    selectStep: ['SELECT_STEP', ['instanceId']],
+    selectConnection: ['SELECT_CONNECTION', ['id']],
+    setViewMode: ['SET_VIEW_MODE', ['viewMode']],
+    updatePropertyValue: ['UPDATE_PROPERTY_VALUE', ['stepKey', 'groupId', 'propId', 'value']],
+    updatePropertyValues: ['UPDATE_PROPERTY_VALUES', ['stepKey', 'groupId', 'values']],
+    updateLinkedWeights: ['UPDATE_LINKED_WEIGHTS', ['stepKey', 'groupId', 'changedId', 'value']],
+    patchStep: ['PATCH_STEP', ['stepKey', 'step']],
+  };
+
+  const bindActions = (dispatch) => {
+    const out = {};
+    Object.keys(ACTION_DEFS).forEach((name) => {
+      const [type, keys] = ACTION_DEFS[name];
+      out[name] = (...args) => {
+        const first = args[0];
+        let payload;
+        if (!keys.length) payload = {};
+        else if (args.length === 1 && isObj(first) && keys.some((k) => k in first)) payload = first;
+        else {
+          payload = {};
+          keys.forEach((k, i) => { if (i < args.length) payload[k] = args[i]; });
+        }
+        dispatch({ type, ...payload });
+      };
+    });
+    out.clearSelection = () => { dispatch({ type: 'SELECT_STEP', instanceId: null }); dispatch({ type: 'SELECT_CONNECTION', id: null }); };
+    return out;
+  };
+
+  const noop = () => {};
+  const inertActions = bindActions(noop);
+  const emptySelectors = { resolvedOrder: {}, cost: 0, selectedStep: null, orderedSteps: [], stepCount: 0 };
+  const fallbackContext = { state: initialState, dispatch: noop, actions: inertActions, selectors: emptySelectors };
+
+  const WorkflowContext = React.createContext(null);
+
+  const WorkflowProvider = ({ children, initialWorkflow, storageKey }) => {
+    const KEY = typeof storageKey === 'string' && storageKey ? storageKey : STORAGE_KEY;
+    const [state, dispatch] = useReducer(reducer, initialState);
+    const hydratedRef = useRef(false);
+
+    useEffect(() => {
+      if (hydratedRef.current) return;
+      hydratedRef.current = true;
+      let saved = null;
+      try {
+        const raw = window.localStorage.getItem(KEY);
+        if (raw) saved = JSON.parse(raw);
+      } catch (e) { saved = null; }
+      const workflow = isObj(saved) && isObj(saved.workflow) ? saved.workflow : (isObj(initialWorkflow) ? initialWorkflow : undefined);
+      const viewMode = isObj(saved) && VIEW_MODES.includes(saved.viewMode) ? saved.viewMode : undefined;
+      dispatch({ type: 'LOAD', workflow, viewMode });
+    }, []);
+
+    useEffect(() => {
+      if (!state.hydrated) return undefined;
+      const t = setTimeout(() => {
+        try {
+          window.localStorage.setItem(KEY, JSON.stringify({ workflow: state.workflow, viewMode: state.viewMode }));
+        } catch (e) {}
+      }, PERSIST_DELAY);
+      return () => clearTimeout(t);
+    }, [state.workflow, state.viewMode, state.hydrated, KEY]);
+
+    const connections = state.workflow.canvasData.connections;
+    useEffect(() => {
+      const steps = state.workflow.steps;
+      if (!steps.length) return;
+      const { ordered } = orderFromConnections(steps, connections);
+      if (ordered.length === steps.length && ordered.every((s, i) => s === steps[i])) return;
+      dispatch({ type: 'SYNC_STEP_ORDER', order: ordered.map(stepKey) });
+    }, [connections]);
+
+    const actions = useMemo(() => bindActions(dispatch), [dispatch]);
+
+    const steps = state.workflow.steps;
+    const selectedStepId = state.selectedStepId;
+
+    const resolvedOrder = useMemo(() => {
+      try { return computeResolvedOrder(steps, connections) || {}; } catch (e) { return {}; }
+    }, [steps, connections]);
+
+    const cost = useMemo(() => {
+      try {
+        const c = computeCost(steps);
+        return typeof c === 'number' && Number.isFinite(c) ? c : 0;
+      } catch (e) { return 0; }
+    }, [steps]);
+
+    const selectedStep = useMemo(() => (selectedStepId ? steps.find((s) => stepKey(s) === selectedStepId) || null : null), [steps, selectedStepId]);
+
+    const orderedSteps = useMemo(() => orderFromConnections(steps, connections).ordered, [steps, connections]);
+
+    const stepCount = steps.length;
+
+    const selectors = useMemo(() => ({ resolvedOrder, cost, selectedStep, orderedSteps, stepCount }), [resolvedOrder, cost, selectedStep, orderedSteps, stepCount]);
+
+    const value = useMemo(() => ({ state, dispatch, actions, selectors }), [state, actions, selectors]);
+
+    return <WorkflowContext.Provider value={value}>{children}</WorkflowContext.Provider>;
+  };
+
+  let warnedOutside = false;
+  const useWorkflow = () => {
+    const ctx = useContext(WorkflowContext);
+    if (ctx) return ctx;
+    if (IS_DEV && !warnedOutside) {
+      warnedOutside = true;
+      try { console.warn('[workflow-builder] useWorkflow() called outside <WorkflowProvider>; returning an inert store.'); } catch (e) {}
+    }
+    return fallbackContext;
+  };
+
+  return { WorkflowProvider, useWorkflow };
+};
+

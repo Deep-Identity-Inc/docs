@@ -64,7 +64,7 @@ This is intentional — sandbox mode is for reading and validating response shap
 
 ### Other routes
 
-Endpoints outside of sessions, financial, workflows, and credit-checks (e.g., `/health`) pass through normally.
+Endpoints outside of sessions, financial, workflows, and credit-checks (e.g., `/health`) pass through normally. The [iGaming checks](/api-reference/igaming/overview) (`/v1/igaming/*`) have no sandbox fixtures, and because sandbox keys can't create sessions they are effectively unavailable in sandbox — use a live key with a test workflow.
 
 ---
 
@@ -187,7 +187,7 @@ print(data["session_record"]["analysis_data"])  # full analysis object
     See the full response schema for each endpoint.
   </Card>
 
-  <Card title="Sandbox Models" icon="flask" href="/api-reference/sandbox/models">
+  <Card title="Sandbox Models" icon="flask-conical" href="/api-reference/sandbox/models">
     View the complete sandbox test data models and response examples.
   </Card>
 </CardGroup>

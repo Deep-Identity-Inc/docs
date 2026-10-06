@@ -1,0 +1,246 @@
+export const makeMui = ({ ui }) => {
+  const { StepIcon, MuiButton, MuiTextField, MuiSelect } = ui;
+  const cx = (...p) => p.filter(Boolean).join(' ');
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+  const Iconify = ({ icon, width = 20, color = 'currentColor', className, style }) => (
+    <StepIcon icon={icon} size={width} color={color} className={className} style={style} />
+  );
+
+  const FlagIcon = ({ code, size = 22, round = true, style, className }) => {
+    if (!code) return null;
+    return (
+      <span className={cx('wb-m-flag', className)} style={{ width: size, height: size, ...(style || {}) }}>
+        <img loading="lazy" alt={code} src={'https://hatscripts.github.io/circle-flags/flags/' + String(code).toLowerCase() + '.svg'} style={{ borderRadius: round ? '50%' : 4 }} />
+      </span>
+    );
+  };
+
+  const MuiSwitch = ({ checked, onChange, disabled, size = 'medium', color = 'primary', testId, ariaLabel }) => (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={!!checked}
+      aria-label={ariaLabel}
+      disabled={disabled}
+      data-testid={testId}
+      className={cx('wb-m-switch', 'wb-m-switch-' + size, 'wb-m-switch-' + color, checked && 'wb-m-switch-on', disabled && 'wb-m-switch-disabled')}
+      onClick={(e) => { e.stopPropagation(); if (!disabled && typeof onChange === 'function') onChange(!checked); }}
+    >
+      <span className="wb-m-switch-track"><span className="wb-m-switch-thumb" /></span>
+    </button>
+  );
+
+  const MuiCheckbox = ({ checked, indeterminate, onChange, disabled, size = 'small', ariaLabel, testId }) => (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={indeterminate ? 'mixed' : !!checked}
+      aria-label={ariaLabel}
+      disabled={disabled}
+      data-testid={testId}
+      className={cx('wb-m-check', 'wb-m-check-' + size, checked && 'wb-m-check-on', indeterminate && 'wb-m-check-mixed')}
+      onClick={(e) => { e.stopPropagation(); if (!disabled && typeof onChange === 'function') onChange(!checked); }}
+    >
+      <span className="wb-m-check-box">
+        {indeterminate ? <span className="wb-m-check-dash" /> : checked ? (
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" /></svg>
+        ) : null}
+      </span>
+    </button>
+  );
+
+  const MuiChip = ({ label, icon, color = 'default', variant = 'soft', size = 'small', onClick, onDelete, deleteIcon, className, style, testId }) => (
+    <span
+      className={cx('wb-m-chip', 'wb-m-chip-' + variant, 'wb-m-chip-' + color, 'wb-m-chip-' + size, onClick && 'wb-m-chip-click', className)}
+      style={style}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      data-testid={testId}
+    >
+      {icon ? <span className="wb-m-chip-icon">{icon}</span> : null}
+      <span className="wb-m-chip-label">{label}</span>
+      {onDelete ? <button type="button" className="wb-m-chip-del" aria-label="Remove" onClick={(e) => { e.stopPropagation(); onDelete(); }}>{deleteIcon || <Iconify icon="solar:close-circle-bold" width={16} />}</button> : null}
+    </span>
+  );
+
+  const ALERT_ICONS = { info: 'eva:info-outline', warning: 'solar:danger-triangle-bold-duotone', error: 'solar:danger-triangle-bold-duotone', success: 'solar:check-circle-bold' };
+  const MuiAlert = ({ severity = 'info', variant = 'standard', icon, action, children, className, style, testId }) => (
+    <div role="alert" data-testid={testId} className={cx('wb-m-alert', 'wb-m-alert-' + severity, 'wb-m-alert-' + variant, className)} style={style}>
+      <span className="wb-m-alert-icon">{icon === false ? null : icon || <Iconify icon={ALERT_ICONS[severity]} width={22} />}</span>
+      <div className="wb-m-alert-msg">{children}</div>
+      {action ? <span className="wb-m-alert-action">{action}</span> : null}
+    </div>
+  );
+
+  const MuiDialog = ({ open, onClose, title, subtitle, titleIcon, children, actions, maxWidth = 'sm', dividers, testId, className, contentStyle, paperStyle }) => {
+    useEffect(() => {
+      if (!open) return undefined;
+      const onKey = (e) => { if (e.key === 'Escape' && typeof onClose === 'function') onClose(); };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+    }, [open, onClose]);
+    if (!open) return null;
+    const widths = { xs: 444, sm: 600, md: 900, lg: 1200 };
+    return (
+      <div className="wb-m-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && typeof onClose === 'function') onClose(); }}>
+        <div role="dialog" aria-modal="true" data-testid={testId} className={cx('wb-m-paper', className)} style={{ width: '100%', maxWidth: widths[maxWidth] || widths.sm, ...(paperStyle || {}) }}>
+          {title ? (
+            <div className="wb-m-dialog-title">
+              {typeof title === 'string' ? (
+                <div className="wb-m-dialog-title-row">
+                  {titleIcon ? <span className="wb-m-dialog-title-icon">{titleIcon}</span> : null}
+                  <div>
+                    <div className="wb-m-dialog-title-text">{title}</div>
+                    {subtitle ? <div className="wb-m-dialog-subtitle">{subtitle}</div> : null}
+                  </div>
+                </div>
+              ) : title}
+            </div>
+          ) : null}
+          <div className={cx('wb-m-dialog-content', dividers && 'wb-m-dialog-dividers')} style={contentStyle}>{children}</div>
+          {actions ? <div className="wb-m-dialog-actions">{actions}</div> : null}
+        </div>
+      </div>
+    );
+  };
+
+  const useSliderDrag = (ref, { min, max, step, onValue }) => {
+    const toValue = (clientX) => {
+      const el = ref.current;
+      if (!el) return min;
+      const r = el.getBoundingClientRect();
+      const pct = clamp((clientX - r.left) / (r.width || 1), 0, 1);
+      const raw = min + pct * (max - min);
+      const st = step || 1;
+      const snapped = Math.round(raw / st) * st;
+      const decimals = String(st).includes('.') ? String(st).split('.')[1].length : 0;
+      return clamp(Number(snapped.toFixed(decimals)), min, max);
+    };
+    const begin = (e, which) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onValue(toValue(e.clientX), which, true);
+      const move = (ev) => onValue(toValue(ev.clientX), which, false);
+      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    };
+    return { begin, toValue };
+  };
+
+  const fmtNum = (v) => (Number.isFinite(v) ? (Math.round(v * 100) / 100).toString() : '');
+
+  const MuiSlider = ({ value, onChange, min = 0, max = 100, step = 1, marks, disabled, color, railStyle, testId, ariaLabel, markLabelFor }) => {
+    const ref = useRef(null);
+    const v = clamp(Number(value) || 0, min, max);
+    const pct = ((v - min) / (max - min || 1)) * 100;
+    const { begin } = useSliderDrag(ref, { min, max, step, onValue: (nv) => { if (!disabled && typeof onChange === 'function') onChange(nv); } });
+    const markList = Array.isArray(marks) ? marks : [];
+    return (
+      <div className={cx('wb-m-slider', disabled && 'wb-m-slider-disabled')} data-testid={testId} style={color ? { '--wb-m-slider-color': color } : undefined}>
+        <div ref={ref} className="wb-m-slider-rail" style={railStyle} onPointerDown={(e) => begin(e, 0)}>
+          <div className="wb-m-slider-track" style={{ width: pct + '%' }} />
+          {markList.map((m) => (
+            <span key={String(m.value)} className="wb-m-slider-mark" style={{ left: ((m.value - min) / (max - min || 1)) * 100 + '%' }} />
+          ))}
+          <div className="wb-m-slider-thumb" style={{ left: pct + '%' }} role="slider" aria-label={ariaLabel} aria-valuemin={min} aria-valuemax={max} aria-valuenow={v} tabIndex={disabled ? -1 : 0}
+            onKeyDown={(e) => { if (disabled) return; const st = step || 1; if (e.key === 'ArrowRight' || e.key === 'ArrowUp') onChange(clamp(v + st, min, max)); if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') onChange(clamp(v - st, min, max)); }} />
+        </div>
+        {markList.length ? (
+          <div className="wb-m-slider-marks">
+            {markList.map((m) => {
+              const show = typeof markLabelFor === 'function' ? markLabelFor(m, v) : m.value === v;
+              return show && m.label !== undefined ? (
+                <span key={String(m.value)} className="wb-m-slider-marklabel" style={{ left: ((m.value - min) / (max - min || 1)) * 100 + '%' }}>{m.label}</span>
+              ) : null;
+            })}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const MuiRangeSlider = ({ value, onChange, min = 0, max = 100, step = 1, disabled, color, railBackground, testId }) => {
+    const ref = useRef(null);
+    const pair = Array.isArray(value) ? value : [min, max];
+    const lo = clamp(Number(pair[0]), min, max);
+    const hi = clamp(Number(pair[1]), min, max);
+    const loPct = ((lo - min) / (max - min || 1)) * 100;
+    const hiPct = ((hi - min) / (max - min || 1)) * 100;
+    const activeRef = useRef(null);
+    const { begin, toValue } = useSliderDrag(ref, {
+      min, max, step,
+      onValue: (nv, which, first) => {
+        if (disabled || typeof onChange !== 'function') return;
+        let w = which;
+        if (first && which === 'auto') {
+          w = Math.abs(nv - lo) <= Math.abs(nv - hi) ? 0 : 1;
+          activeRef.current = w;
+        } else if (which === 'auto') w = activeRef.current;
+        if (w === 0) onChange([Math.min(nv, hi), hi]);
+        else onChange([lo, Math.max(nv, lo)]);
+      },
+    });
+    return (
+      <div className={cx('wb-m-slider wb-m-range', disabled && 'wb-m-slider-disabled')} data-testid={testId} style={color ? { '--wb-m-slider-color': color } : undefined}>
+        <div ref={ref} className="wb-m-slider-rail" style={railBackground ? { background: railBackground } : undefined} onPointerDown={(e) => begin(e, 'auto')}>
+          {!railBackground ? <div className="wb-m-slider-track" style={{ left: loPct + '%', width: (hiPct - loPct) + '%' }} /> : null}
+          <div className="wb-m-slider-thumb wb-m-slider-thumb-paper" style={{ left: loPct + '%' }} onPointerDown={(e) => { activeRef.current = 0; begin(e, 0); }} role="slider" aria-valuenow={lo} />
+          <div className="wb-m-slider-thumb wb-m-slider-thumb-paper" style={{ left: hiPct + '%' }} onPointerDown={(e) => { activeRef.current = 1; begin(e, 1); }} role="slider" aria-valuenow={hi} />
+        </div>
+        <div className="wb-m-slider-marks">
+          <span className="wb-m-slider-marklabel" style={{ left: loPct + '%' }}>{fmtNum(lo)}</span>
+          <span className="wb-m-slider-marklabel" style={{ left: hiPct + '%' }}>{fmtNum(hi)}</span>
+        </div>
+      </div>
+    );
+  };
+
+  const MuiToggleGroup = ({ value, onChange, options, size = 'small', className, ariaLabel, segmented }) => (
+    <div role="group" aria-label={ariaLabel} className={cx('wb-m-toggle-group', segmented && 'wb-m-toggle-segmented', className)}>
+      {(options || []).map((opt) => {
+        const selected = String(opt.value) === String(value);
+        return (
+          <button key={String(opt.value)} type="button" aria-pressed={selected ? 'true' : 'false'} disabled={opt.disabled}
+            className={cx('wb-m-toggle-btn', selected && 'wb-m-toggle-selected', opt.color && 'wb-m-toggle-' + opt.color)}
+            onClick={() => { if (typeof onChange === 'function') onChange(opt.value); }}>
+            {opt.icon ? <span className="wb-m-toggle-icon">{opt.icon}</span> : null}
+            {opt.label !== undefined ? <span>{opt.label}</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const MuiTabs = ({ value, onChange, tabs, className, style }) => (
+    <div role="tablist" className={cx('wb-m-tabs', className)} style={style}>
+      {(tabs || []).map((tb) => (
+        <button key={String(tb.value)} type="button" role="tab" aria-selected={String(tb.value) === String(value) ? 'true' : 'false'} className="wb-m-tab" onClick={() => onChange(tb.value)}>{tb.label}</button>
+      ))}
+    </div>
+  );
+
+  const MuiDivider = ({ dashed, children, className, style }) => (
+    children ? (
+      <div className={cx('wb-m-divider-text', dashed && 'wb-m-divider-dashed', className)} style={style}><span>{children}</span></div>
+    ) : <hr className={cx('wb-m-divider', dashed && 'wb-m-divider-dashed', className)} style={style} />
+  );
+
+  const Adornment = ({ children, position = 'start' }) => <span className={'wb-m-adorn wb-m-adorn-' + position}>{children}</span>;
+
+  const NumberBadge = ({ children, color = 'info', shape = 'square' }) => (
+    <span className={cx('wb-m-numbadge', 'wb-m-numbadge-' + color, shape === 'round' && 'wb-m-numbadge-round')}>{children}</span>
+  );
+
+  const SmallIconButton = ({ icon, onClick, disabled, label, danger, className, width = 18, style, testId }) => (
+    <button type="button" className={cx('wb-m-ibtn', danger && 'wb-m-ibtn-danger', className)} disabled={disabled} aria-label={label} onClick={(e) => { e.stopPropagation(); if (onClick) onClick(e); }} style={style} data-testid={testId}>
+      <Iconify icon={icon} width={width} />
+    </button>
+  );
+
+  const Spinner = ({ size = 22 }) => <span className="wb-m-spinner" style={{ width: size, height: size }} aria-hidden="true" />;
+
+  return { Iconify, FlagIcon, MuiSwitch, MuiCheckbox, MuiChip, MuiAlert, MuiDialog, MuiSlider, MuiRangeSlider, MuiToggleGroup, MuiTabs, MuiDivider, Adornment, NumberBadge, SmallIconButton, Spinner, MuiButton, MuiTextField, MuiSelect, cx };
+};

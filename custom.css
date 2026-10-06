@@ -76,16 +76,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: #EBF4FE;
+  width: 20px;
+  height: 20px;
   color: #1E7FE0;
   flex-shrink: 0;
-}
-
-:root.dark .deepidv-feature-card-icon {
-  background: rgba(30, 127, 224, 0.15);
 }
 
 /* Content */

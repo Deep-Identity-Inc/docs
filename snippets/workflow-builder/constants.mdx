@@ -1,0 +1,101 @@
+export const WB_LOCAL = {
+  START_NODE_ID: '__start__',
+
+  CATEGORY_TABS: ['All', 'Verify', 'Docs', 'Screen', 'Crypto', 'Gaming'],
+
+  SYSTEM_STEPS: ['add-step', 'start-session', 'end-session'],
+
+  STEP_UP_GUARD_STEPS: ['ip-jurisdiction', 'vpn-detection', 'injection-detection'],
+
+  REMOVED_PROPERTY_GROUPS: ['id-classification-settings'],
+
+  EXCLUDED_FROM_PREVIEW: ['ai-bank-statement-analysis', 'white-label', 'ip-jurisdiction', 'vpn-detection'],
+
+  TOP_ALIGNED_STEP_IDS: ['custom-form', 'kyb', 'proofcall', 'credit-check'],
+
+  MASTER_CAMERA_SUB_STEP_IDS: [
+    'id-verification',
+    'face-liveness',
+    'deepfake-detection',
+    'age-estimation',
+    'pep-sanctions',
+    'adverse-media',
+    'passport-nfc-scanner',
+    'custom-prompt',
+  ],
+
+  HIDDEN_STEP_IDS: ['crypto-wallet-screening', 'phone-trust-check', 'carrier-age-gate', 'phone-ownership-match', 'e-signature'],
+
+  STEP_COST_OVERRIDES: { 'deepfake-detection': 0.6, 'e-signature': 0.25 },
+
+  MAX_FIELDS_PER_PAGE: 5,
+
+  PANEL: { WIDTH: 350, WIDTH_EXPANDED: 600, PALETTE_WIDTH: 300 },
+
+  CANVAS_EXTRA: { ROW_GAP: 140, FIT_PADDING: 80, FIT_MAX_ZOOM: 1.5, ANCHOR_HIT_RADIUS: 20 },
+
+  BRAND: { primary: '#0781DF', light: '#089AEA', dark: '#0676CC' },
+
+  ICONS: {
+    fallback: 'solar:widget-bold-duotone',
+    emptyCanvas: 'solar:widget-add-bold-duotone',
+    play: 'solar:play-bold',
+    copy: 'solar:copy-bold',
+    download: 'solar:download-bold',
+  },
+
+  IS_DEV: false,
+};
+
+export const makeWB = (generated) => {
+  const g = generated || {};
+  const stepUp = (list) => (Array.isArray(list) ? list : []);
+  return {
+    ...WB_LOCAL,
+    WORKFLOW_STEPS_OPTIONS: stepUp(g.WORKFLOW_STEPS_OPTIONS),
+    WORKFLOW_STEPS_DISABLED: g.WORKFLOW_STEPS_DISABLED || {},
+    WORKFLOW_MIN_STEPS: g.WORKFLOW_MIN_STEPS || 1,
+    BOTTOM_PINNED_STEPS: stepUp(g.BOTTOM_PINNED_STEP_IDS),
+    COUPLED_STEPS: g.COUPLED_STEPS || {},
+    COUPLED_PROPERTY_OVERRIDES: g.COUPLED_PROPERTY_OVERRIDES || {},
+    WORKFLOW_STEP_I18N_KEYS: g.WORKFLOW_STEP_I18N_KEYS || {},
+    WORKFLOW_STEP_DESCRIPTION_I18N_KEYS: g.WORKFLOW_STEP_DESCRIPTION_I18N_KEYS || {},
+    WORKFLOW_STEP_TO_SERVICE_MAP: g.WORKFLOW_STEP_TO_SERVICE_MAP || {},
+    WORKFLOW_STEP_TO_SERVICES: g.WORKFLOW_STEP_TO_SERVICES || {},
+    SERVICE_REGISTRY: g.SERVICE_REGISTRY || {},
+    SERVICE_COSTS: g.SERVICE_COSTS || {},
+    SERVICE_TYPES: g.SERVICE_TYPES || {},
+    STEP_ICON_GRADIENTS: g.STEP_ICON_GRADIENTS || {},
+    CUSTOM_FORM_FIELD_TYPES: stepUp(g.CUSTOM_FORM_FIELD_TYPES),
+    CUSTOM_FORM_FIELD_TYPE_DEFAULT: g.CUSTOM_FORM_FIELD_TYPE_DEFAULT || 'short-text',
+    MAX_OPTIONS: g.CUSTOM_FORM_MAX_OPTIONS || 10,
+    AGE_RESTRICTION_COUNTRY_DATA: stepUp(g.AGE_RESTRICTION_COUNTRY_DATA),
+    AGE_RESTRICTION_CATEGORIES: stepUp(g.AGE_RESTRICTION_CATEGORIES),
+    DEEP_AGE_METHODS: stepUp(g.DEEP_AGE_METHODS),
+    DEVICE_SIZES: g.DEVICE_SIZES || { mobile: { width: 390, height: 760 }, desktop: { width: 700, height: 560 } },
+    VERIFY_COLORS: g.VERIFY_COLORS || {},
+    PALETTE: (g.DEEPIDV_COLOR_PALETTE && g.DEEPIDV_COLOR_PALETTE.palette) || {},
+    ESIGN: {
+      OVERLAY_BASE_W: g.ESIGN_OVERLAY_BASE_W || 800,
+      OVERLAY_BASES: g.ESIGN_OVERLAY_BASES || {},
+      FIELD_TYPES: stepUp(g.E_SIGNATURE_FIELD_TYPES),
+      DEFAULT_SIGNERS: stepUp(g.ESIGN_TEMPLATE_DEFAULT_SIGNERS),
+      MAX_SIGNERS: g.ESIGN_MAX_SIGNERS || 15,
+    },
+    PROOFCALL_QUESTION_TEMPLATES: g.PROOFCALL_QUESTION_TEMPLATES || {},
+    CANVAS: { ...WB_LOCAL.CANVAS_EXTRA, ...(g.CANVAS || {}) },
+    WORKFLOW_TEMPLATES: stepUp(g.WORKFLOW_TEMPLATES),
+    WORKFLOW_TEMPLATE_COLORS: g.WORKFLOW_TEMPLATE_COLORS || {},
+    QUESTIONNAIRE_TEMPLATES: g.QUESTIONNAIRE_TEMPLATES || {},
+    INPUT_TYPE_LABELS: g.INPUT_TYPE_LABELS || {},
+    INPUT_TYPE_ICONS: g.INPUT_TYPE_ICONS || {},
+    OPTION_MARKERS: g.OPTION_MARKERS || {},
+    US_UNIVERSITIES: stepUp(g.US_UNIVERSITIES),
+    CA_UNIVERSITIES: stepUp(g.CA_UNIVERSITIES),
+    COUNTRIES: stepUp(g.COUNTRIES),
+    JURISDICTIONS: stepUp(g.JURISDICTIONS),
+    COUNTRY_ID_TYPES_OPTIONS: stepUp(g.COUNTRY_ID_TYPES_OPTIONS),
+    COUNTRY_ID_TYPES_DEFAULT_VALUE: g.COUNTRY_ID_TYPES_DEFAULT_VALUE || {},
+    I18N: g.I18N_EN || {},
+  };
+};

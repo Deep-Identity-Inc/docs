@@ -1,0 +1,562 @@
+export const makeSaveDialog = ({ WB, utils, store, ui, mui }) => {
+  const { useWorkflow } = store;
+  const { useToast, StepIcon } = ui;
+  const { Iconify, MuiAlert, MuiDialog, MuiTabs, MuiChip, MuiButton, MuiTextField, SmallIconButton, cx } = mui;
+  const I18N = WB.I18N || {};
+  const t = (key, fallback, vars) => {
+    let s = typeof I18N[key] === 'string' ? I18N[key] : fallback;
+    if (typeof s !== 'string') s = fallback || '';
+    if (vars) Object.keys(vars).forEach((k) => { s = s.split('{{' + k + '}}').join(String(vars[k])); });
+    return s;
+  };
+  const API_BASE = 'https://api.deepidv.com';
+  const MIN_STEPS = WB.WORKFLOW_MIN_STEPS || 1;
+  const EXCLUDED_FROM_PREVIEW = WB.EXCLUDED_FROM_PREVIEW || [];
+  const START = WB.START_NODE_ID || '__start__';
+  const keyOf = (s) => (s && (s.instanceId || s.id)) || '';
+  const stepLabel = (step) => {
+    const key = (WB.WORKFLOW_STEP_I18N_KEYS || {})[step.id];
+    return (key && I18N[key]) || step.label || step.id;
+  };
+
+  const validateCryptoWalletScreeningStep = (step, errors) => {
+    const getProp = (groupId, propId) => { const g = (step.propertyGroups || []).find((x) => x.groupId === groupId); return g ? (g.properties || []).find((p) => p.id === propId) : undefined; };
+    const networksProp = getProp('crypto-networks-scanned', 'networks-scanned');
+    const networksEnabled = networksProp && networksProp.value ? Object.values(networksProp.value).filter(Boolean).length : 0;
+    if (networksEnabled === 0) errors.push('Step "' + step.label + '": requires at least one network scanned.');
+    const scanGroup = (step.propertyGroups || []).find((g) => g.groupId === 'crypto-scan-categories');
+    const categoriesEnabled = ((scanGroup && scanGroup.properties) || []).filter((p) => p.value === true).length;
+    if (categoriesEnabled === 0) errors.push('Step "' + step.label + '": requires at least one scan category enabled.');
+  };
+
+  const stepValidation = (workflow) => {
+    const errors = [];
+    if (!workflow || !workflow.steps || workflow.steps.length === 0) { errors.push('Workflow must have at least one step'); return errors; }
+    const NON_ACTIONABLE = ['add-step', 'start-session', 'end-session', ...EXCLUDED_FROM_PREVIEW];
+    const actualSteps = workflow.steps.filter((s) => !NON_ACTIONABLE.includes(s.id));
+    if (actualSteps.length === 0) errors.push('Workflow must have at least one actionable step');
+    actualSteps.forEach((step) => {
+      if (step.id === 'id-verification' && step.propertyGroups) {
+        let requireSecondaryId = false; let requireTertiaryId = false; let selectedIdTypesCount = 0;
+        step.propertyGroups.forEach((group) => {
+          (group.properties || []).forEach((prop) => {
+            if (prop.id === 'require-secondary-id') requireSecondaryId = prop.value === true;
+            if (prop.id === 'require-tertiary-id') requireTertiaryId = prop.value === true;
+            if (prop.id === 'valid-id-types' && prop.value) {
+              if (Array.isArray(prop.value)) selectedIdTypesCount = prop.value.length;
+              else if (typeof prop.value === 'object') selectedIdTypesCount = Object.values(prop.value).filter(Boolean).length;
+            }
+          });
+        });
+        const minRequired = 1 + (requireSecondaryId ? 1 : 0) + (requireTertiaryId ? 1 : 0);
+        if (selectedIdTypesCount < minRequired) errors.push('ID Verification step requires at least ' + minRequired + ' valid ID type(s).');
+      }
+    });
+    actualSteps.forEach((step) => {
+      if (!step.propertyGroups) return;
+      if (step.id === 'crypto-wallet-screening') validateCryptoWalletScreeningStep(step, errors);
+      if (step.id === 'e-signature') {
+        const getGroupProps = (gid) => { const g = step.propertyGroups.find((x) => x.groupId === gid); return (g && g.properties) || []; };
+        const getPropValue = (gid, pid) => { const p = getGroupProps(gid).find((x) => x.id === pid); return p ? p.value : undefined; };
+        const templateIdRaw = getPropValue('e-signature-settings', 'template-id') !== undefined && getPropValue('e-signature-settings', 'template-id') !== null ? getPropValue('e-signature-settings', 'template-id') : getPropValue('esign-template', 'template-id');
+        const templateId = typeof templateIdRaw === 'string' ? templateIdRaw.trim() : templateIdRaw;
+        const templateSignerCount = Number(getPropValue('e-signature-settings', 'template-signer-count') || 0);
+        const includeRaw = getPropValue('e-signature-settings', 'include-sender-as-signer');
+        const includeSenderAsSigner = includeRaw === true || String(includeRaw || '').toLowerCase() === 'true';
+        const senderRole = getPropValue('e-signature-settings', 'sender-role');
+        const documentsValue = getPropValue('esign-document-setup', 'documents') || {};
+        const files = Array.isArray(documentsValue.files) ? documentsValue.files.filter(Boolean) : [];
+        const hasTemplate = !!(templateId && String(templateId).trim() !== '');
+        if ((!templateId || String(templateId).trim() === '') && files.length === 0) errors.push('Step "' + step.label + '": select an existing DeepSign template or upload at least one PDF in Document Setup before saving');
+        if (hasTemplate && files.length > 0) errors.push('Step "' + step.label + '": choose either a DeepSign template or uploaded workflow documents, not both');
+        if (templateId) {
+          if (!Number.isFinite(templateSignerCount) || templateSignerCount < 1) errors.push('Step "' + step.label + '" (E-Signature Internal Settings): selected DeepSign template is missing signer metadata');
+          else if (templateSignerCount > 2) errors.push('Step "' + step.label + '" (E-Signature Internal Settings): workflow e-sign supports a maximum of 2 signer roles per template');
+          else if (templateSignerCount === 1 && includeSenderAsSigner) errors.push('Step "' + step.label + '" (E-Signature Internal Settings): sender signing requires a DeepSign template with 2 signer roles');
+          else if (templateSignerCount === 2 && !includeSenderAsSigner) errors.push('Step "' + step.label + '" (E-Signature Internal Settings): templates with 2 signer roles require "Include sender as signer" to be enabled');
+          else if (templateSignerCount === 2 && includeSenderAsSigner && !senderRole) errors.push('Step "' + step.label + '" (E-Signature Internal Settings): Sender assigned to is required when the sender is included as a signer');
+        }
+        if (!hasTemplate && files.length > 0) {
+          if (files.length > 25) errors.push('Step "' + step.label + '" (Document Setup): workflow e-sign supports a maximum of 25 uploaded documents');
+          const invalid = files.find((f) => { const name = String(f.name || ''); const type = String(f.type || ''); return type && type !== 'application/pdf' && !/\.pdf$/i.test(name); });
+          if (invalid) errors.push('Step "' + step.label + '" (Document Setup): workflow e-sign document setup currently supports PDF documents only');
+          const allFields = files.flatMap((f) => (Array.isArray(f.fields) ? f.fields : []));
+          if (allFields.length === 0) errors.push('Step "' + step.label + '" (Document Setup): add at least one applicant field before saving');
+          else if (!allFields.some((f) => f && f.role !== 'sender')) errors.push('Step "' + step.label + '" (Document Setup): at least one field must be assigned to the applicant');
+        }
+      }
+      const hasEnabledQuestionnaireTemplate = step.propertyGroups.some((g) => (g.properties || []).some((p) => p.type === 'questionnaire-template-toggles' && p.value && typeof p.value === 'object' && Object.values(p.value).some((tpl) => tpl && tpl.enabled === true)));
+      step.propertyGroups.forEach((group) => {
+        (group.properties || []).forEach((prop) => {
+          const gname = group.groupName || 'Property Group';
+          if (prop.type === 'text-list') {
+            if (!prop.value || prop.value.length === 0) errors.push('Step "' + step.label + '" (' + gname + '): ' + prop.label + ' must have at least one item');
+            else prop.value.forEach((item, index) => { if (!item.text || item.text.trim() === '') errors.push('Step "' + step.label + '" (' + gname + '): ' + prop.label + ' item ' + (index + 1) + ' cannot be blank'); });
+          }
+          if (prop.type === 'text' && prop.required && (!prop.value || String(prop.value).trim() === '')) errors.push('Step "' + step.label + '" (' + gname + '): ' + prop.label + ' is required');
+          if (prop.type === 'select') {
+            const empty = prop.value === undefined || prop.value === null || String(prop.value).trim() === '';
+            if (prop.required && empty) errors.push('Step "' + step.label + '" (' + gname + '): ' + prop.label + ' is required');
+          }
+          if (prop.type === 'doc-upload') {
+            if (!prop.value || typeof prop.value !== 'object') errors.push('Step "' + step.label + '" cannot be empty. Please add at least one document description.');
+            else {
+              const docs = Object.values(prop.value);
+              if (docs.length === 0) errors.push('Step "' + step.label + '" cannot be empty. Please add at least one document description.');
+              else if (docs.some((d) => !d || String(d).trim() === '')) errors.push('Step "' + step.label + '" has documents with empty descriptions. All document descriptions must be filled in.');
+            }
+          }
+          if (prop.id === 'minimum-optional-uploads' && prop.value > 0) {
+            const flagsProp = group.properties.find((p) => p.id === 'document-optional-flags');
+            const optionalCount = Object.values((flagsProp && flagsProp.value) || {}).filter(Boolean).length;
+            if (prop.value > optionalCount) errors.push('Step "' + step.label + '": Minimum optional uploads (' + prop.value + ') exceeds the number of optional documents (' + optionalCount + ').');
+          }
+          if (prop.type === 'data-extraction' && prop.value && typeof prop.value === 'object') {
+            const docGroup = step.propertyGroups.find((g) => g.groupId === 'document-upload-instructions');
+            const listProp = docGroup && (docGroup.properties || []).find((p) => p.id === 'document-upload-list');
+            const liveKeys = new Set(Object.keys((listProp && listProp.value) || {}));
+            const allParams = [];
+            Object.entries(prop.value).filter(([k]) => liveKeys.has(k)).forEach(([docKey, cfg]) => {
+              if (!cfg || !cfg.enabled) return;
+              (cfg.extractions || []).forEach((entry, idx) => {
+                if (entry.parameter && !/^[a-zA-Z0-9_]+$/.test(entry.parameter)) errors.push('Step "' + step.label + '": parameter "' + entry.parameter + '" in ' + docKey + ' contains invalid characters. Use only letters, numbers, and underscores.');
+                if (entry.parameter) allParams.push(entry.parameter);
+                if (entry.parameter && !(entry.prompt && entry.prompt.trim())) errors.push('Step "' + step.label + '": extraction #' + (idx + 1) + ' in ' + docKey + ' has a parameter but no prompt.');
+              });
+            });
+            const seen = new Set();
+            allParams.forEach((p) => { if (seen.has(p)) errors.push('Step "' + step.label + '": duplicate parameter name "' + p + '". Each parameter must be unique across all documents.'); seen.add(p); });
+          }
+          if (prop.type === 'object') {
+            if (hasEnabledQuestionnaireTemplate) return;
+            if (!prop.value || typeof prop.value !== 'object') { errors.push('Step "' + step.label + '" cannot be empty. Please add at least one form field.'); return; }
+            const isLegacyFlat = Object.values(prop.value).some((v) => v && typeof v === 'object' && 'label' in v);
+            const pages = isLegacyFlat ? { page1: { fields: prop.value } } : prop.value;
+            const pageEntries = Object.entries(pages);
+            if (pageEntries.length === 0) { errors.push('Step "' + step.label + '" cannot be empty. Please add at least one form field.'); return; }
+            let totalFields = 0;
+            pageEntries.forEach(([, pageData], pageIdx) => {
+              const fields = (pageData && pageData.fields) || {};
+              const fieldEntries = Object.entries(fields);
+              totalFields += fieldEntries.length;
+              if (fieldEntries.length === 0) errors.push('Step "' + step.label + '" — Page ' + (pageIdx + 1) + ' has no questions. Please add at least one question or remove the page.');
+              fieldEntries.forEach(([fieldKey, cfg]) => {
+                const label = typeof cfg === 'string' ? cfg : (cfg && cfg.label) || '';
+                const type = typeof cfg === 'object' ? (cfg && cfg.type) || 'short-text' : 'short-text';
+                const rawOptions = typeof cfg === 'object' ? (cfg && cfg.options) || {} : {};
+                const optionsArray = Array.isArray(rawOptions) ? rawOptions : typeof rawOptions === 'object' ? Object.values(rawOptions) : [];
+                if (!label || label.trim() === '') errors.push('Step "' + step.label + '" — Page ' + (pageIdx + 1) + ' has a form field with empty label. All form field labels must be filled in.');
+                if (type === 'dropdown' || type === 'checkbox') {
+                  const valid = optionsArray.filter((o) => o && (typeof o !== 'string' || o.trim() !== ''));
+                  if (optionsArray.length > 0 && valid.length === 0) errors.push('Step "' + step.label + '" field "' + (label || fieldKey) + '" has empty options. Please fill in the options or change the field type.');
+                }
+              });
+            });
+            if (totalFields === 0) errors.push('Step "' + step.label + '" cannot be empty. Please add at least one form field.');
+          }
+        });
+      });
+    });
+    return errors;
+  };
+
+  const PUBLIC_STEP_IDS = {
+    'id-verification': 'ID_VERIFICATION', 'face-liveness': 'FACE_LIVENESS', 'age-estimation': 'AGE_ESTIMATION', 'pep-sanctions': 'PEP_SANCTIONS', 'adverse-media': 'ADVERSE_MEDIA',
+    'ip-jurisdiction': 'IP_JURISDICTION', 'vpn-detection': 'VPN_DETECTION', 'injection-detection': 'INJECTION_DETECTION', 'anti-cheat': 'ANTI_CHEAT',
+  };
+  const ALLOWED_KEYS = {
+    ID_VERIFICATION: ['minimum_age', 'maximum_age', 'expiry_date_years', 'require_secondary_id', 'require_tertiary_id', 'face_front_photo_only', 'require_front_only', 'enable_fraud_analysis', 'escalation_type', 'escalation_risk_threshold'],
+    FACE_LIVENESS: ['confidence_threshold'],
+    AGE_ESTIMATION: ['minimum_age'],
+    PEP_SANCTIONS: [], ADVERSE_MEDIA: [],
+    IP_JURISDICTION: ['allowed_jurisdictions', 'blocked_jurisdictions', 'out_of_jurisdiction_action', 'datacenter_ip_action', 'trusted_ip_list', 'escalation_type'],
+    VPN_DETECTION: ['vpn_enabled', 'vpn_action', 'datacenter_enabled', 'datacenter_action', 'tor_enabled', 'tor_action', 'trusted_ip_list', 'trusted_asn_list', 'confidence_threshold', 'escalation_type'],
+    INJECTION_DETECTION: ['action_on_detection', 'automation_handling', 'confidence_threshold', 'escalation_type'],
+    ANTI_CHEAT: ['duplicate_enabled', 'match_threshold', 'action_on_duplicate', 'multi_account_enabled', 'signal_ip_enabled', 'signal_ip_weight', 'signal_biometric_enabled', 'signal_biometric_weight', 'signal_document_enabled', 'signal_document_weight', 'signal_namedob_enabled', 'signal_namedob_weight', 'signal_device_enabled', 'signal_device_weight', 'link_sensitivity', 'action_on_multi_account', 'self_exclusion_enabled'],
+  };
+  const RUNNER_STEPS = ['ID_VERIFICATION', 'FACE_LIVENESS'];
+  const snake = (s) => String(s).replace(/-/g, '_');
+  const flatProps = (step) => (step.propertyGroups || []).flatMap((g) => (g.properties || []).map((p) => ({ ...p, groupId: g.groupId })));
+  const findVal = (props, id) => { const p = props.find((x) => x.id === id); return p ? p.value : undefined; };
+  const listify = (v) => (Array.isArray(v) ? v : String(v || '').split(/[\n,]/).map((s) => s.trim()).filter(Boolean));
+
+  const buildStepConfig = (step, apiId) => {
+    const props = flatProps(step);
+    const cfg = {};
+    if (apiId === 'ID_VERIFICATION') {
+      const age = findVal(props, 'minimum-age');
+      if (Array.isArray(age)) { cfg.minimum_age = age[0]; cfg.maximum_age = age[1]; }
+      else if (age && typeof age === 'object') { if (age.lower !== undefined) cfg.minimum_age = age.lower; if (age.upper !== undefined) cfg.maximum_age = age.upper; }
+      const expiry = findVal(props, 'expiry-date'); if (expiry !== undefined) cfg.expiry_date_years = expiry;
+      ['require-secondary-id', 'require-tertiary-id', 'face-front-photo-only', 'require-front-only', 'enable-fraud-analysis', 'escalation-type', 'escalation-risk-threshold'].forEach((id) => { const v = findVal(props, id); if (v !== undefined) cfg[snake(id)] = v; });
+      if (cfg.escalation_type && cfg.escalation_type !== 'none') cfg.enable_fraud_analysis = true;
+    } else if (apiId === 'FACE_LIVENESS') {
+      const v = findVal(props, 'confidence-threshold'); if (v !== undefined) cfg.confidence_threshold = v;
+    } else if (apiId === 'AGE_ESTIMATION') {
+      const age = findVal(props, 'minimum-age');
+      if (Array.isArray(age)) cfg.minimum_age = age[0]; else if (age && typeof age === 'object' && age.lower !== undefined) cfg.minimum_age = age.lower;
+    } else {
+      props.forEach((p) => {
+        if (p.type === 'hidden' || p.type === 'weight-display') return;
+        const key = snake(p.id);
+        if (!(ALLOWED_KEYS[apiId] || []).includes(key)) return;
+        let v = p.value;
+        if (/_list$/.test(key) || /_jurisdictions$/.test(key)) v = listify(v);
+        cfg[key] = v;
+      });
+    }
+    const allowed = ALLOWED_KEYS[apiId] || [];
+    const out = {};
+    allowed.forEach((k) => { if (cfg[k] !== undefined && cfg[k] !== null) out[k] = cfg[k]; });
+    return out;
+  };
+
+  const buildPublicWorkflowPayload = (name, orderedSteps) => {
+    const steps = [];
+    const unsupported = [];
+    const seen = new Set();
+    orderedSteps.forEach((step) => {
+      const apiId = PUBLIC_STEP_IDS[step.id];
+      if (!apiId) { unsupported.push(step); return; }
+      if (seen.has(apiId)) return;
+      seen.add(apiId);
+      const config = buildStepConfig(step, apiId);
+      steps.push(Object.keys(config).length ? { id: apiId, config } : { id: apiId });
+    });
+    return { payload: { name, steps: steps.slice(0, 10) }, unsupported, truncated: steps.length > 10 };
+  };
+
+  const json = (v) => JSON.stringify(v, null, 2);
+  const curlFor = (method, path, body) => 'curl -X ' + method + ' "' + API_BASE + path + '" \\\n  -H "x-api-key: YOUR_API_KEY"' + (body ? ' \\\n  -H "Content-Type: application/json" \\\n  -d \'' + json(body) + '\'' : '');
+  const nodeFor = (method, path, body) => 'const response = await fetch("' + API_BASE + path + '", {\n  method: "' + method + '",\n  headers: {\n    "x-api-key": "YOUR_API_KEY",' + (body ? '\n    "Content-Type": "application/json",' : '') + '\n  },' + (body ? '\n  body: JSON.stringify(' + json(body).split('\n').join('\n  ') + '),' : '') + '\n});\n\nconst data = await response.json();';
+  const pyFor = (method, path, body) => 'import requests\n\nresponse = requests.' + method.toLowerCase() + '(\n    "' + API_BASE + path + '",\n    headers={"x-api-key": "YOUR_API_KEY"' + (body ? ', "Content-Type": "application/json"' : '') + '},' + (body ? '\n    json=' + json(body).split('\n').join('\n    ') + ',' : '') + '\n)\n\ndata = response.json()';
+
+  const CodeBlock = ({ code, lang, testId }) => {
+    return (
+      <div className="wb-sd-code" data-testid={testId}>
+        <div className="wb-sd-code-bar"><span className="wb-sd-code-lang">{lang}</span><SmallIconButton icon="solar:copy-bold" width={16} label="Copy" onClick={() => { try { navigator.clipboard.writeText(code); } catch (e) {} }} /></div>
+        <pre className="wb-sd-pre">{code}</pre>
+      </div>
+    );
+  };
+
+  const CodeGroup = ({ method, path, body, testId }) => {
+    const [lang, setLang] = useState('curl');
+    const langs = [{ value: 'curl', label: 'cURL' }, { value: 'node', label: 'Node.js' }, { value: 'python', label: 'Python' }];
+    const code = lang === 'curl' ? curlFor(method, path, body) : lang === 'node' ? nodeFor(method, path, body) : pyFor(method, path, body);
+    return (
+      <div className="wb-sd-codegroup" data-testid={testId}>
+        <div className="wb-sd-codegroup-tabs">{langs.map((l) => <button key={l.value} type="button" className={cx('wb-sd-codegroup-tab', lang === l.value && 'wb-sd-codegroup-tab-on')} onClick={() => setLang(l.value)}>{l.label}</button>)}</div>
+        <CodeBlock code={code} lang={langs.find((l) => l.value === lang).label} />
+      </div>
+    );
+  };
+
+  const Endpoint = ({ method, path, href, children }) => (
+    <div className="wb-sd-endpoint">
+      <span className={cx('wb-sd-method', 'wb-sd-method-' + method.toLowerCase())}>{method}</span>
+      <code className="wb-sd-path">{path}</code>
+      {href ? <a className="wb-sd-doclink" href={href} target="_blank" rel="noopener noreferrer">API reference <Iconify icon="eva:arrow-ios-back-fill" width={14} style={{ transform: 'rotate(180deg)' }} /></a> : null}
+      {children}
+    </div>
+  );
+
+  const FieldTable = ({ rows }) => (
+    <table className="wb-sd-table">
+      <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+      <tbody>{rows.map((r) => <tr key={r[0]}><td><code>{r[0]}</code></td><td className="wb-sd-muted">{r[1]}</td><td>{r[2]}</td></tr>)}</tbody>
+    </table>
+  );
+
+  const SESSION_FIELDS = [
+    ['first_name', 'string', 'Applicant first name (required)'], ['last_name', 'string', 'Applicant last name (required)'], ['email', 'string', 'Applicant email (required)'],
+    ['phone', 'string', 'E.164 phone number, e.g. +15192223333 (required)'], ['workflow_id', 'string', 'The id returned by POST /v1/workflows in step 1'],
+    ['external_id', 'string', 'Your own reference for this applicant'], ['redirect_url', 'string', 'HTTPS URL the applicant returns to after the session'],
+    ['send_email_invite', 'boolean', 'Send the hosted link by email (default true)'], ['send_phone_invite', 'boolean', 'Send the hosted link by SMS (default true)'], ['expires_in_hours', 'integer', '1-8760, overrides the workflow expiry'],
+  ];
+
+  const TS_TYPES = [
+    'type WorkflowStepId =',
+    '  | "ID_VERIFICATION" | "FACE_LIVENESS" | "AGE_ESTIMATION" | "PEP_SANCTIONS" | "ADVERSE_MEDIA"',
+    '  | "IP_JURISDICTION" | "VPN_DETECTION" | "INJECTION_DETECTION" | "ANTI_CHEAT";',
+    '',
+    'type EnforcementAction = "block" | "flag" | "step-up" | "allow";',
+    '',
+    'interface IdVerificationConfig {',
+    '  minimum_age?: number;            // 1-100, default 18',
+    '  maximum_age?: number;            // 1-100, default 51',
+    '  expiry_date_years?: number;      // 0-10, default 2',
+    '  require_secondary_id?: boolean;  // default false',
+    '  require_tertiary_id?: boolean;   // default false',
+    '  face_front_photo_only?: boolean; // default false',
+    '  require_front_only?: boolean;    // default false',
+    '  enable_fraud_analysis?: boolean; // default false, implied by escalation_type != "none"',
+    '  escalation_type?: "none" | "nfc-passport";',
+    '  escalation_risk_threshold?: number; // 0-100, default 60',
+    '}',
+    'interface FaceLivenessConfig { confidence_threshold?: number; } // 1-100, default 70',
+    'interface AgeEstimationConfig { minimum_age?: number; }        // 1-100, default 18',
+    'interface IpJurisdictionConfig {',
+    '  allowed_jurisdictions?: string[]; // ISO 3166 codes, e.g. "CA", "US-WA"',
+    '  blocked_jurisdictions?: string[];',
+    '  out_of_jurisdiction_action?: EnforcementAction; // default "block"',
+    '  datacenter_ip_action?: EnforcementAction;       // default "flag"',
+    '  trusted_ip_list?: string[];                     // CIDR ranges or ASNs',
+    '  escalation_type?: string;                       // default "none"',
+    '}',
+    'interface VpnDetectionConfig {',
+    '  vpn_enabled?: boolean; vpn_action?: EnforcementAction;',
+    '  datacenter_enabled?: boolean; datacenter_action?: EnforcementAction;',
+    '  tor_enabled?: boolean; tor_action?: EnforcementAction;',
+    '  trusted_ip_list?: string[]; trusted_asn_list?: string[];',
+    '  confidence_threshold?: number; escalation_type?: string;',
+    '}',
+    'interface InjectionDetectionConfig {',
+    '  action_on_detection?: "block" | "flag" | "step-up" | "rechallenge" | "allow";',
+    '  automation_handling?: "block" | "flag" | "step-up" | "ignore";',
+    '  confidence_threshold?: number; escalation_type?: string;',
+    '}',
+    'interface AntiCheatConfig {',
+    '  duplicate_enabled?: boolean; match_threshold?: number; action_on_duplicate?: "flag" | "manual-review" | "block" | "allow";',
+    '  multi_account_enabled?: boolean; link_sensitivity?: number; action_on_multi_account?: "flag" | "manual-review" | "block" | "allow";',
+    '  signal_ip_enabled?: boolean; signal_ip_weight?: number;',
+    '  signal_biometric_enabled?: boolean; signal_biometric_weight?: number;',
+    '  signal_document_enabled?: boolean; signal_document_weight?: number;',
+    '  signal_namedob_enabled?: boolean; signal_namedob_weight?: number;',
+    '  signal_device_enabled?: boolean; signal_device_weight?: number;',
+    '  self_exclusion_enabled?: boolean;',
+    '}',
+    '',
+    'interface CreateWorkflowRequest {',
+    '  name: string;                       // 1-255 characters',
+    '  steps: Array<{ id: WorkflowStepId; config?: object }>; // 1-10 unique steps, in order',
+    '}',
+    'interface Workflow {',
+    '  id: string; name: string; status: "active" | "inactive";',
+    '  organization_id: string; created_at: string; updated_at: string;',
+    '  steps: Array<{ id: string; config: Record<string, unknown> }>; // db ids (kebab-case), snake_case config',
+    '}',
+    'interface CreateSessionRequest {',
+    '  first_name: string; last_name: string; email: string; phone: string; // E.164',
+    '  workflow_id?: string; external_id?: string; redirect_url?: string;',
+    '  send_email_invite?: boolean; send_phone_invite?: boolean; expires_in_hours?: number;',
+    '}',
+    'interface CreateSessionResponse {',
+    '  id: string; session_url: string; externalId?: string; expires_at?: string;',
+    '  links: Array<{ rel: string; href: string; description: string }>;',
+    '}',
+    'type SessionStatus = "PENDING" | "SUBMITTED" | "VERIFIED" | "REJECTED" | "VOIDED" | "EXPIRED" | "FAILED";',
+    'interface WebhookEvent {',
+    '  type: "session.created" | "session.status.submitted" | "session.status.verified" | "session.status.rejected" | "session.status.failed";',
+    '  data: SessionRecord; // same object as GET /v1/sessions/{id} -> session_record',
+    '}',
+    'interface SessionRecord {',
+    '  id: string; organization_id: string; user_id: string; external_id?: string;',
+    '  status: SessionStatus; session_progress: "PENDING" | "STARTED" | "COMPLETED";',
+    '  workflow_id: string; workflow_steps: WorkflowStepId[];',
+    '  created_at: string; updated_at: string; submitted_at?: string; expires_at?: string;',
+    '  analysis_data?: { id_matches_selfie?: boolean; faceliveness_score?: number; pep_sanctions_data?: object; adverse_media_data?: object; [k: string]: unknown };',
+    '  meta_data?: { applicantSubmissionIp?: string; applicantSubmissionDevice?: string; [k: string]: unknown };',
+    '}',
+  ].join('\n');
+
+  const ValidationErrorsDialog = ({ open, onClose, errors }) => (
+    <MuiDialog open={open} onClose={onClose} maxWidth="sm" testId="wb-validation-dialog" paperStyle={{ borderRadius: 16 }}
+      title={(
+        <div className="wb-sd-vtitle">
+          <span className="wb-sd-vicon"><Iconify icon="solar:danger-triangle-bold-duotone" width={22} /></span>
+          <span className="wb-sd-h6">Can't save just yet</span>
+        </div>
+      )}
+      actions={<MuiButton variant="contained" style={{ minWidth: 100 }} onClick={onClose} testId="wb-validation-close">Got it</MuiButton>}>
+      <div className="wb-sd-body2 wb-sd-muted" style={{ marginBottom: 16 }}>Please fix the following before saving:</div>
+      <div className="wb-sd-stack10">
+        {errors.map((m, i) => <div key={i + m} className="wb-sd-vrow"><span className="wb-sd-vdot" /><span className="wb-sd-body2" style={{ lineHeight: 1.55 }}>{m}</span></div>)}
+      </div>
+    </MuiDialog>
+  );
+
+  const SaveCustomWorkflowDialog = ({ open, onClose, initialName, onSave }) => {
+    const [name, setName] = useState(initialName || '');
+    const [error, setError] = useState('');
+    useEffect(() => { if (open) { setName(initialName || ''); setError(''); } }, [open, initialName]);
+    const submit = () => { if (!name.trim()) { setError('Workflow name is required!'); return; } onSave(name.trim()); };
+    return (
+      <MuiDialog open={open} onClose={onClose} maxWidth="sm" testId="wb-save-dialog" title={<span className="wb-sd-h6" style={{ fontWeight: 500 }}>Save Custom Workflow</span>}
+        actions={<><MuiButton variant="outlined" onClick={onClose} testId="wb-save-cancel">Cancel</MuiButton><MuiButton variant="contained" gradient onClick={submit} testId="wb-save-confirm">Save</MuiButton></>}>
+        <div style={{ paddingTop: 8 }}>
+          <MuiTextField fullWidth label="Workflow Name" value={name} onChange={(v) => { setName(v); setError(''); }} error={!!error} helperText={error} testId="wb-save-name" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} />
+        </div>
+      </MuiDialog>
+    );
+  };
+
+  const IntegrationDialog = ({ open, onClose, name, orderedSteps }) => {
+    const [tab, setTab] = useState('create');
+    const built = useMemo(() => buildPublicWorkflowPayload(name, orderedSteps), [name, orderedSteps]);
+    const publicIds = built.payload.steps.map((s) => s.id);
+    const runnerOk = publicIds.length > 0 && publicIds.every((id) => RUNNER_STEPS.includes(id));
+    const [apiKey, setApiKey] = useState('');
+    const [sending, setSending] = useState(false);
+    const [sendResult, setSendResult] = useState(null);
+    useEffect(() => { if (open) { setTab('create'); setSendResult(null); } }, [open]);
+    const sendToApi = () => {
+      if (!apiKey.trim()) { setSendResult({ ok: false, status: 0, body: 'Enter an API key first.' }); return; }
+      setSending(true); setSendResult(null);
+      fetch(API_BASE + '/v1/workflows', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey.trim() }, body: JSON.stringify(built.payload) })
+        .then((r) => r.text().then((txt) => { setSending(false); setSendResult({ ok: r.ok, status: r.status, body: txt.slice(0, 800) }); }))
+        .catch((err) => { setSending(false); setSendResult({ ok: false, status: 0, body: String(err && err.message) }); });
+    };
+    const download = () => {
+      try {
+        const blob = new Blob([json(built.payload)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = (String(name || 'workflow').toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'workflow') + '.json';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+      } catch (e) {}
+    };
+    const sessionBody = { first_name: 'Jane', last_name: 'Doe', email: 'jane.doe@example.com', phone: '+15192223333', workflow_id: '<workflow.id from step 1>', external_id: 'user-12345', redirect_url: 'https://yourapp.com/verify-callback' };
+    const runnerBody = { first_name: 'Jane', last_name: 'Doe', email: 'jane.doe@example.com', phone: '+15192223333', external_id: 'user-12345' };
+    const tabs = [{ value: 'create', label: '1. Create workflow' }, { value: 'session', label: '2. Start a session' }, { value: 'results', label: '3. Get results' }, { value: 'types', label: 'Data structures' }];
+    return (
+      <MuiDialog open={open} onClose={onClose} maxWidth="md" testId="wb-integration-dialog" paperStyle={{ maxWidth: 860 }}
+        title={(
+          <div className="wb-sd-ititle">
+            <div>
+              <div className="wb-sd-h6">Run "{name}" in your integration</div>
+              <div className="wb-sd-caption wb-sd-muted">Everything below uses the public API with your <code>x-api-key</code>. Base URL {API_BASE}.</div>
+            </div>
+            <SmallIconButton icon="mingcute:close-line" width={20} label="Close" onClick={onClose} testId="wb-integration-close" />
+          </div>
+        )}
+        actions={<><MuiButton variant="text" onClick={onClose}>Close</MuiButton><MuiButton variant="outlined" onClick={() => { try { navigator.clipboard.writeText(json(built.payload)); } catch (e) {} }} testId="wb-save-copy">Copy payload</MuiButton><MuiButton variant="contained" gradient onClick={download} testId="wb-save-download">Download JSON</MuiButton></>}>
+        <MuiTabs value={tab} onChange={setTab} tabs={tabs} style={{ marginBottom: 16, gap: 24 }} />
+        {tab === 'create' ? (
+          <div className="wb-sd-stack16">
+            <Endpoint method="POST" path="/v1/workflows" href="/api-reference/workflows/create-workflow" />
+            <p className="wb-sd-body2 wb-sd-muted">Creates the workflow once. Save the returned <code>workflow.id</code>; every session you create in step 2 references it. Sandbox API keys cannot create workflows.</p>
+            {built.unsupported.length ? (
+              <MuiAlert severity="warning" variant="outlined" testId="wb-unsupported-alert">
+                <div className="wb-sd-semibold">{built.unsupported.length === 1 ? '1 step is not available via the public API yet' : built.unsupported.length + ' steps are not available via the public API yet'}</div>
+                <div className="wb-sd-chips">{built.unsupported.map((s) => <MuiChip key={keyOf(s)} label={stepLabel(s)} variant="soft" color="warning" icon={<StepIcon icon={utils.getStepIcon(s.id)} size={14} color="currentColor" />} />)}</div>
+                <div className="wb-sd-caption" style={{ marginTop: 6 }}>They were left out of the payload. Add them to this workflow in the Admin Console (app.deepidv.com) and they will run in hosted sessions.</div>
+              </MuiAlert>
+            ) : null}
+            {built.truncated ? <MuiAlert severity="warning" variant="outlined">The public API accepts at most 10 steps; the payload was trimmed to the first 10.</MuiAlert> : null}
+            {!built.payload.steps.length ? <MuiAlert severity="error" variant="outlined">None of the steps in this workflow can be created through the public API yet.</MuiAlert> : null}
+            <CodeGroup method="POST" path="/v1/workflows" body={built.payload} testId="wb-save-json" />
+            <details className="wb-sd-details">
+              <summary>Response (201 Created)</summary>
+              <FieldTable rows={[['workflow.id', 'string', 'Use this as workflow_id when creating sessions'], ['workflow.name', 'string', 'Workflow name'], ['workflow.status', 'string', 'Always active for new workflows'], ['workflow.organization_id', 'string', 'Your organization id'], ['workflow.steps[]', 'array', 'Steps with resolved configuration (db ids such as id-verification, snake_case config)'], ['workflow.created_at / updated_at', 'string', 'ISO 8601 timestamps']]} />
+              <div className="wb-sd-caption wb-sd-muted" style={{ marginTop: 8 }}>Errors: 400 invalid body or duplicate step, 401 bad key, 403 sandbox key, 429 rate limited.</div>
+            </details>
+            <div className="wb-sd-send">
+              <div className="wb-sd-semibold wb-sd-body2">Try it with your API key (optional)</div>
+              <div className="wb-sd-row8">
+                <MuiTextField fullWidth size="small" type="password" placeholder="x-api-key" value={apiKey} onChange={setApiKey} testId="wb-api-key" />
+                <MuiButton variant="outlined" onClick={sendToApi} disabled={sending} testId="wb-send-api">{sending ? 'Sending...' : 'Send'}</MuiButton>
+              </div>
+              <div className="wb-sd-caption wb-sd-muted">POSTs the payload above straight from your browser. The key is never stored.</div>
+              {sendResult ? <MuiAlert severity={sendResult.ok ? 'success' : 'error'} variant="soft"><div className="wb-sd-semibold">HTTP {sendResult.status}</div><pre className="wb-sd-pre wb-sd-pre-inline">{sendResult.body}</pre></MuiAlert> : null}
+            </div>
+          </div>
+        ) : null}
+        {tab === 'session' ? (
+          <div className="wb-sd-stack16">
+            <div className="wb-sd-card">
+              <div className="wb-sd-cardhead"><MuiChip label="Hosted" color="primary" variant="soft" /><span className="wb-sd-semibold">Send the applicant a deepidv-hosted link</span></div>
+              <Endpoint method="POST" path="/v1/sessions" href="/api-reference/sessions/create-session" />
+              <p className="wb-sd-body2 wb-sd-muted">Pass the <code>workflow_id</code> from step 1. The response contains a <code>session_url</code> you can open in your app, and deepidv emails or texts the invite unless you turn that off.</p>
+              <FieldTable rows={SESSION_FIELDS} />
+              <CodeGroup method="POST" path="/v1/sessions" body={sessionBody} />
+              <details className="wb-sd-details">
+                <summary>Response (200)</summary>
+                <FieldTable rows={[['id', 'string', 'Session id, use it for GET /v1/sessions/{id} and to match webhooks'], ['session_url', 'string', 'Hosted verification URL (includes redirect_url when provided)'], ['externalId', 'string', 'Echoed if provided'], ['expires_at', 'string', 'ISO 8601 expiry when configured'], ['links[]', 'array', 'admin_console and session_details links']]} />
+              </details>
+            </div>
+            <div className="wb-sd-card">
+              <div className="wb-sd-cardhead"><MuiChip label="Headless" color="info" variant="soft" /><span className="wb-sd-semibold">Drive the steps yourself with the Workflow Runner API</span></div>
+              {runnerOk ? <MuiAlert severity="success" variant="soft">This workflow only uses ID_VERIFICATION / FACE_LIVENESS, so it can run through the Workflow Runner.</MuiAlert> : <MuiAlert severity="info" variant="outlined">The Workflow Runner currently supports workflows made only of ID_VERIFICATION and FACE_LIVENESS. This workflow includes other steps, so use the hosted flow above for it.</MuiAlert>}
+              <Endpoint method="POST" path={'/v1/workflows/{workflow_id}/sessions'} href="/api-reference/workflow-runner/create-workflow-session" />
+              <p className="wb-sd-body2 wb-sd-muted">Creates a session without sending invites and returns the ordered <code>steps[]</code> with each step's <code>requirements</code> and <code>current_step</code>.</p>
+              <CodeGroup method="POST" path="/v1/workflows/{workflow_id}/sessions" body={runnerBody} />
+              <Endpoint method="POST" path={'/v1/sessions/{session_id}/steps/{step_id}'} href="/api-reference/workflow-runner/submit-workflow-step"><span className="wb-sd-caption wb-sd-muted">Submit steps in order (uploads come from Create Session Uploads).</span></Endpoint>
+              <Endpoint method="GET" path={'/v1/sessions/{session_id}/workflow'} href="/api-reference/workflow-runner/get-workflow-state"><span className="wb-sd-caption wb-sd-muted">Read every step's status and what to submit next.</span></Endpoint>
+            </div>
+          </div>
+        ) : null}
+        {tab === 'results' ? (
+          <div className="wb-sd-stack16">
+            <div className="wb-sd-card">
+              <div className="wb-sd-cardhead"><MuiChip label="Poll" color="default" variant="soft" /><span className="wb-sd-semibold">Read the session on demand</span></div>
+              <Endpoint method="GET" path={'/v1/sessions/{id}'} href="/api-reference/sessions/retrieve-session" />
+              <CodeGroup method="GET" path="/v1/sessions/{id}" />
+              <FieldTable rows={[['session_record.status', 'string', 'PENDING, SUBMITTED, VERIFIED, REJECTED, VOIDED, EXPIRED or FAILED'], ['session_record.session_progress', 'string', 'PENDING, STARTED or COMPLETED'], ['session_record.workflow_id / workflow_steps', 'string / string[]', 'The workflow this session ran and its step ids'], ['session_record.analysis_data', 'object', 'id_matches_selfie, faceliveness_score, pep_sanctions_data, adverse_media_data, document_risk_data, custom_form_data ...'], ['session_record.meta_data', 'object', 'Submission IP, device, browser, location, failureData'], ['resource_links', 'object', 'Presigned URLs for uploaded images (time limited)']]} />
+            </div>
+            <div className="wb-sd-card">
+              <div className="wb-sd-cardhead"><MuiChip label="Push" color="success" variant="soft" /><span className="wb-sd-semibold">Or receive webhooks</span> <a className="wb-sd-doclink" href="/webhooks/overview" target="_blank" rel="noopener noreferrer">Webhooks guide</a></div>
+              <p className="wb-sd-body2 wb-sd-muted">Register an HTTPS endpoint in the Admin Console. Each delivery is <code>{'{ "type": "...", "data": SessionRecord }'}</code> signed with the <code>deepidv-signature</code> header.</p>
+              <FieldTable rows={[['session.created', 'event', 'A session was created (no analysis yet)'], ['session.status.submitted', 'event', 'Applicant finished; analysis_data is populated'], ['session.status.verified', 'event', 'Marked verified by rules or manual review'], ['session.status.rejected', 'event', 'Marked rejected by rules or manual review'], ['session.status.failed', 'event', 'Hit the workflow failed-attempt limit']]} />
+              <CodeBlock lang="JSON" code={json({ type: 'session.status.submitted', data: { id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', external_id: 'user-12345', status: 'SUBMITTED', session_progress: 'COMPLETED', workflow_id: '<workflow.id>', workflow_steps: publicIds, submitted_at: '2026-09-14T14:35:00.000Z', analysis_data: { id_matches_selfie: true, faceliveness_score: 98.2 } } })} />
+            </div>
+          </div>
+        ) : null}
+        {tab === 'types' ? (
+          <div className="wb-sd-stack16">
+            <p className="wb-sd-body2 wb-sd-muted">Request and response shapes for every call above, written as TypeScript. Config keys per step mirror the public API contract.</p>
+            <CodeBlock lang="TypeScript" code={TS_TYPES} testId="wb-types" />
+          </div>
+        ) : null}
+      </MuiDialog>
+    );
+  };
+
+  const SaveFlow = ({ request, onDone }) => {
+    const { state, actions } = useWorkflow();
+    const workflow = state.workflow;
+    const [validationErrors, setValidationErrors] = useState([]);
+    const [saveOpen, setSaveOpen] = useState(false);
+    const [integration, setIntegration] = useState(null);
+    const lastReq = useRef(null);
+
+    useEffect(() => {
+      if (!request || request === lastReq.current) return;
+      lastReq.current = request;
+      const steps = workflow.steps || [];
+      const preErrors = [];
+      if (steps.find((s) => s.id === 'add-step') || steps.length < MIN_STEPS) preErrors.push(t(MIN_STEPS === 1 ? 'createErrorMinSteps_one' : 'createErrorMinSteps_other', 'Please insert at least {{count}} step into your workflow before saving.', { count: MIN_STEPS }));
+      if (!workflow.name || !workflow.name.trim()) preErrors.push(t('createErrorNoName', 'Please enter a workflow name before saving.'));
+      if (preErrors.length) { setValidationErrors(preErrors); return; }
+      const errors = stepValidation(workflow);
+      if (errors.length) { setValidationErrors(errors); return; }
+      const res = utils.resolveStepOrderFromConnections(steps, (workflow.canvasData && workflow.canvasData.connections) || []);
+      const warnings = (res && res.warnings) || [];
+      if (warnings.some((w) => /cycle/i.test(String(w)))) { setValidationErrors([t('createErrorCycle', 'Workflow connections contain a cycle. Please remove circular connections.')]); return; }
+      setSaveOpen(true);
+    }, [request]);
+
+    const orderedSteps = useMemo(() => {
+      const steps = workflow.steps || [];
+      const res = utils.resolveStepOrderFromConnections(steps, (workflow.canvasData && workflow.canvasData.connections) || []);
+      const ordered = (res && (res.orderedSteps || res.ordered)) || [];
+      const seen = new Set(ordered.map(keyOf));
+      return ordered.concat(steps.filter((s) => !seen.has(keyOf(s))));
+    }, [workflow]);
+
+    const handleSave = (name) => {
+      actions.setName({ name });
+      setSaveOpen(false);
+      setIntegration({ name, orderedSteps });
+    };
+
+    return (
+      <>
+        <ValidationErrorsDialog open={validationErrors.length > 0} errors={validationErrors} onClose={() => { setValidationErrors([]); if (onDone) onDone(); }} />
+        <SaveCustomWorkflowDialog open={saveOpen} initialName={workflow.name || ''} onClose={() => { setSaveOpen(false); if (onDone) onDone(); }} onSave={handleSave} />
+        <IntegrationDialog open={!!integration} name={integration ? integration.name : ''} orderedSteps={integration ? integration.orderedSteps : []} onClose={() => { setIntegration(null); if (onDone) onDone(); }} />
+      </>
+    );
+  };
+
+  return { SaveFlow, stepValidation, buildPublicWorkflowPayload, PUBLIC_STEP_IDS };
+};

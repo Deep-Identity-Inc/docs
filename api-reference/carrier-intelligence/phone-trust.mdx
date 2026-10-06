@@ -1,0 +1,169 @@
+---
+title: Phone Trust
+description: Ask the mobile carrier for SIM-swap and call-forwarding signals on a phone number
+api: POST /v1/screening/phone-trust
+---
+
+```
+POST /v1/screening/phone-trust
+```
+
+Asks the subscriber's mobile carrier for account-takeover signals on a phone number: a recent **SIM swap** and active **unconditional call forwarding**. Returns synchronously with a `tripped` verdict for the requested sensitivity.
+
+The check is passive. No SMS is sent to the subscriber, and the check never blocks anything on its own. Use `tripped` in your own flow, for example to require a step-up before a high-value action.
+
+<Note>
+Carrier coverage varies by country. Where the carrier route is not live, signals come back as `NO_DATA` and the check never trips. UK numbers return live data today; US and Canadian numbers return `NO_DATA`.
+</Note>
+
+## Request
+
+### Headers
+
+| Header         | Required | Description        |
+| -------------- | -------- | ------------------ |
+| `x-api-key`    | Yes      | Your API key       |
+| `Content-Type` | Yes      | `application/json` |
+
+### Body parameters
+
+| Parameter     | Type   | Required | Description |
+| ------------- | ------ | -------- | ----------- |
+| `phone`       | string | Yes\*    | Mobile number in E.164 format (`+` and country code). Bare 10-digit North American numbers are treated as `+1`. |
+| `sessionId`   | string | No       | Attach the result to an existing verification session instead of creating a standalone screening record. See [Attaching to a session](#attaching-to-a-session). |
+| `sensitivity` | string | No       | `low`, `medium` (default) or `high`. See [Sensitivity](#sensitivity). |
+| `email`       | string | No       | Applicant email for the screening record. A placeholder is synthesized when omitted. |
+| `firstName`   | string | No       | Applicant first name for the screening record (1–255 chars). |
+| `lastName`    | string | No       | Applicant last name for the screening record (1–255 chars). |
+
+\* Required unless `sessionId` is given, in which case it defaults to the session applicant's phone.
+
+### Sensitivity
+
+| Sensitivity | Trips on |
+| ----------- | -------- |
+| `low`       | SIM swap in the last 72 hours only |
+| `medium`    | SIM swap in the last 72 hours or the last 30 days, or active unconditional call forwarding |
+| `high`      | Same as `medium` |
+
+`NO_DATA` on a signal never trips the check.
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.deepidv.com/v1/screening/phone-trust \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "phone": "+447425604497",
+    "sensitivity": "medium"
+  }'
+```
+
+```javascript Node.js
+const response = await fetch("https://api.deepidv.com/v1/screening/phone-trust", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "x-api-key": "YOUR_API_KEY",
+  },
+  body: JSON.stringify({
+    phone: "+447425604497",
+    sensitivity: "medium",
+  }),
+});
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://api.deepidv.com/v1/screening/phone-trust",
+    headers={
+        "Content-Type": "application/json",
+        "x-api-key": "YOUR_API_KEY",
+    },
+    json={
+        "phone": "+447425604497",
+        "sensitivity": "medium",
+    },
+)
+```
+
+</CodeGroup>
+
+## Response
+
+### 200 — Success
+
+| Field            | Type    | Description |
+| ---------------- | ------- | ----------- |
+| `tripped`        | boolean | `true` when the signals exceed the chosen sensitivity |
+| `tripReasons`    | array   | Zero or more of `SIM_SWAP_HIGH_RISK`, `SIM_SWAP_MEDIUM_RISK`, `CALL_FORWARDING_ACTIVE` |
+| `simSwappedRisk` | string  | `HIGH_RISK` (SIM changed in the last 72 hours), `MEDIUM_RISK` (last 30 days), `LOW_RISK` (no recent change) or `NO_DATA` |
+| `simChangedDate` | string  | ISO 8601 timestamp of the last SIM change, when the carrier reports it |
+| `forwardingRisk` | string  | `HIGH_RISK` (unconditional call forwarding active), `NO_RISK` or `NO_DATA` |
+| `sensitivity`    | string  | The sensitivity that was applied |
+| `statusMessage`  | string  | Carrier status text |
+| `checkedAt`      | string  | ISO 8601 timestamp of the check |
+| `correlationId`  | string  | Provider correlation id. Quote it in support requests |
+| `sessionId`      | string  | Present when the result was attached to a verification session |
+
+### Error responses
+
+| Status                    | Description |
+| ------------------------- | ----------- |
+| `400 Bad Request`         | Request body failed schema validation, or `sessionId` was given without `phone` and the session applicant has no phone on file |
+| `401 Unauthorized`        | API key is invalid |
+| `402 Payment Required`    | Insufficient balance for this check |
+| `403 Forbidden`           | API key is missing, or the session belongs to another organization |
+| `404 Not Found`           | `sessionId` does not exist |
+| `503 Service Unavailable` | The carrier data provider is temporarily unavailable. Nothing was billed; retry later |
+| `500 Server Error`        | Unexpected server error |
+
+<ResponseExample>
+```json 200
+{
+  "tripped": false,
+  "tripReasons": [],
+  "simSwappedRisk": "LOW_RISK",
+  "simChangedDate": "2025-09-15T16:27:35.000Z",
+  "forwardingRisk": "NO_RISK",
+  "sensitivity": "medium",
+  "statusMessage": "Response from one supplier",
+  "checkedAt": "2026-09-16T16:27:35.444Z",
+  "correlationId": "c1793fcc-2dd0-4808-baf2-006955c3ffcc"
+}
+```
+
+```json 200 (tripped)
+{
+  "tripped": true,
+  "tripReasons": ["SIM_SWAP_HIGH_RISK"],
+  "simSwappedRisk": "HIGH_RISK",
+  "simChangedDate": "2026-09-15T08:00:00.000Z",
+  "forwardingRisk": "NO_RISK",
+  "sensitivity": "medium",
+  "statusMessage": "Response from one supplier",
+  "checkedAt": "2026-09-16T16:27:35.444Z",
+  "correlationId": "5a93f894-7e78-45ad-99c6-5432c83d8ef4"
+}
+```
+</ResponseExample>
+
+## Attaching to a session
+
+By default each call is filed as a completed **silent-screening** session for audit and billed on success. Pass `sessionId` to attach the result to one of your existing verification sessions instead:
+
+- The result is written to that session's `analysis_data.phone_checks.trust`, visible on [Retrieve Session](/api-reference/sessions/retrieve-session) and in the console's Carrier Intelligence tab.
+- `phone` may be omitted; it defaults to the session applicant's phone.
+- A repeat call overwrites the previous result.
+- If the session's workflow already contains the Phone Trust Check step, no second charge is taken because the passive step billed at session creation.
+
+## Related
+
+- [Carrier Age Gate](/api-reference/carrier-intelligence/carrier-age-gate)
+- [Phone Ownership](/api-reference/carrier-intelligence/phone-ownership)

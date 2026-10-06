@@ -1,0 +1,131 @@
+---
+title: Start Workflow
+description: Hand off an un-started workflow session to an SDK runner
+api: POST /v1/sessions/{session_id}/workflow/start
+---
+
+```
+POST /v1/sessions/{session_id}/workflow/start
+```
+
+Validates that a headless session created via [Create Workflow Session](/api-reference/workflow-runner/create-workflow-session) is still runnable, then returns its execution state. This is a **validate-only** call — it doesn't execute any step or otherwise mutate session state — used by SDK runners to confirm a session before beginning to submit steps.
+
+<Info>
+  You don't need to call this endpoint before submitting steps — it's a convenience check. [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step) performs the same validity checks itself.
+</Info>
+
+## Request
+
+### Headers
+
+| Header | Required | Description |
+|---|---|---|
+| `x-api-key` | Yes | Your organization's API key |
+
+### Path parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `session_id` | string (uuid) | Yes | The session to start |
+
+### Example request
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/workflow/start \
+  -H "x-api-key: YOUR_API_KEY"
+```
+
+```javascript Node.js
+const response = await fetch(
+  "https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/workflow/start",
+  { method: "POST", headers: { "x-api-key": "YOUR_API_KEY" } }
+);
+
+const state = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/workflow/start",
+    headers={"x-api-key": "YOUR_API_KEY"},
+)
+
+state = response.json()
+```
+
+</CodeGroup>
+
+## Response
+
+### 200 — Success
+
+Returns the same execution-state envelope as [Get Workflow State](/api-reference/workflow-runner/get-workflow-state#200-success) — `session_id`, `status`, `session_progress`, `steps`, `current_step`, `attempts_remaining`.
+
+### Error responses
+
+| Status | Description |
+|---|---|
+| `400` | Invalid `session_id` path parameter, or the session's workflow contains a step type not supported by the Workflow Runner API (response includes `invalid_steps`) |
+| `401` | Invalid or missing API key |
+| `403` | The session belongs to a different organization |
+| `404` | Session not found, or no workflow execution state exists for this session |
+| `409` | The session has already been started, or is no longer runnable (not `PENDING`) |
+| `429` | Too many requests |
+
+<ResponseExample>
+
+```json 200
+{
+  "session_id": "80e801af-991b-425c-96fc-f5e07d794253",
+  "status": "PENDING",
+  "session_progress": "PENDING",
+  "steps": [
+    {
+      "step_id": "ID_VERIFICATION",
+      "status": "PENDING",
+      "attempts": 0,
+      "started_at": null,
+      "completed_at": null,
+      "failure_reason": null,
+      "requirements": {
+        "document": {
+          "require_front_only": false,
+          "front_only_document_types": ["passport"],
+          "require_secondary_id": false,
+          "require_tertiary_id": false,
+          "valid_id_types": ["driver-license-us", "passport-us"],
+          "valid_states": ["NY", "CA"]
+        },
+        "face": { "face_front_photo_only": true }
+      }
+    },
+    {
+      "step_id": "FACE_LIVENESS",
+      "status": "PENDING",
+      "attempts": 0,
+      "started_at": null,
+      "completed_at": null,
+      "failure_reason": null,
+      "requirements": {
+        "challenge_type": "FaceMovementChallenge",
+        "confidence_threshold": 70
+      }
+    }
+  ],
+  "current_step": 0,
+  "attempts_remaining": 3
+}
+```
+
+```json 409 — Already started
+{
+  "error": "Session has already been started or is no longer runnable",
+  "current_step": null
+}
+```
+
+</ResponseExample>

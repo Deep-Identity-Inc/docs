@@ -1,0 +1,1101 @@
+export const makeUtils = (deps) => {
+  const { WB } = deps || {};
+  const wb = WB || {};
+  const SERVICE_REGISTRY = wb.SERVICE_REGISTRY || {};
+  const STEP_TO_SERVICES = wb.WORKFLOW_STEP_TO_SERVICES || {};
+  const COST_OVERRIDES = wb.STEP_COST_OVERRIDES || {};
+  const HIDDEN_STEPS = Array.isArray(wb.HIDDEN_STEP_IDS) ? wb.HIDDEN_STEP_IDS : [];
+  const TEMPLATES = Array.isArray(wb.WORKFLOW_TEMPLATES) ? wb.WORKFLOW_TEMPLATES : [];
+
+  const START = wb.START_NODE_ID || '__start__';
+  const CATALOG = Array.isArray(wb.WORKFLOW_STEPS_OPTIONS) ? wb.WORKFLOW_STEPS_OPTIONS : [];
+  const GRADIENTS = wb.STEP_ICON_GRADIENTS || {};
+  const PINNED = Array.isArray(wb.BOTTOM_PINNED_STEPS) ? wb.BOTTOM_PINNED_STEPS : [];
+  const COUPLED = wb.COUPLED_STEPS || {};
+  const OVERRIDES = wb.COUPLED_PROPERTY_OVERRIDES || {};
+  const SYSTEM = Array.isArray(wb.SYSTEM_STEPS) ? wb.SYSTEM_STEPS : [];
+  const REMOVED_GROUPS = Array.isArray(wb.REMOVED_PROPERTY_GROUPS) ? wb.REMOVED_PROPERTY_GROUPS : [];
+  const SERVICE_MAP = wb.WORKFLOW_STEP_TO_SERVICE_MAP || {};
+  const FALLBACK_ICON = (wb.ICONS && wb.ICONS.fallback) || 'solar:widget-bold-duotone';
+  const FALLBACK_GRADIENT = 'linear-gradient(135deg, #8E8E93, #AEAEB2)';
+  const IS_DEV = wb.IS_DEV === true;
+  const CYCLE_WARNING = 'Cycle detected';
+
+  const hasOwn = (obj, key) => !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+  const keyOf = (step) => (step && (step.instanceId || step.id)) || null;
+  const idOf = (stepOrId) => {
+    if (typeof stepOrId === 'string') return stepOrId;
+    return (stepOrId && stepOrId.id) || null;
+  };
+  const isPinnedId = (id) => PINNED.includes(id);
+  const round2 = (n) => Math.round(n * 100) / 100;
+  const num = (v, fallback) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback === undefined ? 0 : fallback);
+  const slugify = (s) => {
+    const slug = String(s === undefined || s === null ? '' : s)
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return slug || 'item';
+  };
+  const arrayMove = (arr, from, to) => {
+    const out = arr.slice();
+    const [item] = out.splice(from, 1);
+    out.splice(to, 0, item);
+    return out;
+  };
+
+  const deepClone = (value) => {
+    if (value === undefined || value === null) return value;
+    if (typeof value !== 'object') return value;
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch (e) {
+      return value;
+    }
+  };
+
+  const fCurrency = (n) => {
+    const value = typeof n === 'string' && n.trim() !== '' ? Number(n) : n;
+    if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+    const fixed = Math.abs(value).toFixed(2);
+    const parts = fixed.split('.');
+    const grouped = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return `${value < 0 ? '-' : ''}$${grouped}.${parts[1]}`;
+  };
+
+  const truncateMiddle = (s, n = 18) => {
+    const str = s === undefined || s === null ? '' : String(s);
+    if (n <= 0 || str.length <= n) return str;
+    if (n <= 1) return '…';
+    const keep = n - 1;
+    const head = Math.ceil(keep / 2);
+    const tail = Math.floor(keep / 2);
+    return `${str.slice(0, head)}…${tail > 0 ? str.slice(str.length - tail) : ''}`;
+  };
+
+  const parseNodeDropId = (raw) => {
+    const str = raw === undefined || raw === null ? '' : String(raw);
+    const idx = str.indexOf(':');
+    if (idx > 0) {
+      const kind = str.slice(0, idx);
+      const id = str.slice(idx + 1);
+      if (kind === 'palette' || kind === 'chart') return { kind, id };
+    }
+    return { kind: null, id: str };
+  };
+
+  const getStepById = (id) => CATALOG.find((s) => s && s.id === id) || null;
+
+  const getStepIcon = (id) => {
+    const entry = getStepById(idOf(id));
+    return (entry && entry.icon) || FALLBACK_ICON;
+  };
+
+  const getStepGradient = (id) => GRADIENTS[idOf(id)] || FALLBACK_GRADIENT;
+
+  const getStepDescription = (id) => {
+    const entry = getStepById(idOf(id));
+    return (entry && entry.description) || '';
+  };
+
+  const isCoupledStep = (id) => {
+    const entry = getStepById(idOf(id));
+    return !!(entry && entry.coupled);
+  };
+
+  const getServiceCost = (serviceId) => {
+    const def = SERVICE_REGISTRY[serviceId];
+    return def && typeof def.defaultCost === 'number' ? def.defaultCost : 0;
+  };
+
+  const readProp = (step, groupId, propId) => {
+    const cfg = step && step.config && step.config[groupId];
+    if (cfg && cfg[propId] !== undefined) return cfg[propId];
+    const group = groupsOfRaw(step).find((g) => g && g.groupId === groupId);
+    const prop = group && Array.isArray(group.properties) ? group.properties.find((p) => p && p.id === propId) : null;
+    return prop ? prop.value : undefined;
+  };
+  const groupsOfRaw = (step) => (step && Array.isArray(step.propertyGroups) ? step.propertyGroups : []);
+
+  const getBillableStepsFromWorkflow = (workflow) => {
+    const billable = [];
+    const steps = (workflow && Array.isArray(workflow.steps) ? workflow.steps : []).filter(Boolean);
+    steps.forEach((step) => {
+      switch (step.id) {
+        case 'id-verification': {
+          billable.push('idvVerification');
+          if (readProp(step, 'id-scan-settings', 'require-secondary-id')) billable.push('idvVerification');
+          if (readProp(step, 'id-scan-settings', 'require-tertiary-id')) billable.push('idvVerification');
+          break;
+        }
+        case 'face-liveness': billable.push('faceliveness'); break;
+        case 'age-estimation': billable.push('ageEstimation'); break;
+        case 'pep-sanctions': billable.push('pepSanctions'); break;
+        case 'adverse-media': billable.push('adverseMedia'); break;
+        case 'custom-form': billable.push('customForm'); break;
+        case 'credit-check': {
+          let inquiryType = step.config && step.config['credit-check-settings'] && step.config['credit-check-settings']['credit-check-inquiry-type'];
+          if (inquiryType === undefined) {
+            groupsOfRaw(step).some((g) => {
+              const m = (g.properties || []).find((p) => p && p.id === 'credit-check-inquiry-type');
+              if (m && m.value !== undefined) { inquiryType = m.value; return true; }
+              return false;
+            });
+          }
+          billable.push(inquiryType === 'soft' ? 'creditCheckSoft' : 'creditCheck');
+          break;
+        }
+        case 'title-search': billable.push('titleSearch'); break;
+        case 'phone-verification': billable.push('phoneVerification'); break;
+        case 'custom-prompt': {
+          const prompts = readProp(step, 'custom-instructions', 'custom-prompts-list');
+          const n = Array.isArray(prompts) ? prompts.length : 0;
+          for (let i = 0; i < n; i += 1) billable.push('customPrompt');
+          break;
+        }
+        case 'document-upload': {
+          const docs = readProp(step, 'document-upload-instructions', 'document-upload-list');
+          const n = Array.isArray(docs) ? docs.length : docs && typeof docs === 'object' ? Object.keys(docs).length : 0;
+          for (let i = 0; i < n; i += 1) billable.push('documentUpload');
+          if (readProp(step, 'document-analysis-settings', 'enable-document-risk-analysis') === true) billable.push('documentRiskAnalysis');
+          break;
+        }
+        case 'bank-statement-upload': {
+          billable.push('bankStatementSync');
+          let types = step.config && step.config['analysis-types'];
+          if (!types) {
+            const g = groupsOfRaw(step).find((x) => x && x.groupId === 'analysis-types');
+            if (g && Array.isArray(g.properties)) {
+              types = {};
+              g.properties.forEach((p) => { types[p.id] = p.value; });
+            }
+          }
+          if (types) Object.values(types).forEach((v) => { if (v === true) billable.push('bankStatementReport'); });
+          break;
+        }
+        case 'ai-bank-statement-analysis': billable.push('aiBankStatementAnalysis'); break;
+        default: {
+          const defaults = STEP_TO_SERVICES[step.id];
+          if (Array.isArray(defaults)) billable.push(...defaults);
+        }
+      }
+    });
+    if (billable.includes('bankStatementSync') && !billable.includes('aiBankStatementAnalysis')) billable.push('aiBankStatementAnalysis');
+    return billable;
+  };
+
+  const calculateCostFromSteps = (serviceIds) => serviceIds.reduce((sum, id) => sum + getServiceCost(id), 0);
+
+  const resolveStepServices = (stepId, step) => getBillableStepsFromWorkflow({ steps: [{ ...(step || {}), id: stepId }] });
+
+  const getStepCost = (step) => {
+    const id = idOf(step);
+    if (!id) return null;
+    if (isCoupledStep(id)) return 0;
+    if (COST_OVERRIDES[id] !== undefined) return COST_OVERRIDES[id];
+    const src = step && typeof step === 'object' ? step : getStepTemplate(id);
+    return round2(calculateCostFromSteps(resolveStepServices(id, src)));
+  };
+
+  const getStepCostBreakdown = (step) => {
+    const id = idOf(step);
+    if (isCoupledStep(id)) return { total: 0, covered: 0, charged: 0, partiallyCovered: false, coupled: true };
+    const total = getStepCost(step) || 0;
+    return { total, covered: 0, charged: total, partiallyCovered: false, coupled: false };
+  };
+
+  const getStepCostLabel = (step) => {
+    const id = idOf(step);
+    if (isCoupledStep(id)) return 'Included';
+    const entry = getStepById(id) || (step && typeof step === 'object' ? step : null);
+    if (entry && entry.costLabel) return entry.costLabel;
+    const cost = getStepCost(step);
+    return typeof cost === 'number' ? fCurrency(cost) : '—';
+  };
+
+  const getStepTemplate = (id) => {
+    const entry = getStepById(idOf(id));
+    if (!entry) return null;
+    const template = { ...entry };
+    if (Array.isArray(entry.propertyGroups)) template.propertyGroups = deepClone(entry.propertyGroups);
+    return template;
+  };
+
+  const sanitizeStepForWorkflow = (step) => {
+    const src = typeof step === 'string' ? getStepTemplate(step) : step;
+    if (!src || !src.id) return null;
+    const entry = getStepById(src.id);
+    const out = {
+      id: src.id,
+      label: src.label || (entry && entry.label) || src.id,
+      icon: src.icon || (entry && entry.icon) || FALLBACK_ICON,
+    };
+    if (Array.isArray(src.propertyGroups)) out.propertyGroups = deepClone(src.propertyGroups);
+    return out;
+  };
+
+  let lastStamp = 0;
+  const makeInstanceId = (id) => {
+    let ts = Date.now();
+    if (ts <= lastStamp) ts = lastStamp + 1;
+    lastStamp = ts;
+    return `${id}-${ts}`;
+  };
+
+  const createStepInstance = (stepId) => {
+    const template = getStepTemplate(stepId);
+    if (!template) return null;
+    const sanitized = sanitizeStepForWorkflow(template);
+    return { ...sanitized, instanceId: makeInstanceId(template.id) };
+  };
+
+  const resolveService = (service) => (typeof service === 'string' ? getStepById(service) : service || null);
+
+  const isGatedStep = (service) => {
+    const entry = resolveService(service);
+    if (!entry) return false;
+    if (entry.gated) return true;
+    if (entry.devOnly && !IS_DEV) return true;
+    return false;
+  };
+
+  const isStepGated = (service, ctx) => {
+    const entry = resolveService(service);
+    if (!entry) return false;
+    if (isGatedStep(entry)) return true;
+    const context = ctx || { whiteLabelConfigured: false };
+    if (entry.id === 'white-label' && !context.whiteLabelConfigured) return true;
+    return false;
+  };
+
+  const isWorkflowStepAvailable = (stepId, availableServices) => {
+    if (!availableServices || !availableServices.length) return true;
+    const serviceType = SERVICE_MAP[stepId];
+    if (!serviceType) return true;
+    return availableServices.includes(serviceType);
+  };
+
+  const getAvailableServiceData = (availableServices) =>
+    CATALOG.filter((s) => s && !HIDDEN_STEPS.includes(s.id) && !s.advancedOnly && !isStepGated(s, { whiteLabelConfigured: false }) && isWorkflowStepAvailable(s.id, availableServices));
+
+  const groupsOf = (step) => (step && Array.isArray(step.propertyGroups) ? step.propertyGroups : []);
+  const propsOf = (group) => (group && Array.isArray(group.properties) ? group.properties : []);
+  const flattenProps = (step) => groupsOf(step).reduce((acc, g) => acc.concat(propsOf(g)), []);
+  const findGroup = (step, groupId) => groupsOf(step).find((g) => g && g.groupId === groupId) || null;
+  const findProp = (step, groupId, propId) => {
+    if (groupId) {
+      const group = findGroup(step, groupId);
+      if (group) return propsOf(group).find((p) => p && p.id === propId) || null;
+    }
+    return flattenProps(step).find((p) => p && p.id === propId) || null;
+  };
+
+  const applyOverridesToStep = (step, overrides) => {
+    if (!overrides || !step || !Array.isArray(step.propertyGroups)) return step;
+    let changed = false;
+    const propertyGroups = step.propertyGroups.map((g) => {
+      if (!g) return g;
+      const groupOverrides = overrides[g.groupId];
+      if (!groupOverrides || !Array.isArray(g.properties)) return g;
+      let groupChanged = false;
+      const properties = g.properties.map((p) => {
+        if (!p || !hasOwn(groupOverrides, p.id)) return p;
+        const next = groupOverrides[p.id];
+        if (JSON.stringify(p.value) === JSON.stringify(next)) return p;
+        groupChanged = true;
+        return { ...p, value: deepClone(next) };
+      });
+      if (!groupChanged) return g;
+      changed = true;
+      return { ...g, properties };
+    });
+    return changed ? { ...step, propertyGroups } : step;
+  };
+
+  const enforceCoupledOverridesOnSteps = (steps) => {
+    const list = Array.isArray(steps) ? steps : [];
+    let changed = false;
+    const out = list.map((s) => {
+      const overrides = s ? OVERRIDES[s.id] : null;
+      if (!overrides || !Object.keys(overrides).length) return s;
+      const next = applyOverridesToStep(s, overrides);
+      if (next !== s) changed = true;
+      return next;
+    });
+    return changed ? out : list;
+  };
+
+  const enforceBottomPinningOnSteps = (steps) => {
+    const list = Array.isArray(steps) ? steps : [];
+    const free = list.filter((s) => !isPinnedId(idOf(s)));
+    const pinned = list.filter((s) => isPinnedId(idOf(s)));
+    if (!pinned.length) return list;
+    const out = free.concat(pinned);
+    const same = out.length === list.length && out.every((s, i) => s === list[i]);
+    return same ? list : out;
+  };
+
+  const pinnedFormSuffix = (list) => {
+    let seenPinned = false;
+    for (let i = 0; i < list.length; i += 1) {
+      if (isPinnedId(idOf(list[i]))) seenPinned = true;
+      else if (seenPinned) return false;
+    }
+    return true;
+  };
+
+  const isReorderValidWithPinning = (steps, from, to) => {
+    const list = Array.isArray(steps) ? steps : [];
+    if (from === undefined && to === undefined) return pinnedFormSuffix(list);
+    if (!Number.isInteger(from) || !Number.isInteger(to)) return false;
+    if (from < 0 || to < 0 || from >= list.length || to >= list.length) return false;
+    if (from === to) return true;
+    return pinnedFormSuffix(arrayMove(list, from, to));
+  };
+
+  const applyCoupledSteps = (steps, newStep) => {
+    const list = (Array.isArray(steps) ? steps : []).filter(Boolean);
+    if (!newStep || !newStep.id) return { steps: list, added: [] };
+    const newKey = keyOf(newStep);
+    const out = list.some((s) => keyOf(s) === newKey) ? list.slice() : list.concat([newStep]);
+    const added = [];
+    const queue = [newStep];
+    const seen = new Set();
+    while (queue.length) {
+      const current = queue.shift();
+      if (seen.has(current.id)) continue;
+      seen.add(current.id);
+      const partners = COUPLED[current.id] || [];
+      partners.forEach((partnerId) => {
+        if (out.some((s) => s.id === partnerId)) return;
+        const partner = createStepInstance(partnerId);
+        if (!partner) return;
+        const withOverrides = applyOverridesToStep(partner, OVERRIDES[current.id] && OVERRIDES[current.id][partnerId]);
+        const anchorIndex = out.findIndex((s) => keyOf(s) === keyOf(current));
+        const isFollowUp = isCoupledStep(partnerId);
+        let insertAt = out.length;
+        if (anchorIndex >= 0) insertAt = isFollowUp ? anchorIndex + 1 : anchorIndex;
+        out.splice(insertAt, 0, withOverrides);
+        added.push(withOverrides);
+        queue.push(withOverrides);
+      });
+    }
+    return { steps: out, added };
+  };
+
+  const getKeysToRemove = (stepKey, steps) => {
+    const list = (Array.isArray(steps) ? steps : []).filter(Boolean);
+    const keys = new Set();
+    const worklist = [];
+    const seed = list.find((s) => keyOf(s) === stepKey);
+    if (!seed) return new Set([stepKey]);
+    keys.add(stepKey);
+    worklist.push(seed);
+    while (worklist.length > 0) {
+      const cur = worklist.pop();
+      const enqueue = (next) => {
+        const nextKey = keyOf(next);
+        if (keys.has(nextKey)) return;
+        keys.add(nextKey);
+        worklist.push(next);
+      };
+      (COUPLED[cur.id] || []).forEach((partnerId) => {
+        const isMutual = (COUPLED[partnerId] || []).includes(cur.id);
+        if (!isMutual) return;
+        const partner = list.find((s) => s.id === partnerId);
+        if (partner) enqueue(partner);
+      });
+      Object.keys(COUPLED).forEach((dependentId) => {
+        if (!(COUPLED[dependentId] || []).includes(cur.id)) return;
+        const dependent = list.find((s) => s.id === dependentId);
+        if (dependent) enqueue(dependent);
+      });
+    }
+    return keys;
+  };
+
+  const removeWithCoupled = (steps, instanceId) => {
+    const list = (Array.isArray(steps) ? steps : []).filter(Boolean);
+    const toRemove = getKeysToRemove(instanceId, list);
+    return list.filter((s) => !toRemove.has(keyOf(s)));
+  };
+
+  const makeConnection = (sourceId, targetId, extra) => ({
+    id: `conn-${sourceId}-${targetId}`,
+    sourceId,
+    sourceAnchor: 'bottom',
+    targetId,
+    targetAnchor: 'top',
+    waypoints: [],
+    label: '',
+    ...(extra || {}),
+  });
+
+  const rebuildChainWithPinning = (steps) => {
+    const ordered = enforceBottomPinningOnSteps((Array.isArray(steps) ? steps : []).filter(Boolean));
+    const connections = [];
+    let prev = START;
+    ordered.forEach((s) => {
+      const key = keyOf(s);
+      if (!key) return;
+      connections.push(makeConnection(prev, key));
+      prev = key;
+    });
+    return connections;
+  };
+
+  const graphHasCycle = (nodeKeys, conns) => {
+    const adjacency = new Map();
+    nodeKeys.forEach((k) => adjacency.set(k, []));
+    conns.forEach((c) => {
+      if (adjacency.has(c.sourceId) && adjacency.has(c.targetId)) adjacency.get(c.sourceId).push(c.targetId);
+    });
+    const state = new Map();
+    const visit = (k) => {
+      state.set(k, 1);
+      const nexts = adjacency.get(k) || [];
+      for (let i = 0; i < nexts.length; i += 1) {
+        const n = nexts[i];
+        const st = state.get(n) || 0;
+        if (st === 1) return true;
+        if (st === 0 && visit(n)) return true;
+      }
+      state.set(k, 2);
+      return false;
+    };
+    for (let i = 0; i < nodeKeys.length; i += 1) {
+      if ((state.get(nodeKeys[i]) || 0) === 0 && visit(nodeKeys[i])) return true;
+    }
+    return false;
+  };
+
+  const resolveStepOrderFromConnections = (steps, connections) => {
+    const list = (Array.isArray(steps) ? steps : []).filter(Boolean);
+    const conns = (Array.isArray(connections) ? connections : []).filter(Boolean);
+    const byKey = new Map();
+    list.forEach((s) => byKey.set(keyOf(s), s));
+    const warnings = [];
+    const orderedSteps = [];
+    const visited = new Set([START]);
+    let cycle = false;
+    let current = START;
+    let guard = 0;
+    const limit = conns.length + list.length + 2;
+    while (guard < limit) {
+      guard += 1;
+      const next = conns.find((c) => c.sourceId === current);
+      if (!next) break;
+      const target = next.targetId;
+      if (visited.has(target)) {
+        cycle = true;
+        break;
+      }
+      const step = byKey.get(target);
+      if (!step) {
+        warnings.push(`Connection ${next.id || ''} points to a step that no longer exists`.replace('  ', ' '));
+        break;
+      }
+      visited.add(target);
+      orderedSteps.push(step);
+      current = target;
+    }
+    const allKeys = [START].concat(list.map(keyOf));
+    if (!cycle && graphHasCycle(allKeys, conns)) cycle = true;
+    if (cycle) warnings.unshift(CYCLE_WARNING);
+    const unreachable = list.filter((s) => !visited.has(keyOf(s)));
+    if (unreachable.length) {
+      const labels = unreachable.map((s) => s.label || (getStepById(s.id) || {}).label || s.id).join(', ');
+      warnings.push(
+        unreachable.length === 1
+          ? `${labels} is not connected to Start`
+          : `${unreachable.length} steps are not connected to Start: ${labels}`
+      );
+    }
+    return { orderedSteps, warnings };
+  };
+
+  const computeResolvedOrder = (steps, connections) => {
+    const { orderedSteps } = resolveStepOrderFromConnections(steps, connections);
+    const order = {};
+    orderedSteps.forEach((s, i) => {
+      order[keyOf(s)] = i + 1;
+    });
+    return order;
+  };
+
+  const removeStepsWithBridge = (steps, connections, instanceIds) => {
+    const idList = Array.isArray(instanceIds) ? instanceIds : [instanceIds];
+    const ids = new Set(idList.filter(Boolean));
+    let conns = (Array.isArray(connections) ? connections : []).filter(Boolean).slice();
+    ids.forEach((id) => {
+      const incoming = conns.filter((c) => c.targetId === id);
+      const outgoing = conns.filter((c) => c.sourceId === id);
+      conns = conns.filter((c) => c.sourceId !== id && c.targetId !== id);
+      if (!incoming.length || !outgoing.length) return;
+      const pred = incoming[0];
+      const succ = outgoing[0];
+      if (pred.sourceId === succ.targetId) return;
+      if (ids.has(succ.targetId) && ids.has(pred.sourceId)) return;
+      if (conns.some((c) => c.sourceId === pred.sourceId)) return;
+      if (conns.some((c) => c.targetId === succ.targetId)) return;
+      conns.push(
+        makeConnection(pred.sourceId, succ.targetId, {
+          sourceAnchor: pred.sourceAnchor || 'bottom',
+          targetAnchor: succ.targetAnchor || 'top',
+        })
+      );
+    });
+    const remaining = (Array.isArray(steps) ? steps : []).filter((s) => s && !ids.has(keyOf(s)));
+    return { steps: remaining, connections: conns };
+  };
+
+  const addConnectionIfLinear = (connections, conn) => {
+    const conns = (Array.isArray(connections) ? connections : []).filter(Boolean);
+    if (!conn || !conn.sourceId || !conn.targetId) return null;
+    if (conn.sourceId === conn.targetId) return null;
+    if (conn.targetId === START) return null;
+    if (conns.some((c) => c.sourceId === conn.sourceId)) return null;
+    if (conns.some((c) => c.targetId === conn.targetId)) return null;
+    const full = makeConnection(conn.sourceId, conn.targetId, {
+      ...conn,
+      id: conn.id || `conn-${conn.sourceId}-${conn.targetId}`,
+      sourceAnchor: conn.sourceAnchor || 'bottom',
+      targetAnchor: conn.targetAnchor || 'top',
+      waypoints: Array.isArray(conn.waypoints) ? conn.waypoints : [],
+      label: typeof conn.label === 'string' ? conn.label : '',
+    });
+    if (conns.some((c) => c.id === full.id)) return null;
+    return conns.concat([full]);
+  };
+
+  const computeWorkflowCost = (steps) =>
+    round2(calculateCostFromSteps(getBillableStepsFromWorkflow({ steps: (Array.isArray(steps) ? steps : []).filter((s) => s && !SYSTEM.includes(s.id)) })));
+
+  const generateInitialCanvasData = (steps) => {
+    const nodePositions = { [START]: { x: 360, y: 20 } };
+    const connections = [];
+    steps.forEach((step, i) => {
+      const key = keyOf(step);
+      nodePositions[key] = { x: 340, y: 120 + i * 140 };
+      connections.push({
+        id: `init-conn-${i}`,
+        sourceId: i === 0 ? START : keyOf(steps[i - 1]),
+        sourceAnchor: 'bottom',
+        targetId: key,
+        targetAnchor: 'top',
+        waypoints: [],
+        label: '',
+      });
+    });
+    return { connections, nodePositions, viewport: { x: 0, y: 0, zoom: 1 } };
+  };
+
+  const buildWorkflowFromTemplate = (templateId) => {
+    const template = TEMPLATES.find((t) => t.id === templateId);
+    if (!template) return { name: '', steps: [] };
+    const steps = (template.steps || [])
+      .map((stepId) => getStepTemplate(stepId))
+      .filter(Boolean)
+      .map((step) => ({ ...sanitizeStepForWorkflow(step), instanceId: makeInstanceId(step.id) }));
+    if (template.meta && template.meta.requireSecondaryId) {
+      const idStep = steps.find((s) => s.id === 'id-verification');
+      groupsOf(idStep).forEach((group) => {
+        if (group.groupId !== 'id-scan-settings') return;
+        propsOf(group).forEach((prop) => {
+          if (prop.id === 'require-secondary-id') prop.value = true;
+          if (prop.id === 'require-front-only') prop.value = false;
+        });
+      });
+    }
+    const orderedSteps = enforceBottomPinningOnSteps(steps);
+    return { name: template.label, steps: orderedSteps, canvasData: generateInitialCanvasData(orderedSteps) };
+  };
+
+  const patchCanvasDataForAppendedSteps = (canvasData, orderedSteps, autoAppendedSteps) => {
+    if (!Array.isArray(autoAppendedSteps) || !autoAppendedSteps.length) return canvasData;
+    const safe = canvasData || { connections: [], nodePositions: {}, viewport: { x: 0, y: 0, zoom: 1 } };
+    const connections = [...(safe.connections || [])];
+    const nodePositions = { ...(safe.nodePositions || {}) };
+    autoAppendedSteps.forEach((appended) => {
+      const appendedKey = keyOf(appended);
+      const idx = orderedSteps.findIndex((s) => keyOf(s) === appendedKey);
+      const prev = idx > 0 ? orderedSteps[idx - 1] : null;
+      const prevKey = prev ? keyOf(prev) : START;
+      connections.push({ id: `auto-conn-${appendedKey}`, sourceId: prevKey, sourceAnchor: 'bottom', targetId: appendedKey, targetAnchor: 'top', waypoints: [], label: '' });
+      const prevPos = nodePositions[prevKey];
+      nodePositions[appendedKey] = prevPos ? { x: prevPos.x, y: prevPos.y + 140 } : { x: 340, y: 300 };
+    });
+    return { ...safe, connections, nodePositions };
+  };
+
+  const collectPropValues = (allProps) => {
+    const map = new Map();
+    if (!allProps) return map;
+    if (Array.isArray(allProps)) {
+      allProps.forEach((item) => {
+        if (!item) return;
+        if (Array.isArray(item.properties)) {
+          item.properties.forEach((p) => {
+            if (p && p.id !== undefined) map.set(p.id, p.value);
+          });
+        } else if (item.id !== undefined) {
+          map.set(item.id, item.value);
+        }
+      });
+      return map;
+    }
+    if (typeof allProps === 'object') {
+      Object.keys(allProps).forEach((k) => {
+        const v = allProps[k];
+        const looksLikeProp = v && typeof v === 'object' && !Array.isArray(v) && hasOwn(v, 'id') && hasOwn(v, 'type');
+        map.set(k, looksLikeProp ? v.value : v);
+      });
+    }
+    return map;
+  };
+
+  const isRequirementMet = (prop, allProps) => {
+    if (!prop) return true;
+    const values = collectPropValues(allProps);
+    const lookup = (id) => ({ found: values.has(id), value: values.get(id) });
+    const req = prop.requirement;
+    if (req) {
+      if (typeof req === 'string') {
+        const r = lookup(req);
+        if (r.found && r.value !== true) return false;
+      } else if (typeof req === 'object' && req.id) {
+        const r = lookup(req.id);
+        if (r.found) {
+          if (hasOwn(req, 'equals') && r.value !== req.equals) return false;
+          if (hasOwn(req, 'notEquals') && r.value === req.notEquals) return false;
+        }
+      }
+    }
+    const inv = prop.requirementInverse;
+    if (inv) {
+      if (typeof inv === 'string') {
+        const r = lookup(inv);
+        if (r.found && r.value) return false;
+      } else if (typeof inv === 'object' && inv.id) {
+        const r = lookup(inv.id);
+        if (r.found) {
+          if (hasOwn(inv, 'equals') && r.value === inv.equals) return false;
+          if (hasOwn(inv, 'notEquals') && r.value !== inv.notEquals) return false;
+        }
+      }
+    }
+    return true;
+  };
+
+  const isParentToggleOn = (parentToggle, allProps) => {
+    if (!parentToggle) return true;
+    const values = collectPropValues(allProps);
+    if (!values.has(parentToggle)) return true;
+    return !!values.get(parentToggle);
+  };
+
+  const isBlank = (v) =>
+    v === undefined ||
+    v === null ||
+    (typeof v === 'string' && v.trim() === '') ||
+    (Array.isArray(v) && v.length === 0) ||
+    (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0);
+
+  const docListOf = (value) => {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === 'object') {
+      const key = ['documents', 'items', 'rows'].find((k) => Array.isArray(value[k]));
+      if (key) return value[key];
+    }
+    return [];
+  };
+  const docName = (doc) => {
+    if (!doc) return '';
+    if (typeof doc === 'string') return doc;
+    return doc.name || doc.label || doc.title || doc.id || '';
+  };
+  const pagesOf = (value) => {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === 'object' && Array.isArray(value.pages)) return value.pages;
+    return [];
+  };
+  const textListItems = (value) =>
+    (Array.isArray(value) ? value : []).filter((item) => {
+      if (item === undefined || item === null) return false;
+      if (typeof item === 'string') return item.trim() !== '';
+      return typeof item.text === 'string' ? item.text.trim() !== '' : !isBlank(item);
+    });
+  const questionsOf = (value) => {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === 'object' && Array.isArray(value.questions)) return value.questions;
+    return [];
+  };
+  const rulesOf = (value) => {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === 'object' && Array.isArray(value.rules)) return value.rules;
+    return [];
+  };
+
+  const selectedCount = (value) => {
+    if (Array.isArray(value)) {
+      const flagKeys = ['selected', 'enabled', 'checked', 'active'];
+      const rows = value.filter((v) => v && typeof v === 'object');
+      if (rows.length && rows.length === value.length) {
+        const flagged = rows.filter((row) => flagKeys.some((k) => hasOwn(row, k)));
+        if (flagged.length) return flagged.filter((row) => flagKeys.some((k) => row[k] === true)).length;
+        return rows.length;
+      }
+      return value.filter((v) => v !== undefined && v !== null && v !== false && v !== '').length;
+    }
+    if (value && typeof value === 'object') return Object.keys(value).filter((k) => !!value[k]).length;
+    if (typeof value === 'string') return value.trim() ? 1 : 0;
+    return 0;
+  };
+
+  const isEffectivelyEmpty = (prop) => {
+    const value = prop.value;
+    switch (prop.type) {
+      case 'text-list':
+        return textListItems(value).length === 0;
+      case 'object':
+        return pagesOf(value).reduce((n, page) => n + ((page && Array.isArray(page.fields) && page.fields.length) || 0), 0) === 0;
+      case 'doc-upload':
+        return docListOf(value).filter((d) => docName(d).trim() !== '').length === 0;
+      case 'proofcall-questions':
+        return textListItems(questionsOf(value)).length === 0;
+      case 'data-extraction':
+        return rulesOf(value).length === 0;
+      case 'multiselect-table':
+      case 'country-multiselect':
+      case 'country-customize':
+      case 'jurisdiction-picker':
+      case 'education-institution-picker':
+        return selectedCount(value) === 0;
+      case 'boolean':
+        return value !== true;
+      default:
+        return isBlank(value);
+    }
+  };
+
+  const stepDisplayLabel = (step) => step.label || (getStepById(step.id) || {}).label || step.id;
+
+  const stepValidation = (workflow) => {
+    const errors = [];
+    const wf = workflow || {};
+    const steps = (Array.isArray(wf.steps) ? wf.steps : []).filter((s) => s && s.id && !SYSTEM.includes(s.id));
+    if (!wf.name || !String(wf.name).trim()) errors.push('Workflow name is required');
+    if (!steps.length) errors.push('Add at least one step to the workflow');
+
+    steps.forEach((step) => {
+      const label = stepDisplayLabel(step);
+      const all = flattenProps(step);
+
+      if (step.id === 'id-verification') {
+        const group = findGroup(step, 'document-types');
+        if (group) {
+          const anyDoc = propsOf(group).some((p) => p && p.type === 'boolean' && p.value === true);
+          if (!anyDoc) errors.push(`${label}: select at least one document type`);
+        }
+      }
+
+      if (step.id === 'crypto-wallet-screening') {
+        const networks = findProp(step, 'networks', 'networks');
+        if (networks && selectedCount(networks.value) === 0) errors.push(`${label}: select at least one network`);
+        const categories = findProp(step, 'risk', 'categories');
+        if (categories && selectedCount(categories.value) === 0) errors.push(`${label}: select at least one risk category`);
+      }
+
+      if (step.id === 'e-signature') {
+        const template = findProp(step, 'template', 'template-id');
+        if (template && isBlank(template.value)) errors.push(`${label}: choose an e-signature template`);
+      }
+
+      groupsOf(step).forEach((group) => {
+        if (!group || REMOVED_GROUPS.includes(group.groupId)) return;
+        if (!isParentToggleOn(group.parentToggle, all)) return;
+        propsOf(group).forEach((prop) => {
+          if (!prop || prop.type === 'hidden') return;
+          if (prop.locked || prop.disabled) return;
+          if (!isRequirementMet(prop, all)) return;
+          const propLabel = prop.label || prop.id;
+
+          if (prop.required && isEffectivelyEmpty(prop)) {
+            errors.push(`${label}: ${propLabel} is required`);
+          }
+
+          if (prop.type === 'data-extraction') {
+            rulesOf(prop.value).forEach((rule, i) => {
+              const r = rule || {};
+              const doc = r.document || r.documentId || r.documentSlug || r.documentName || r.doc;
+              const fields = r.fields || r.params || r.parameters || r.extract;
+              if (isBlank(doc)) errors.push(`${label}: extraction rule ${i + 1} needs a document`);
+              if (selectedCount(fields) === 0) errors.push(`${label}: extraction rule ${i + 1} needs at least one field`);
+            });
+          }
+        });
+      });
+    });
+    return errors;
+  };
+
+  const keyDocuments = (docs) => {
+    const out = {};
+    docs.forEach((doc, i) => {
+      if (doc === undefined || doc === null) return;
+      const d = typeof doc === 'string' ? { name: doc } : doc;
+      const base = slugify(d.slug || d.id || d.name || d.label || d.title || `document-${i + 1}`);
+      let key = base;
+      let n = 2;
+      while (hasOwn(out, key)) {
+        key = `${base}-${n}`;
+        n += 1;
+      }
+      out[key] = { ...d };
+    });
+    return out;
+  };
+
+  const transformDocUpload = (value) => {
+    if (Array.isArray(value)) return keyDocuments(value);
+    if (value && typeof value === 'object') {
+      const listKey = ['documents', 'items', 'rows'].find((k) => Array.isArray(value[k]));
+      if (listKey) return { ...value, [listKey]: keyDocuments(value[listKey]) };
+    }
+    return value;
+  };
+
+  const transformPropertyValue = (prop) => {
+    const value = prop.value;
+    switch (prop.type) {
+      case 'range': {
+        if (Array.isArray(value)) return { lower: value[0], upper: value[1] };
+        if (value && typeof value === 'object') return { lower: value.lower, upper: value.upper };
+        return value;
+      }
+      case 'doc-upload':
+        return transformDocUpload(value);
+      case 'proofcall-questions': {
+        const questions = questionsOf(value).map((q) => (typeof q === 'string' ? { text: q } : q));
+        const meta = value && !Array.isArray(value) && typeof value === 'object' ? value : {};
+        const perQuestion = num(meta.minutesPerQuestion, 1) || 1;
+        return { ...meta, questions, estimatedMinutes: questions.length * perQuestion };
+      }
+      case 'object': {
+        if (Array.isArray(value)) return { pages: value };
+        if (value && typeof value === 'object') return { ...value, pages: Array.isArray(value.pages) ? value.pages : [] };
+        return { pages: [] };
+      }
+      default:
+        return value;
+    }
+  };
+
+  const serializeWorkflowForSave = (steps) =>
+    (Array.isArray(steps) ? steps : [])
+      .filter((s) => s && s.id && !SYSTEM.includes(s.id))
+      .map((s) => {
+        const config = {};
+        groupsOf(s).forEach((g) => {
+          if (!g || !g.groupId || REMOVED_GROUPS.includes(g.groupId)) return;
+          const groupConfig = {};
+          propsOf(g).forEach((p) => {
+            if (!p || !p.id || p.type === 'weight-display') return;
+            const v = transformPropertyValue(p);
+            if (v !== undefined) groupConfig[p.id] = deepClone(v);
+          });
+          config[g.groupId] = groupConfig;
+        });
+        return { id: s.id, instanceId: keyOf(s), config };
+      });
+
+  const serializeCanvasData = (canvasData) => {
+    const cd = canvasData || {};
+    const connections = (Array.isArray(cd.connections) ? cd.connections : []).filter(Boolean).map((c) => ({
+      id: c.id || `conn-${c.sourceId}-${c.targetId}`,
+      sourceId: c.sourceId,
+      sourceAnchor: c.sourceAnchor || 'bottom',
+      targetId: c.targetId,
+      targetAnchor: c.targetAnchor || 'top',
+      waypoints: (Array.isArray(c.waypoints) ? c.waypoints : [])
+        .filter(Boolean)
+        .map((w) => ({ x: Math.round(num(w.x)), y: Math.round(num(w.y)) })),
+      label: typeof c.label === 'string' ? c.label : '',
+    }));
+    const nodePositions = {};
+    const positions = cd.nodePositions || {};
+    Object.keys(positions).forEach((k) => {
+      const p = positions[k];
+      if (!p) return;
+      nodePositions[k] = { x: Math.round(num(p.x)), y: Math.round(num(p.y)) };
+    });
+    const vp = cd.viewport || {};
+    const zoom = num(vp.zoom, 1);
+    return {
+      connections,
+      nodePositions,
+      viewport: { x: round2(num(vp.x)), y: round2(num(vp.y)), zoom: zoom > 0 ? round2(zoom) : 1 },
+    };
+  };
+
+  const buildSavePayload = (args) => {
+    const { workflow, orderedSteps, organizationId, createdBy } = args || {};
+    const wf = workflow || {};
+    const all = (Array.isArray(wf.steps) ? wf.steps : []).filter(Boolean);
+    let stepsForSave = all;
+    if (Array.isArray(orderedSteps) && orderedSteps.length) {
+      const seen = new Set(orderedSteps.map(keyOf));
+      stepsForSave = orderedSteps.concat(all.filter((s) => !seen.has(keyOf(s))));
+    }
+    return {
+      organizationId: organizationId === undefined ? null : organizationId,
+      createdBy: createdBy === undefined ? null : createdBy,
+      name: String(wf.name || '').trim(),
+      steps: serializeWorkflowForSave(stepsForSave),
+      canvasData: serializeCanvasData(wf.canvasData),
+      status: 'active',
+    };
+  };
+
+  const normalizeStepKey = (stepKey) => (stepKey && typeof stepKey === 'object' ? keyOf(stepKey) : stepKey);
+
+  const updatePropertyValuesInSteps = (steps, stepKey, groupId, values) => {
+    const list = Array.isArray(steps) ? steps : [];
+    const key = normalizeStepKey(stepKey);
+    if (!key || !values || typeof values !== 'object') return list;
+    let changed = false;
+    const out = list.map((s) => {
+      if (!s || keyOf(s) !== key || !Array.isArray(s.propertyGroups)) return s;
+      let stepChanged = false;
+      const propertyGroups = s.propertyGroups.map((g) => {
+        if (!g || g.groupId !== groupId || !Array.isArray(g.properties)) return g;
+        let groupChanged = false;
+        const properties = g.properties.map((p) => {
+          if (!p || !hasOwn(values, p.id)) return p;
+          groupChanged = true;
+          return { ...p, value: values[p.id] };
+        });
+        if (!groupChanged) return g;
+        stepChanged = true;
+        return { ...g, properties };
+      });
+      if (!stepChanged) return s;
+      changed = true;
+      return { ...s, propertyGroups };
+    });
+    return changed ? out : list;
+  };
+
+  const updatePropertyValueInSteps = (steps, stepKey, groupId, propId, value) =>
+    updatePropertyValuesInSteps(steps, stepKey, groupId, { [propId]: value });
+
+  const redistributeWeights = (weights, changedId, value) => {
+    const clamp5 = (v) => Math.max(0, Math.min(100, Math.round((Number(v) || 0) / 5) * 5));
+    const changed = clamp5(value);
+    const result = { [changedId]: changed };
+    const others = weights.filter((w) => w.id !== changedId);
+    if (!others.length) return result;
+    const remaining = 100 - changed;
+    const sumOthers = others.reduce((s, w) => s + (Number(w.value) || 0), 0);
+    const allocated = others.map((w) =>
+      sumOthers > 0 ? ((Number(w.value) || 0) / sumOthers) * remaining : remaining / others.length
+    );
+    const rounded = allocated.map(clamp5);
+    let drift = remaining - rounded.reduce((s, v) => s + v, 0);
+    let guard = 0;
+    while (drift !== 0 && guard < 100) {
+      guard += 1;
+      const order = allocated.map((a, i) => i).sort((a, b) => allocated[b] - allocated[a]);
+      let applied = false;
+      for (let j = 0; j < order.length; j += 1) {
+        const i = order[j];
+        const delta = drift > 0 ? 5 : -5;
+        const next = rounded[i] + delta;
+        if (next >= 0 && next <= 100) {
+          rounded[i] = next;
+          drift -= delta;
+          applied = true;
+          break;
+        }
+      }
+      if (!applied) break;
+    }
+    others.forEach((w, i) => {
+      result[w.id] = rounded[i];
+    });
+    return result;
+  };
+
+  const updateLinkedWeightsInSteps = (steps, stepKey, groupId, changedId, value) => {
+    const list = Array.isArray(steps) ? steps : [];
+    const key = normalizeStepKey(stepKey);
+    const step = list.find((s) => s && keyOf(s) === key);
+    if (!step) return list;
+    const group = findGroup(step, groupId);
+    if (!group) return list;
+    const changedProp = propsOf(group).find((p) => p && p.id === changedId);
+    if (!changedProp) return list;
+    const linkedGroup = changedProp.linkedGroup;
+    const siblings = propsOf(group).filter((p) => p && (linkedGroup ? p.linkedGroup === linkedGroup : p.type === 'slider'));
+    if (siblings.length < 2) return updatePropertyValueInSteps(list, key, groupId, changedId, value);
+    const next = redistributeWeights(
+      siblings.map((p) => ({ id: p.id, value: p.value })),
+      changedId,
+      value
+    );
+    return updatePropertyValuesInSteps(list, key, groupId, next);
+  };
+
+  return {
+    getStepById,
+    getStepIcon,
+    getStepGradient,
+    getStepDescription,
+    getStepCost,
+    getStepCostBreakdown,
+    getStepCostLabel,
+    getServiceCost,
+    getBillableStepsFromWorkflow,
+    buildWorkflowFromTemplate,
+    generateInitialCanvasData,
+    patchCanvasDataForAppendedSteps,
+    isCoupledStep,
+    getStepTemplate,
+    sanitizeStepForWorkflow,
+    makeInstanceId,
+    isGatedStep,
+    isStepGated,
+    isWorkflowStepAvailable,
+    getAvailableServiceData,
+    applyCoupledSteps,
+    removeWithCoupled,
+    getKeysToRemove,
+    enforceBottomPinningOnSteps,
+    enforceCoupledOverridesOnSteps,
+    isReorderValidWithPinning,
+    rebuildChainWithPinning,
+    resolveStepOrderFromConnections,
+    computeResolvedOrder,
+    removeStepsWithBridge,
+    addConnectionIfLinear,
+    computeWorkflowCost,
+    fCurrency,
+    truncateMiddle,
+    deepClone,
+    parseNodeDropId,
+    isRequirementMet,
+    stepValidation,
+    serializeWorkflowForSave,
+    serializeCanvasData,
+    buildSavePayload,
+    updatePropertyValueInSteps,
+    updatePropertyValuesInSteps,
+    updateLinkedWeightsInSteps,
+    arrayMove,
+    applyOverridesToStep,
+    keyOf,
+    round2,
+  };
+};
+

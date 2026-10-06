@@ -1,0 +1,146 @@
+---
+title: Get Workflow State
+description: Read the current execution state of a workflow session
+api: GET /v1/sessions/{session_id}/workflow
+---
+
+```
+GET /v1/sessions/{session_id}/workflow
+```
+
+Returns the session's current execution state: every step's status, attempt count, and requirements, plus which step to submit next. Poll this endpoint to resume a session after an interruption, or to check overall progress without submitting a step.
+
+<Info>
+  This is a read-only endpoint — it never mutates session or step state.
+</Info>
+
+## Request
+
+### Headers
+
+| Header | Required | Description |
+|---|---|---|
+| `x-api-key` | Yes | Your organization's API key |
+
+### Path parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `session_id` | string (uuid) | Yes | The session to read |
+
+### Example request
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/workflow \
+  -H "x-api-key: YOUR_API_KEY"
+```
+
+```javascript Node.js
+const response = await fetch(
+  "https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/workflow",
+  { headers: { "x-api-key": "YOUR_API_KEY" } }
+);
+
+const state = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.get(
+    "https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/workflow",
+    headers={"x-api-key": "YOUR_API_KEY"},
+)
+
+state = response.json()
+```
+
+</CodeGroup>
+
+## Response
+
+<Note>
+  This response shape is distinct from [Create Workflow Session](/api-reference/workflow-runner/create-workflow-session)'s — it has no `expires_at`, and adds `status`, `session_progress`, and `attempts_remaining`. [Start Workflow](/api-reference/workflow-runner/start-workflow) returns this same shape.
+</Note>
+
+### 200 — Success
+
+| Field | Type | Description |
+|---|---|---|
+| `session_id` | string (uuid) | The session's ID |
+| `status` | string | Session status: `PENDING`, `SUBMITTED`, `VERIFIED`, `REJECTED`, `VOIDED`, `EXPIRED`, or `FAILED` |
+| `session_progress` | string | `PENDING`, `STARTED`, or `COMPLETED` |
+| `steps` | array | One [step object](#steps-object) per workflow step |
+| `current_step` | integer \| null | 0-based index of the step to submit next. `null` once the run has finished (all steps completed, or the session became terminal) |
+| `attempts_remaining` | number \| null | Session-wide failure budget remaining. `null` when the workflow has no failure limit configured |
+
+### `steps[]` object
+
+| Field | Type | Description |
+|---|---|---|
+| `step_id` | string | `ID_VERIFICATION` or `FACE_LIVENESS` |
+| `status` | string | `PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, or `SKIPPED` |
+| `attempts` | integer | Number of times this step has been submitted |
+| `started_at` | string \| null | ISO 8601 timestamp of the first submission, or `null` |
+| `completed_at` | string \| null | ISO 8601 timestamp the step reached a terminal status, or `null` |
+| `failure_reason` | string \| null | Reason the step last failed, or `null`. See [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step#id_verification-failure-reasons) for the full list of values |
+| `requirements` | object | Same shape as in [Create Workflow Session](/api-reference/workflow-runner/create-workflow-session#available-steps) |
+
+### Error responses
+
+| Status | Description |
+|---|---|
+| `400` | Invalid `session_id` path parameter |
+| `401` | Invalid or missing API key |
+| `403` | The session belongs to a different organization |
+| `404` | Session not found, or no workflow execution state exists for this session |
+| `429` | Too many requests |
+
+<ResponseExample>
+
+```json 200
+{
+  "session_id": "80e801af-991b-425c-96fc-f5e07d794253",
+  "status": "PENDING",
+  "session_progress": "STARTED",
+  "steps": [
+    {
+      "step_id": "ID_VERIFICATION",
+      "status": "COMPLETED",
+      "attempts": 1,
+      "started_at": "2026-09-08T14:02:11.000Z",
+      "completed_at": "2026-09-08T14:03:47.000Z",
+      "failure_reason": null,
+      "requirements": {
+        "document": {
+          "require_front_only": false,
+          "front_only_document_types": ["passport"],
+          "require_secondary_id": false,
+          "require_tertiary_id": false,
+          "valid_id_types": ["driver-license-us", "passport-us"],
+          "valid_states": ["NY", "CA"]
+        },
+        "face": { "face_front_photo_only": true }
+      }
+    },
+    {
+      "step_id": "FACE_LIVENESS",
+      "status": "PENDING",
+      "attempts": 0,
+      "started_at": null,
+      "completed_at": null,
+      "failure_reason": null,
+      "requirements": {
+        "challenge_type": "FaceMovementChallenge",
+        "confidence_threshold": 70
+      }
+    }
+  ],
+  "current_step": 1,
+  "attempts_remaining": 2
+}
+```
+
+</ResponseExample>

@@ -1,0 +1,220 @@
+export const makeApp = ({ WB, WB_CSS, ui, utils, geometry, store, palette, listMode, configPanel, saveDialog, dnd }) => {
+  const { WorkflowProvider, useWorkflow } = store;
+  const { Palette } = palette;
+  const { ListCanvas, useListDnd } = listMode;
+  const { RightConfigPanel } = configPanel;
+  const { ToastProvider, StepIcon, MuiButton, MuiIconButton, MuiTextField, MuiSelect } = ui;
+  const { DndProvider } = dnd;
+  const SaveFlow = (saveDialog && saveDialog.SaveFlow) || (() => null);
+  const I18N = WB.I18N || {};
+  const t = (key, fallback, vars) => {
+    let s = typeof I18N[key] === 'string' ? I18N[key] : fallback;
+    if (vars) Object.keys(vars).forEach((k) => { s = s.split('{{' + k + '}}').join(String(vars[k])); });
+    return s;
+  };
+  const TEMPLATE_COLORS = WB.WORKFLOW_TEMPLATE_COLORS || {};
+  const PANEL_W = (WB.PANEL && WB.PANEL.WIDTH) || 350;
+  const PANEL_W_EXP = (WB.PANEL && WB.PANEL.WIDTH_EXPANDED) || 600;
+  const FONT_HREF = 'https://fonts.googleapis.com/css2?family=Inter:wght@300..800&display=swap';
+
+  const Styles = () => {
+    const done = useRef(false);
+    useEffect(() => {
+      if (done.current) return;
+      done.current = true;
+      try {
+        if (!document.getElementById('wb-css')) {
+          const el = document.createElement('style');
+          el.id = 'wb-css';
+          el.textContent = WB_CSS;
+          document.head.appendChild(el);
+        }
+        if (!document.getElementById('wb-font')) {
+          const link = document.createElement('link');
+          link.id = 'wb-font';
+          link.rel = 'stylesheet';
+          link.href = FONT_HREF;
+          document.head.appendChild(link);
+        }
+      } catch (e) {}
+    }, []);
+    return null;
+  };
+
+  const templateIconColor = (template) => {
+    const c = TEMPLATE_COLORS[template.colorCategory];
+    if (!c || !c.gradient) return 'var(--wb-primary)';
+    const m = String(c.gradient).match(/#[0-9a-fA-F]{6}/);
+    return m ? m[0] : 'var(--wb-primary)';
+  };
+
+  const Shell = ({ fromScratch: fromScratchProp = false, isLoading = false, showHeader = true }) => {
+    const wf = useWorkflow();
+    const { state, actions, selectors } = wf;
+    const workflow = state.workflow;
+    const steps = workflow.steps || [];
+
+    const [fromScratch, setFromScratch] = useState(fromScratchProp);
+    const [panelExpanded, setPanelExpanded] = useState(false);
+    const [saveRequest, setSaveRequest] = useState(null);
+    const [headerH, setHeaderH] = useState(112);
+
+    useEffect(() => {
+      const measure = () => {
+        try {
+          const el = document.querySelector('header');
+          const b = el ? Math.round(el.getBoundingClientRect().bottom) : 112;
+          setHeaderH(b > 0 ? b : 112);
+        } catch (e) { setHeaderH(112); }
+      };
+      measure();
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }, []);
+
+
+    const selectedStep = selectors.selectedStep;
+    const isIdVerification = !!(selectedStep && selectedStep.id === 'id-verification');
+    const rightPanelWidth = panelExpanded && isIdVerification ? PANEL_W_EXP : PANEL_W;
+
+    const listDnd = useListDnd({});
+
+    const costLabel = '$' + Number(selectors.cost || 0).toFixed(2) + ' / session';
+
+    const onTemplateChange = (templateId) => {
+      if (!templateId) return;
+      if (templateId === 'scratch') setFromScratch(true);
+      actions.applyTemplate({ templateId });
+    };
+
+    const availableIds = useMemo(() => new Set(utils.getAvailableServiceData().map((s) => s.id)), []);
+    const templateOptions = (WB.WORKFLOW_TEMPLATES || []).filter((template) => (template.steps || []).every((st) => availableIds.has(typeof st === 'string' ? st : st && st.id))).map((template) => ({
+      value: template.id,
+      label: (I18N.templates && I18N.templates[template.id] && I18N.templates[template.id].label) || template.label,
+      icon: <StepIcon icon={template.icon} size={20} color={templateIconColor(template)} />,
+    }));
+
+    const handleSave = () => setSaveRequest({ at: Date.now() });
+
+    const header = showHeader ? (
+      <header className="wb-hd" data-testid="wb-header">
+        <div className="wb-hd-group">
+          <a href="/workflows/workflows" style={{ textDecoration: 'none' }}>
+            <MuiButton variant="text" noHover className="wb-mbtn-back" testId="wb-back"
+              startIcon={<StepIcon icon="eva:arrow-ios-back-fill" size={18} color="currentColor" />}>
+              {t('builderBack', 'Back')}
+            </MuiButton>
+          </a>
+          <div className="wb-hd-costwrap">
+            <span className="wb-hd-cost" data-testid="wb-cost">{costLabel}</span>
+            <span className="wb-hd-info"><StepIcon icon="eva:info-outline" size={18} color="currentColor" /></span>
+          </div>
+        </div>
+
+        <div className="wb-hd-group">
+          <MuiTextField
+            size="small"
+            label={t('builderWorkflowName', 'Workflow Name')}
+            placeholder={t('builderWorkflowNamePlaceholder', 'My Workflow')}
+            value={workflow.name || ''}
+            onChange={(v) => actions.setName({ name: v })}
+            style={{ minWidth: fromScratch ? 320 : 200 }}
+            testId="wb-name-input"
+          />
+          {!fromScratch ? (
+            <MuiSelect
+              size="small"
+              label={t('builderTemplate', 'Template')}
+              displayEmpty
+              value=""
+              renderValue={() => t('builderTemplatePlaceholder', 'Select template...')}
+              options={templateOptions}
+              onChange={onTemplateChange}
+              style={{ minWidth: 300 }}
+              testId="wb-template-select"
+            />
+          ) : null}
+        </div>
+
+        <div className="wb-hd-group">
+          <MuiButton variant="contained" gradient className="wb-mbtn-save" onClick={handleSave} testId="wb-save-btn">
+            {t('builderSaveWorkflow', 'Save Workflow')}
+          </MuiButton>
+        </div>
+      </header>
+    ) : null;
+
+    const panel = (
+      <RightConfigPanel
+        selectedStep={selectedStep}
+        dimmed={steps.length === 0}
+        expanded={panelExpanded}
+        onExpandedChange={setPanelExpanded}
+      />
+    );
+
+    const body = (
+      <DndProvider
+        disabled={isLoading}
+        onDragStart={listDnd.handleDragStart}
+        onDragOver={listDnd.handleDragOver}
+        onDragEnd={listDnd.handleDragEnd}
+        onDragCancel={listDnd.handleDragCancel}
+        renderOverlay={listDnd.renderOverlay}
+      >
+        <div className="wb-main">
+          <Palette viewMode="builder" disabled={isLoading} />
+          <div className="wb-stage" data-testid="wb-center">
+            <div className="wb-stage-content">
+              <ListCanvas isLoading={isLoading} connectedStepIds={listDnd.connectedStepIds} />
+            </div>
+          </div>
+          {panel}
+        </div>
+      </DndProvider>
+    );
+
+    return (
+      <div className="wb-root wb-shell" data-testid="wb-root" style={{ height: 'calc(97vh - ' + headerH + 'px)' }}>
+        <Styles />
+        {header}
+        {body}
+        <SaveFlow request={saveRequest} onDone={() => setSaveRequest(null)} />
+      </div>
+    );
+  };
+
+  const WorkflowBuilder = () => (
+    <ToastProvider>
+      <WorkflowProvider>
+        <Shell />
+      </WorkflowProvider>
+    </ToastProvider>
+  );
+
+  return { WorkflowBuilder, Shell };
+};
+
+export const WorkflowBuilderApp = (props) => {
+  const d = (props && props.deps) || {};
+  const App = useMemo(() => {
+    if (typeof d.makeApp !== 'function') return () => <div className="wb-boot-error">Workflow Builder failed to load.</div>;
+    const WB = typeof d.makeWB === 'function' ? d.makeWB(d.generated) : d.WB;
+    const ui = d.makeUi();
+    const utils = d.makeUtils({ WB });
+    const geometry = d.makeGeometry({ WB });
+    const store = d.makeStore({ WB, utils, geometry });
+    const dnd = d.makeDnd();
+    const mui = d.makeMui({ ui });
+    const configPanelMod = d.makeConfigPanel({ WB, utils, store, ui, mui });
+    const paletteMod = d.makePalette({ WB, utils, store, ui, dnd });
+    const listModeMod = d.makeListMode({ WB, utils, store, ui, dnd });
+    const saveDialogMod = typeof d.makeSaveDialog === 'function' ? d.makeSaveDialog({ WB, utils, store, ui, mui }) : {};
+    return d.makeApp({
+      WB, WB_CSS: d.WB_CSS, ui, utils, geometry, store, dnd,
+      palette: paletteMod, listMode: listModeMod,
+      configPanel: configPanelMod, saveDialog: saveDialogMod,
+    }).WorkflowBuilder;
+  }, []);
+  return <App />;
+};

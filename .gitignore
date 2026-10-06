@@ -4,3 +4,5 @@ __pycache__
 
 # Macos
 .DS_Store
+
+.specs

@@ -1,0 +1,775 @@
+export const makeUi = () => {
+
+  const noop = () => {};
+  const cx = (...parts) => parts.filter(Boolean).join(' ');
+  const clampNum = (n, lo, hi) => (Number.isNaN(n) ? lo : Math.min(hi, Math.max(lo, n)));
+  const isEl = (x) => React.isValidElement(x);
+
+  const NAMED_COLORS = {
+    primary: '#1E7FE0', secondary: '#8E33FF', success: '#22C55E', warning: '#FFAB00',
+    error: '#FF5630', info: '#00B8D9', default: '#637381', grey: '#637381', inherit: '#637381',
+  };
+  const toHex = (c) => (c && NAMED_COLORS[c]) || c || NAMED_COLORS.default;
+  const hexToRgba = (hex, a) => {
+    const h = String(hex || '').replace('#', '');
+    if (!/^[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(h)) return `rgba(99,115,129,${a})`;
+    const full = h.length === 3 ? h.split('').map((ch) => ch + ch).join('') : h;
+    const n = parseInt(full, 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+  };
+  const flagEmoji = (code) => {
+    if (!code || typeof code !== 'string') return '';
+    if (!/^[A-Za-z]{2}$/.test(code)) return code;
+    const up = code.toUpperCase();
+    return String.fromCodePoint(...[...up].map((ch) => 127397 + ch.charCodeAt(0)));
+  };
+  const fmtCost = (cost) => {
+    if (cost == null || cost === '') return '';
+    if (typeof cost === 'number') return cost === 0 ? 'free' : `$${cost.toFixed(2)}`;
+    return String(cost);
+  };
+
+  const UI_CSS = `
+:where(:root){--wb-primary:#1E7FE0;--wb-primary-light:#22B8F0;--wb-primary-dark:#1456A0;--wb-primary-soft:rgba(30,127,224,.12);--wb-paper:#ffffff;--wb-bg:#F9FAFB;--wb-text:#1C252E;--wb-text-2:#637381;--wb-text-3:#919EAB;--wb-divider:rgba(145,158,171,.2);--wb-outline:rgba(145,158,171,.32);--wb-hover:rgba(145,158,171,.08);--wb-track:rgba(145,158,171,.32);--wb-success:#22C55E;--wb-warning:#FFAB00;--wb-error:#FF5630;--wb-info:#00B8D9;--wb-shadow:0 8px 24px rgba(145,158,171,.24);--wb-shadow-lg:0 24px 48px rgba(22,28,36,.24);--wb-backdrop:rgba(22,28,36,.48)}
+:where(html.dark){--wb-paper:#1C252E;--wb-bg:#141A21;--wb-text:#FFFFFF;--wb-text-2:#919EAB;--wb-text-3:#637381;--wb-divider:rgba(145,158,171,.24);--wb-outline:rgba(145,158,171,.36);--wb-hover:rgba(145,158,171,.12);--wb-track:rgba(145,158,171,.4);--wb-shadow:0 8px 24px rgba(0,0,0,.4);--wb-shadow-lg:0 24px 48px rgba(0,0,0,.6);--wb-backdrop:rgba(0,0,0,.6)}
+:where(.wb-icon){display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;line-height:0}
+:where(.wb-icon svg){display:block}
+:where(.wb-btn){display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid transparent;border-radius:8px;font:inherit;font-weight:700;font-size:14px;line-height:1;height:36px;padding:0 16px;cursor:pointer;white-space:nowrap;text-decoration:none;transition:background .15s,box-shadow .15s,color .15s,border-color .15s,filter .15s;user-select:none;-webkit-tap-highlight-color:transparent;color:var(--wb-text);background:transparent;box-sizing:border-box;margin:0}
+:where(.wb-btn-small){height:30px;padding:0 10px;font-size:13px;border-radius:6px;gap:6px}
+:where(.wb-btn-large){height:44px;padding:0 22px;font-size:15px}
+:where(.wb-btn-full){width:100%}
+:where(.wb-btn:disabled,.wb-btn[aria-disabled="true"]){cursor:not-allowed;opacity:.48;box-shadow:none;pointer-events:none}
+:where(.wb-btn:focus-visible){outline:2px solid var(--wb-primary);outline-offset:2px}
+:where(.wb-btn-contained.wb-btn-primary){background:linear-gradient(135deg,var(--wb-primary),var(--wb-primary-light));color:#fff;box-shadow:0 8px 16px var(--wb-primary-soft)}
+:where(.wb-btn-contained.wb-btn-primary:hover){filter:brightness(1.07)}
+:where(.wb-btn-contained.wb-btn-inherit){background:var(--wb-text);color:var(--wb-paper)}
+:where(.wb-btn-contained.wb-btn-inherit:hover){filter:brightness(1.15)}
+:where(.wb-btn-contained.wb-btn-error){background:var(--wb-error);color:#fff}
+:where(.wb-btn-contained.wb-btn-error:hover){filter:brightness(1.07)}
+:where(.wb-btn-outlined.wb-btn-primary){border-color:rgba(30,127,224,.48);color:var(--wb-primary)}
+:where(.wb-btn-outlined.wb-btn-primary:hover){background:var(--wb-primary-soft);border-color:var(--wb-primary)}
+:where(.wb-btn-outlined.wb-btn-inherit){border-color:var(--wb-outline);color:var(--wb-text)}
+:where(.wb-btn-outlined.wb-btn-inherit:hover){background:var(--wb-hover);border-color:var(--wb-text)}
+:where(.wb-btn-outlined.wb-btn-error){border-color:rgba(255,86,48,.48);color:var(--wb-error)}
+:where(.wb-btn-outlined.wb-btn-error:hover){background:rgba(255,86,48,.08);border-color:var(--wb-error)}
+:where(.wb-btn-text.wb-btn-primary){color:var(--wb-primary)}
+:where(.wb-btn-text.wb-btn-primary:hover){background:var(--wb-primary-soft)}
+:where(.wb-btn-text.wb-btn-inherit){color:var(--wb-text)}
+:where(.wb-btn-text.wb-btn-inherit:hover){background:var(--wb-hover)}
+:where(.wb-btn-text.wb-btn-error){color:var(--wb-error)}
+:where(.wb-btn-text.wb-btn-error:hover){background:rgba(255,86,48,.08)}
+:where(.wb-btn-soft.wb-btn-primary){background:var(--wb-primary-soft);color:var(--wb-primary-dark)}
+:where(.wb-btn-soft.wb-btn-primary:hover){background:rgba(30,127,224,.2)}
+:where(.wb-btn-soft.wb-btn-inherit){background:var(--wb-hover);color:var(--wb-text)}
+:where(.wb-btn-soft.wb-btn-error){background:rgba(255,86,48,.12);color:var(--wb-error)}
+:where(html.dark .wb-btn-soft.wb-btn-primary){color:#8FC6FF}
+:where(.wb-btn-icon){display:inline-flex;line-height:0}
+:where(.wb-iconbtn){display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;border:0;background:transparent;color:var(--wb-text-2);cursor:pointer;padding:0;flex-shrink:0;transition:background .15s,color .15s;-webkit-tap-highlight-color:transparent;margin:0;font:inherit}
+:where(.wb-iconbtn-lg){width:36px;height:36px}
+:where(.wb-iconbtn:hover){background:var(--wb-hover);color:var(--wb-text)}
+:where(.wb-iconbtn-active){background:var(--wb-primary-soft);color:var(--wb-primary)}
+:where(.wb-iconbtn-active:hover){background:var(--wb-primary-soft);color:var(--wb-primary)}
+:where(.wb-iconbtn-outlined){border:1px solid var(--wb-outline);border-radius:8px}
+:where(.wb-iconbtn-primary){color:var(--wb-primary)}
+:where(.wb-iconbtn-error:hover){background:rgba(255,86,48,.1);color:var(--wb-error)}
+:where(.wb-iconbtn:disabled){opacity:.4;cursor:not-allowed}
+:where(.wb-iconbtn:focus-visible){outline:2px solid var(--wb-primary);outline-offset:1px}
+:where(.wb-textfield,.wb-select){display:inline-flex;flex-direction:column;gap:6px;min-width:0;vertical-align:top;text-align:left}
+:where(.wb-textfield-full,.wb-select-full){display:flex;width:100%}
+:where(.wb-field-label){font-size:12px;font-weight:600;color:var(--wb-text-2);line-height:1.4}
+:where(.wb-required){color:var(--wb-error)}
+:where(.wb-input-wrap,.wb-select-wrap){position:relative;display:flex;align-items:center;width:100%}
+:where(.wb-input,.wb-select-input){font:inherit;font-size:14px;line-height:1.4;color:var(--wb-text);background:var(--wb-paper);border:1px solid var(--wb-outline);border-radius:8px;padding:0 12px;height:36px;width:100%;min-width:0;outline:none;transition:border-color .15s,box-shadow .15s;box-sizing:border-box;margin:0}
+:where(.wb-textfield-medium .wb-input,.wb-select-medium .wb-select-input){height:44px;font-size:15px}
+:where(.wb-textarea){height:auto;min-height:72px;padding:8px 12px;resize:vertical;line-height:1.5}
+:where(.wb-input:hover,.wb-select-input:hover){border-color:var(--wb-text)}
+:where(.wb-input:focus,.wb-select-input:focus){border-color:var(--wb-primary);box-shadow:0 0 0 3px var(--wb-primary-soft)}
+:where(.wb-input::placeholder){color:var(--wb-text-3);opacity:1}
+:where(.wb-input:disabled,.wb-select-input:disabled){color:var(--wb-text-3);cursor:not-allowed;background:var(--wb-hover)}
+:where(.wb-input-error){border-color:var(--wb-error)}
+:where(.wb-input-error:focus){border-color:var(--wb-error);box-shadow:0 0 0 3px rgba(255,86,48,.16)}
+:where(.wb-input-has-icon){padding-left:36px}
+:where(.wb-input-has-end){padding-right:40px}
+:where(.wb-input-icon){position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--wb-text-3);display:inline-flex;pointer-events:none;line-height:0}
+:where(.wb-input-end){position:absolute;right:8px;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;color:var(--wb-text-2)}
+:where(.wb-helper){font-size:12px;color:var(--wb-text-2);line-height:1.4}
+:where(.wb-helper-error){color:var(--wb-error)}
+:where(.wb-select-input){appearance:none;-webkit-appearance:none;padding-right:32px;cursor:pointer}
+:where(.wb-select-input:disabled){cursor:not-allowed}
+:where(.wb-select-input option){color:#1C252E;background:#fff}
+:where(.wb-select-chevron){position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--wb-text-2);display:inline-flex;line-height:0}
+:where(.wb-switch-row){display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;min-height:24px;padding:4px 0;-webkit-tap-highlight-color:transparent}
+:where(.wb-switch-row-end){justify-content:flex-start}
+:where(.wb-switch-row.wb-disabled){cursor:not-allowed}
+:where(.wb-switch-text){display:flex;flex-direction:column;min-width:0;gap:2px}
+:where(.wb-switch-label){font-size:14px;font-weight:500;color:var(--wb-text);line-height:1.4}
+:where(.wb-switch-sublabel){font-size:12px;color:var(--wb-text-2);line-height:1.4}
+:where(.wb-switch){position:relative;display:inline-flex;flex-shrink:0;width:34px;height:20px}
+:where(.wb-switch-input){position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer;z-index:1}
+:where(.wb-switch-input:disabled){cursor:not-allowed}
+:where(.wb-switch-track){position:absolute;inset:0;border-radius:10px;background:var(--wb-track);transition:background .2s}
+:where(.wb-switch-thumb){position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s}
+:where(.wb-switch-input:checked + .wb-switch-track){background:var(--wb-primary)}
+:where(.wb-switch-input:checked + .wb-switch-track .wb-switch-thumb){transform:translateX(14px)}
+:where(.wb-switch-input:focus-visible + .wb-switch-track){box-shadow:0 0 0 3px var(--wb-primary-soft)}
+:where(.wb-switch-input:disabled + .wb-switch-track){opacity:.5}
+:where(.wb-slider){display:flex;flex-direction:column;gap:2px;width:100%;min-width:0}
+:where(.wb-slider-head){display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;color:var(--wb-text-2)}
+:where(.wb-slider-value){font-size:12px;font-weight:700;color:var(--wb-text);background:var(--wb-hover);border-radius:6px;padding:2px 8px;font-variant-numeric:tabular-nums}
+:where(.wb-slider-input){-webkit-appearance:none;appearance:none;width:100%;height:24px;background:transparent;margin:0;cursor:pointer;display:block;padding:0}
+:where(.wb-slider-input:disabled){cursor:not-allowed;opacity:.6}
+:where(.wb-slider-input:focus){outline:none}
+:where(.wb-slider-input)::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right,var(--wb-primary) var(--wb-fill,0%),var(--wb-track) var(--wb-fill,0%))}
+:where(.wb-slider-input)::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;background:var(--wb-primary);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.28);margin-top:-6px;transition:box-shadow .15s}
+:where(.wb-slider-input:focus-visible)::-webkit-slider-thumb{box-shadow:0 0 0 4px var(--wb-primary-soft)}
+:where(.wb-slider-input)::-moz-range-track{height:4px;border-radius:2px;background:var(--wb-track)}
+:where(.wb-slider-input)::-moz-range-progress{height:4px;border-radius:2px;background:var(--wb-primary)}
+:where(.wb-slider-input)::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--wb-primary);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.28)}
+:where(.wb-slider-marks){position:relative;height:16px;margin:0 8px;font-size:11px;color:var(--wb-text-3)}
+:where(.wb-slider-mark){position:absolute;top:0;transform:translateX(-50%);white-space:nowrap;line-height:1.2}
+:where(.wb-slider-mark::before){content:"";position:absolute;top:-8px;left:50%;width:2px;height:2px;border-radius:50%;background:var(--wb-text-3);transform:translateX(-50%)}
+:where(.wb-range){display:flex;flex-direction:column;gap:8px;width:100%}
+:where(.wb-range-track){position:relative;height:28px;display:flex;align-items:center}
+:where(.wb-range-rail){position:absolute;left:8px;right:8px;height:6px;border-radius:3px;top:50%;transform:translateY(-50%)}
+:where(.wb-range-input){-webkit-appearance:none;appearance:none;position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;background:transparent;pointer-events:none;outline:none}
+:where(.wb-range-input)::-webkit-slider-runnable-track{height:6px;background:transparent;border:0}
+:where(.wb-range-input)::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;pointer-events:auto;width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid var(--wb-text);box-shadow:0 1px 4px rgba(0,0,0,.3);margin-top:-6px;cursor:grab}
+:where(.wb-range-input:focus-visible)::-webkit-slider-thumb{box-shadow:0 0 0 4px var(--wb-primary-soft)}
+:where(.wb-range-input)::-moz-range-track{height:6px;background:transparent;border:0}
+:where(.wb-range-input)::-moz-range-thumb{pointer-events:auto;width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid var(--wb-text);box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:grab}
+:where(.wb-range-input:disabled)::-webkit-slider-thumb{cursor:not-allowed}
+:where(.wb-range-chips){display:flex;gap:6px;flex-wrap:wrap}
+:where(.wb-chip){display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;border-radius:8px;font-size:12px;font-weight:600;line-height:1;white-space:nowrap;border:1px solid transparent;box-sizing:border-box;max-width:100%;color:var(--wb-chip-c,var(--wb-text))}
+:where(.wb-chip-medium){height:32px;padding:0 12px;font-size:13px;border-radius:16px}
+:where(.wb-chip-label){overflow:hidden;text-overflow:ellipsis}
+:where(.wb-chip-soft){background:var(--wb-chip-bg,var(--wb-hover));color:var(--wb-chip-c,var(--wb-text));color:color-mix(in srgb,var(--wb-chip-c,var(--wb-text)) 78%,#000)}
+:where(html.dark .wb-chip-soft){color:color-mix(in srgb,var(--wb-chip-c,var(--wb-text)) 82%,#fff)}
+:where(.wb-chip-outlined){border-color:var(--wb-chip-c,var(--wb-outline));background:transparent}
+:where(.wb-chip-filled){background:var(--wb-chip-c,var(--wb-text-2));color:#fff}
+:where(.wb-chip-clickable){cursor:pointer;-webkit-tap-highlight-color:transparent}
+:where(.wb-chip-clickable:hover){filter:brightness(.96)}
+:where(.wb-chip-delete){display:inline-flex;border:0;background:transparent;padding:0;margin:0 -2px 0 0;cursor:pointer;color:inherit;opacity:.7;line-height:0}
+:where(.wb-chip-delete:hover){opacity:1}
+:where(.wb-alert){display:flex;gap:12px;align-items:flex-start;padding:12px 16px;border-radius:8px;font-size:13px;line-height:1.5;color:var(--wb-text)}
+:where(.wb-alert-info){background:rgba(0,184,217,.12)}
+:where(.wb-alert-warning){background:rgba(255,171,0,.14)}
+:where(.wb-alert-error){background:rgba(255,86,48,.12)}
+:where(.wb-alert-success){background:rgba(34,197,94,.12)}
+:where(.wb-alert-icon){display:inline-flex;flex-shrink:0;margin-top:1px;line-height:0}
+:where(.wb-alert-info .wb-alert-icon){color:var(--wb-info)}
+:where(.wb-alert-warning .wb-alert-icon){color:#B76E00}
+:where(.wb-alert-error .wb-alert-icon){color:var(--wb-error)}
+:where(.wb-alert-success .wb-alert-icon){color:#118D57}
+:where(html.dark .wb-alert-warning .wb-alert-icon){color:#FFD666}
+:where(html.dark .wb-alert-success .wb-alert-icon){color:#77ED8B}
+:where(.wb-alert-body){flex:1;min-width:0}
+:where(.wb-alert-title){font-weight:700;margin-bottom:2px}
+:where(.wb-alert-action){display:inline-flex;flex-shrink:0;align-items:center}
+:where(.wb-divider){border:0;border-top:1px dashed var(--wb-outline);margin:16px 0;height:0;width:100%;flex-shrink:0}
+:where(.wb-divider-solid){border-top-style:solid}
+:where(.wb-divider-vertical){border-top:0;border-left:1px solid var(--wb-outline);width:0;height:auto;align-self:stretch;margin:0 8px;min-height:16px}
+:where(.wb-divider-with-text){display:flex;align-items:center;gap:12px;border:0;color:var(--wb-text-2);font-size:12px}
+:where(.wb-divider-with-text::before,.wb-divider-with-text::after){content:"";flex:1;border-top:1px dashed var(--wb-outline)}
+:where(.wb-tooltip-wrap){position:relative;display:inline-flex;max-width:100%}
+:where(.wb-tooltip){position:absolute;left:50%;transform:translateX(-50%);z-index:1500;background:#1C252E;color:#fff;font-size:12px;font-weight:500;line-height:1.4;padding:6px 8px;border-radius:6px;white-space:nowrap;max-width:260px;pointer-events:none;box-shadow:var(--wb-shadow);animation:wb-ui-fade-in .12s ease-out}
+:where(.wb-tooltip-multiline){white-space:normal;width:max-content}
+:where(html.dark .wb-tooltip){background:#454F5B}
+:where(.wb-tooltip-top){bottom:calc(100% + 6px)}
+:where(.wb-tooltip-bottom){top:calc(100% + 6px)}
+:where(.wb-tooltip-right){left:calc(100% + 6px);top:50%;transform:translateY(-50%)}
+:where(.wb-tooltip-left){left:auto;right:calc(100% + 6px);top:50%;transform:translateY(-50%)}
+:where(.wb-dialog-overlay){position:fixed;inset:0;z-index:1300;background:var(--wb-backdrop);display:flex;align-items:center;justify-content:center;padding:16px;animation:wb-ui-fade-in .15s ease-out;box-sizing:border-box}
+:where(.wb-dialog){position:relative;background:var(--wb-paper);color:var(--wb-text);border-radius:16px;box-shadow:var(--wb-shadow-lg);display:flex;flex-direction:column;max-height:calc(100vh - 32px);outline:none;animation:wb-ui-pop .18s ease-out;box-sizing:border-box;font-size:14px}
+:where(.wb-dialog-header){display:flex;align-items:center;justify-content:space-between;gap:12px;padding:20px 16px 12px 24px}
+:where(.wb-dialog-title){margin:0;font-size:18px;font-weight:700;line-height:1.4;color:var(--wb-text)}
+:where(.wb-dialog-body){padding:4px 24px 20px;overflow:auto;min-height:0;flex:1 1 auto;line-height:1.5;color:var(--wb-text);scrollbar-width:thin}
+:where(.wb-dialog-actions){display:flex;justify-content:flex-end;gap:8px;padding:0 24px 24px;flex-wrap:wrap}
+:where(.wb-menu-wrap){position:relative;display:inline-block}
+:where(.wb-menu){position:absolute;z-index:1200;background:var(--wb-paper);color:var(--wb-text);border-radius:10px;box-shadow:var(--wb-shadow-lg);padding:4px;display:flex;flex-direction:column;gap:2px;animation:wb-ui-pop .12s ease-out;border:1px solid var(--wb-divider)}
+:where(.wb-menu-bottom){top:calc(100% + 4px)}
+:where(.wb-menu-top){bottom:calc(100% + 4px)}
+:where(.wb-menu-left){left:0}
+:where(.wb-menu-right){right:0}
+:where(.wb-menu-item){display:flex;align-items:center;gap:10px;width:100%;border:0;background:transparent;border-radius:6px;padding:8px 10px;font:inherit;font-size:13px;color:var(--wb-text);cursor:pointer;text-align:left;white-space:nowrap}
+:where(.wb-menu-item:hover,.wb-menu-item:focus-visible){background:var(--wb-hover);outline:none}
+:where(.wb-menu-item-selected){background:var(--wb-primary-soft);color:var(--wb-primary)}
+:where(.wb-menu-item-danger){color:var(--wb-error)}
+:where(.wb-menu-item:disabled){opacity:.48;cursor:not-allowed}
+:where(.wb-menu-item-label){flex:1}
+:where(.wb-menu-item-hint){font-size:11px;color:var(--wb-text-3)}
+:where(.wb-menu-divider){border-top:1px solid var(--wb-divider);margin:4px 0}
+:where(.wb-scrollbar){overflow:auto;min-height:0;scrollbar-width:thin;scrollbar-color:var(--wb-outline) transparent}
+:where(.wb-scrollbar)::-webkit-scrollbar{width:6px;height:6px}
+:where(.wb-scrollbar)::-webkit-scrollbar-thumb{background:var(--wb-outline);border-radius:3px}
+:where(.wb-scrollbar)::-webkit-scrollbar-track{background:transparent}
+:where(.wb-spinner){display:inline-block;width:24px;height:24px;border:3px solid var(--wb-track);border-top-color:var(--wb-primary);border-radius:50%;animation:wb-ui-spin .8s linear infinite;box-sizing:border-box;flex-shrink:0}
+:where(.wb-empty){display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:4px;padding:24px;color:var(--wb-text-2)}
+:where(.wb-empty-icon){display:inline-flex;margin-bottom:12px;opacity:.9;line-height:0}
+:where(.wb-empty-title){font-size:16px;font-weight:600;color:var(--wb-text);line-height:1.5}
+:where(.wb-empty-subtitle){font-size:14px;color:var(--wb-text-2);line-height:1.5;white-space:pre-line;max-width:320px}
+:where(.wb-empty-action){margin-top:12px}
+:where(.wb-locked){display:flex;gap:16px;align-items:flex-start}
+:where(.wb-locked-icon){display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:50%;background:rgba(255,171,0,.16);color:#B76E00;flex-shrink:0}
+:where(html.dark .wb-locked-icon){color:#FFD666}
+:where(.wb-locked-copy){margin:0;font-size:14px;line-height:1.6;color:var(--wb-text-2)}
+:where(.wb-disabled){cursor:not-allowed}
+@keyframes wb-ui-spin{to{transform:rotate(360deg)}}
+@keyframes wb-ui-fade-in{from{opacity:0}to{opacity:1}}
+@keyframes wb-ui-pop{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){:where(.wb-spinner,.wb-dialog,.wb-dialog-overlay,.wb-menu,.wb-tooltip){animation:none}}
+`;
+
+  const mintIcon = (name, size, color) => (typeof color === 'string' && color
+    ? <Icon icon={String(name)} size={Number(size) || 16} color={color} />
+    : <Icon icon={String(name)} size={Number(size) || 16} />);
+
+  const fallbackGlyph = (size) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+    </svg>
+  );
+
+  const LucideIcon = ({ name, size = 16, color, className, style, title }) => {
+    let inner = null;
+    try {
+      inner = mintIcon(name || 'circle', size, color);
+    } catch (err) {
+      inner = null;
+    }
+    return (
+      <span
+        className={cx('wb-icon', className)}
+        data-icon={name}
+        aria-hidden={title ? undefined : true}
+        role={title ? 'img' : undefined}
+        aria-label={title}
+        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: size, height: size, flexShrink: 0, lineHeight: 0, color: color || 'inherit', ...style }}
+      >
+        {inner || fallbackGlyph(size)}
+      </span>
+    );
+  };
+
+  const iconUrl = (iconId) => {
+    const raw = String(iconId || 'solar:widget-bold-duotone').trim();
+    const idx = raw.indexOf(':');
+    const name = idx > 0 ? raw.slice(idx + 1) : raw;
+    return '/images/wb-icons/' + name + '.svg';
+  };
+
+  const StepIcon = ({ icon, size = 20, color = '#ffffff', style, className, alt = '', testId }) => (
+    <span
+      data-testid={testId}
+      data-icon={icon}
+      aria-label={alt || undefined}
+      role={alt ? 'img' : undefined}
+      aria-hidden={alt ? undefined : true}
+      className={cx('wb-step-icon', className)}
+      style={{
+        display: 'inline-block',
+        width: size,
+        height: size,
+        flexShrink: 0,
+        backgroundColor: color || 'currentColor',
+        WebkitMaskImage: 'url("' + iconUrl(icon) + '")',
+        maskImage: 'url("' + iconUrl(icon) + '")',
+        WebkitMaskRepeat: 'no-repeat',
+        maskRepeat: 'no-repeat',
+        WebkitMaskPosition: 'center',
+        maskPosition: 'center',
+        WebkitMaskSize: 'contain',
+        maskSize: 'contain',
+        ...style,
+      }}
+    />
+  );
+
+  const renderIcon = (icon, size) => {
+    if (icon === null || icon === undefined || icon === false) return null;
+    if (isEl(icon)) return icon;
+    const name = String(icon);
+    if (name.indexOf(':') > 0) return <StepIcon icon={name} size={size} color="currentColor" />;
+    return <LucideIcon name={name} size={size} />;
+  };
+
+  const Button = React.forwardRef(function WbButton(p, ref) {
+    const {
+      variant = 'contained', color = 'primary', size = 'medium', startIcon, endIcon, fullWidth, disabled, loading,
+      onClick, children, className, style, testId, href, target, type = 'button', ...rest
+    } = p;
+    const iconSize = size === 'small' ? 14 : size === 'large' ? 18 : 16;
+    const cls = cx('wb-btn', `wb-btn-${variant}`, `wb-btn-${color}`, `wb-btn-${size}`, fullWidth && 'wb-btn-full', loading && 'wb-btn-loading', className);
+    const isDisabled = !!disabled || !!loading;
+    const content = (
+      <>
+        {loading ? <span className="wb-btn-icon"><span className="wb-spinner" style={{ width: iconSize, height: iconSize, borderWidth: 2, borderTopColor: 'currentColor', borderColor: 'rgba(255,255,255,.35)', borderTopColor: 'currentColor' }} /></span> : startIcon ? <span className="wb-btn-icon">{renderIcon(startIcon, iconSize)}</span> : null}
+        {children != null ? <span className="wb-btn-label">{children}</span> : null}
+        {endIcon ? <span className="wb-btn-icon">{renderIcon(endIcon, iconSize)}</span> : null}
+      </>
+    );
+    if (href && !isDisabled) {
+      return (
+        <a ref={ref} href={href} target={target} rel={target === '_blank' ? 'noopener noreferrer' : undefined} className={cls} style={style} onClick={onClick} data-testid={testId} {...rest}>
+          {content}
+        </a>
+      );
+    }
+    return (
+      <button ref={ref} type={type} className={cls} style={style} disabled={isDisabled} aria-busy={loading ? true : undefined} onClick={onClick} data-testid={testId} {...rest}>
+        {content}
+      </button>
+    );
+  });
+
+  const IconButton = React.forwardRef(function WbIconButton(p, ref) {
+    const { name, size = 18, label, onClick, active, disabled, color, variant, className, style, testId, children, title, ...rest } = p;
+    return (
+      <button
+        ref={ref}
+        type="button"
+        aria-label={label}
+        title={title === undefined ? label : title || undefined}
+        aria-pressed={active === undefined ? undefined : !!active}
+        disabled={disabled}
+        onClick={onClick}
+        data-testid={testId}
+        className={cx('wb-iconbtn', size >= 20 && 'wb-iconbtn-lg', active && 'wb-iconbtn-active', variant && `wb-iconbtn-${variant}`, color && `wb-iconbtn-${color}`, className)}
+        style={style}
+        {...rest}
+      >
+        {children || <LucideIcon name={name} size={size} />}
+      </button>
+    );
+  });
+
+  const Divider = ({ style, className }) => <div className={cx('wb-divider', className)} style={style} />;
+
+  const Chip = ({ label, children, color, size = 'small', style, className, testId }) => (
+    <span data-testid={testId} className={cx('wb-chip', color && `wb-chip-${color}`, size === 'tiny' && 'wb-chip-tiny', className)} style={style}>{children || label}</span>
+  );
+
+  const Spinner = ({ size = 18, color }) => (
+    <span className="wb-spinner" style={{ width: size, height: size, borderColor: color || 'currentColor', borderTopColor: 'transparent' }} aria-hidden="true" />
+  );
+
+  const Alert = ({ severity = 'info', title, children, style, className, testId }) => (
+    <div role="note" data-testid={testId} className={cx('wb-alert', `wb-alert-${severity}`, className)} style={style}>
+      <LucideIcon name={severity === 'warning' ? 'triangle-alert' : severity === 'error' ? 'circle-alert' : severity === 'success' ? 'circle-check' : 'info'} size={16} />
+      <div className="wb-alert-body">
+        {title ? <div className="wb-alert-title">{title}</div> : null}
+        {children ? <div className="wb-alert-text">{children}</div> : null}
+      </div>
+    </div>
+  );
+
+  const Tooltip = ({ title, children, style, className }) => (
+    <span className={cx('wb-tip', className)} style={style} title={title === undefined || title === null ? undefined : String(title)}>{children}</span>
+  );
+
+  const Scrollbar = ({ children, style, className, testId }) => (
+    <div data-testid={testId} className={cx('wb-scroll', className)} style={style}>{children}</div>
+  );
+
+  const EmptyState = ({ icon, title, subtitle, style, className, testId }) => (
+    <div data-testid={testId} className={cx('wb-empty', className)} style={style}>
+      {icon ? <StepIcon icon={icon} size={44} color="#B0B8C4" /> : null}
+      {title ? <div className="wb-empty-title">{title}</div> : null}
+      {subtitle ? <div className="wb-empty-sub">{subtitle}</div> : null}
+    </div>
+  );
+
+  const TextField = ({ label, value, onChange, placeholder, multiline, rows, size = 'small', fullWidth, type = 'text', disabled, error, helperText, startIcon, testId, style, className, onKeyDown, min, max, step, ariaLabel }) => {
+    const handle = (e) => { if (typeof onChange === 'function') onChange(e.target.value); };
+    const shared = {
+      value: value === undefined || value === null ? '' : value,
+      onChange: handle, placeholder, disabled, onKeyDown,
+      'data-testid': testId,
+      'aria-label': ariaLabel || (typeof label === 'string' ? label : undefined),
+      className: cx('wb-input', multiline && 'wb-input-multiline', error && 'wb-input-error'),
+    };
+    return (
+      <label className={cx('wb-field', fullWidth && 'wb-field-full', size === 'tiny' && 'wb-field-tiny', className)} style={style}>
+        {label ? <span className="wb-field-label">{label}</span> : null}
+        <span className={cx('wb-input-wrap', startIcon && 'wb-input-has-icon')}>
+          {startIcon ? <span className="wb-input-icon"><LucideIcon name={startIcon} size={15} /></span> : null}
+          {multiline
+            ? <textarea rows={rows || 3} {...shared} />
+            : <input type={type} min={min} max={max} step={step} {...shared} />}
+        </span>
+        {helperText ? <span className={cx('wb-field-help', error && 'wb-field-help-error')}>{helperText}</span> : null}
+      </label>
+    );
+  };
+
+  const Select = ({ label, value, onChange, options, size = 'small', disabled, fullWidth, testId, style, className, placeholder }) => {
+    const list = Array.isArray(options) ? options : [];
+    const handle = (e) => {
+      if (typeof onChange !== 'function') return;
+      const raw = e.target.value;
+      const hit = list.find((o) => String(o && o.value) === raw);
+      onChange(hit ? hit.value : raw);
+    };
+    return (
+      <label className={cx('wb-field', fullWidth && 'wb-field-full', size === 'tiny' && 'wb-field-tiny', className)} style={style}>
+        {label ? <span className="wb-field-label">{label}</span> : null}
+        <span className="wb-select-wrap">
+          <select
+            className="wb-select"
+            disabled={disabled}
+            value={value === undefined || value === null ? '' : String(value)}
+            onChange={handle}
+            data-testid={testId}
+            aria-label={typeof label === 'string' ? label : undefined}
+          >
+            {placeholder ? <option value="">{placeholder}</option> : null}
+            {list.map((o, i) => {
+              const parts = [o && o.flag ? String(o.flag) + ' ' : '', String((o && o.label) === undefined ? o && o.value : o.label)];
+              if (o && o.hint) parts.push('  — ' + o.hint);
+              if (o && (o.cost || o.cost === 0)) parts.push('  $' + Number(o.cost).toFixed(2));
+              return <option key={String((o && o.value) ?? i)} value={String(o && o.value)} disabled={!!(o && o.disabled)}>{parts.join('')}</option>;
+            })}
+          </select>
+          <span className="wb-select-caret" aria-hidden="true"><LucideIcon name="chevron-down" size={14} /></span>
+        </span>
+      </label>
+    );
+  };
+
+  const Switch = ({ checked, onChange, label, sublabel, disabled, labelPlacement = 'start', testId, style, className, flag }) => {
+    const toggle = () => { if (!disabled && typeof onChange === 'function') onChange(!checked); };
+    const control = (
+      <button
+        type="button" role="switch" aria-checked={!!checked} disabled={disabled} onClick={toggle}
+        data-testid={testId} className={cx('wb-switch', checked && 'wb-switch-on', disabled && 'wb-switch-disabled')}
+        aria-label={typeof label === 'string' ? label : 'toggle'}
+      >
+        <span className="wb-switch-thumb" />
+      </button>
+    );
+    const text = (
+      <span className="wb-switch-text">
+        <span className="wb-switch-label">{flag ? <span className="wb-flag">{flag} </span> : null}{label}</span>
+        {sublabel ? <span className="wb-switch-sub">{sublabel}</span> : null}
+      </span>
+    );
+    return (
+      <div className={cx('wb-switch-row', disabled && 'wb-row-disabled', className)} style={style}>
+        {labelPlacement === 'start' ? text : null}
+        {control}
+        {labelPlacement === 'start' ? null : text}
+      </div>
+    );
+  };
+
+  const Slider = ({ value, onChange, min = 0, max = 100, step = 1, marks, showValue, unit, disabled, testId, label, style, className }) => {
+    const v = clampNum(Number(value), min, max);
+    const pct = max > min ? ((v - min) / (max - min)) * 100 : 0;
+    return (
+      <div className={cx('wb-slider-row', disabled && 'wb-row-disabled', className)} style={style}>
+        {(label || showValue) ? (
+          <div className="wb-slider-head">
+            <span className="wb-field-label">{label}</span>
+            {showValue ? <span className="wb-slider-value">{v}{unit || ''}</span> : null}
+          </div>
+        ) : null}
+        <input
+          type="range" className="wb-slider" min={min} max={max} step={step} value={v} disabled={disabled}
+          data-testid={testId} aria-label={typeof label === 'string' ? label : 'slider'}
+          style={{ '--wb-slider-pct': pct + '%' }}
+          onChange={(e) => { if (typeof onChange === 'function') onChange(Number(e.target.value)); }}
+        />
+        {Array.isArray(marks) && marks.length ? (
+          <div className="wb-slider-marks">{marks.map((m, i) => <span key={i} className="wb-slider-mark">{m && m.label !== undefined ? m.label : m && m.value}</span>)}</div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const RangeSlider = ({ value, onChange, min = 0, max = 100, step = 1, lowerLabel, upperLabel, lowerColor = '#22C55E', middleColor = '#FF9500', upperColor = '#FF3B30', disabled, testId, label, style, className }) => {
+    const pair = Array.isArray(value) ? value : [min, max];
+    const lo = clampNum(Number(pair[0]), min, max);
+    const hi = clampNum(Number(pair[1]), min, max);
+    const span = max > min ? max - min : 1;
+    const loPct = ((lo - min) / span) * 100;
+    const hiPct = ((hi - min) / span) * 100;
+    const emit = (nextLo, nextHi) => { if (typeof onChange === 'function') onChange([Math.min(nextLo, nextHi), Math.max(nextLo, nextHi)]); };
+    return (
+      <div className={cx('wb-range', disabled && 'wb-row-disabled', className)} style={style} data-testid={testId}>
+        {label ? <div className="wb-field-label">{label}</div> : null}
+        <div className="wb-range-rail" style={{ background: `linear-gradient(90deg, ${lowerColor} 0 ${loPct}%, ${middleColor} ${loPct}% ${hiPct}%, ${upperColor} ${hiPct}% 100%)` }} />
+        <div className="wb-range-inputs">
+          <input type="range" min={min} max={max} step={step} value={lo} disabled={disabled} aria-label={(lowerLabel || 'lower') + ' bound'}
+            onChange={(e) => emit(Number(e.target.value), hi)} />
+          <input type="range" min={min} max={max} step={step} value={hi} disabled={disabled} aria-label={(upperLabel || 'upper') + ' bound'}
+            onChange={(e) => emit(lo, Number(e.target.value))} />
+        </div>
+        <div className="wb-range-chips">
+          <Chip color="success">{(lowerLabel || 'Low') + ' < ' + lo}</Chip>
+          <Chip color="warning">{lo + ' – ' + hi}</Chip>
+          <Chip color="error">{(upperLabel || 'High') + ' > ' + hi}</Chip>
+        </div>
+      </div>
+    );
+  };
+
+  const Tabs = ({ value, onChange, tabs, pill = true, style, className, testIdPrefix }) => {
+    const list = Array.isArray(tabs) ? tabs : [];
+    return (
+      <div role="tablist" className={cx('wb-tabs', pill && 'wb-tabs-pill', className)} style={style}>
+        {list.map((t) => {
+          const val = t && t.value !== undefined ? t.value : t;
+          const active = String(val) === String(value);
+          return (
+            <button
+              key={String(val)} type="button" role="tab" aria-selected={active}
+              data-testid={(t && t.testId) || (testIdPrefix ? testIdPrefix + String(val) : undefined)}
+              className={cx('wb-tab', active && 'wb-tab-active')}
+              onClick={() => { if (typeof onChange === 'function') onChange(val); }}
+            >{(t && t.label !== undefined) ? t.label : String(val)}</button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const Dialog = ({ open, onClose, title, children, actions, width = 520, testId, className }) => {
+    useEffect(() => {
+      if (!open) return undefined;
+      const onKey = (e) => { if (e.key === 'Escape' && typeof onClose === 'function') onClose(); };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+    }, [open, onClose]);
+    if (!open) return null;
+    return (
+      <div className="wb-dialog-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && typeof onClose === 'function') onClose(); }}>
+        <div role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : 'dialog'} data-testid={testId}
+             className={cx('wb-dialog', className)} style={{ width, maxWidth: 'calc(100vw - 48px)' }}>
+          <div className="wb-dialog-head">
+            <div className="wb-dialog-title">{title}</div>
+            <IconButton name="x" size={16} label="Close" onClick={onClose} testId={testId ? testId + '-close' : undefined} />
+          </div>
+          <div className="wb-dialog-body">{children}</div>
+          {actions ? <div className="wb-dialog-actions">{actions}</div> : null}
+        </div>
+      </div>
+    );
+  };
+
+  const Menu = ({ open, onClose, items, style, className }) => {
+    if (!open) return null;
+    const list = Array.isArray(items) ? items : [];
+    return (
+      <div className={cx('wb-menu', className)} style={style} role="menu">
+        {list.map((it, i) => (
+          <button key={i} type="button" role="menuitem" className="wb-menu-item"
+            onClick={() => { if (it && typeof it.onClick === 'function') it.onClick(); if (typeof onClose === 'function') onClose(); }}>
+            {it && it.icon ? <LucideIcon name={it.icon} size={14} /> : null}{it && it.label}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  const ToastContext = React.createContext(null);
+
+  const ToastProvider = ({ children }) => {
+    const styleRef = useRef(false);
+    useEffect(() => {
+      if (styleRef.current) return;
+      styleRef.current = true;
+      try {
+        if (!document.getElementById('wb-ui-css')) {
+          const el = document.createElement('style');
+          el.id = 'wb-ui-css';
+          el.textContent = UI_CSS;
+          document.head.appendChild(el);
+        }
+      } catch (e) {}
+    }, []);
+    return <ToastContext.Provider value={null}>{children}</ToastContext.Provider>;
+  };
+
+  const useToast = () => noop;
+
+  const FeatureLockedDialog = ({ open, onClose, feature }) => (
+    <Dialog
+      open={open} onClose={onClose} title="Feature not activated" width={460} testId="wb-feature-locked-dialog"
+      actions={(
+        <>
+          <Button variant="text" color="inherit" onClick={onClose}>Close</Button>
+          <Button variant="contained" onClick={() => { try { window.location.href = 'mailto:sales@deepidv.com'; } catch (e) {  } if (typeof onClose === 'function') onClose(); }}>Contact sales</Button>
+        </>
+      )}
+    >
+      <p className="wb-dialog-text">{(feature || 'This feature') + " hasn't been activated for this account yet. Contact our sales team to enable it."}</p>
+    </Dialog>
+  );
+
+
+  const MuiButton = React.forwardRef(function WbMuiButton(p, ref) {
+    const { variant = 'text', gradient, startIcon, endIcon, disabled, loading, onClick, children, className, style, testId, noHover, type = 'button', ...rest } = p;
+    return (
+      <button
+        ref={ref}
+        type={type}
+        className={cx('wb-mbtn', 'wb-mbtn-' + variant, gradient && 'wb-mbtn-gradient', noHover && 'wb-mbtn-nohover', loading && 'wb-mbtn-loading', className)}
+        style={style}
+        disabled={!!disabled || !!loading}
+        onClick={onClick}
+        data-testid={testId}
+        {...rest}
+      >
+        {startIcon ? <span className="wb-mbtn-start">{startIcon}</span> : null}
+        <span>{children}</span>
+        {endIcon ? <span className="wb-mbtn-start" style={{ margin: '0 -4px 0 4px' }}>{endIcon}</span> : null}
+        {loading ? <span className="wb-spin" /> : null}
+      </button>
+    );
+  });
+
+  const MuiIconButton = React.forwardRef(function WbMuiIconButton(p, ref) {
+    const { size = 'small', label, onClick, disabled, className, style, testId, children, active, ...rest } = p;
+    return (
+      <button
+        ref={ref}
+        type="button"
+        aria-label={label}
+        aria-pressed={active === undefined ? undefined : !!active}
+        disabled={disabled}
+        onClick={onClick}
+        data-testid={testId}
+        className={cx('wb-micon', 'wb-micon-' + (size === 'small' ? 'sm' : 'md'), className)}
+        style={style}
+        {...rest}
+      >
+        {children}
+      </button>
+    );
+  });
+
+  const MuiTextField = ({ label, placeholder, value, onChange, size = 'small', fullWidth, startAdornment, endAdornment, disabled, error, helperText, type = 'text', testId, style, className, multiline, rows, inputProps, onKeyDown, autoFocus }) => {
+    const [focused, setFocused] = useState(false);
+    const filled = value !== undefined && value !== null && String(value) !== '';
+    const shrunk = focused || filled || !!startAdornment || !!placeholder;
+    const InputTag = multiline ? 'textarea' : 'input';
+    return (
+      <div className={cx('wb-mf', fullWidth && 'wb-mf-full', shrunk && 'wb-mf-shrunk', error && 'wb-mf-error', disabled && 'wb-mf-disabled', className)} style={style} data-testid={testId ? testId + '-root' : undefined}>
+        <div className="wb-mf-ctrl">
+          {startAdornment ? <span className="wb-mf-start">{startAdornment}</span> : null}
+          <InputTag
+            className={cx('wb-mf-input', startAdornment && 'wb-mf-has-start')}
+            type={multiline ? undefined : type}
+            rows={multiline ? rows || 3 : undefined}
+            value={value === undefined || value === null ? '' : value}
+            placeholder={placeholder}
+            disabled={disabled}
+            autoFocus={autoFocus}
+            data-testid={testId}
+            aria-label={typeof label === 'string' ? label : placeholder}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onKeyDown={onKeyDown}
+            onChange={(e) => { if (typeof onChange === 'function') onChange(e.target.value); }}
+            style={multiline ? { height: 'auto', minHeight: 40, resize: 'vertical', lineHeight: 1.5, paddingTop: 10, paddingBottom: 10 } : undefined}
+            {...(inputProps || {})}
+          />
+          {endAdornment ? <span className="wb-mf-end">{endAdornment}</span> : null}
+          <fieldset className="wb-mf-outline" aria-hidden="true"><legend><span>{label || ' '}</span></legend></fieldset>
+        </div>
+        {label ? <label className="wb-mf-label">{label}</label> : null}
+        {helperText ? <div className="wb-mf-helper">{helperText}</div> : null}
+      </div>
+    );
+  };
+
+  const MuiSelect = ({ label, value, onChange, options, placeholder, renderValue, fullWidth, disabled, size = 'small', testId, style, className, displayEmpty, menuWidth }) => {
+    const [open, setOpen] = useState(false);
+    const anchorRef = useRef(null);
+    const [pos, setPos] = useState(null);
+    const list = Array.isArray(options) ? options : [];
+    const selected = list.find((o) => String(o.value) === String(value));
+    const shrunk = displayEmpty || (value !== undefined && value !== null && String(value) !== '') || open;
+
+    useEffect(() => {
+      if (!open) return undefined;
+      const place = () => {
+        const el = anchorRef.current;
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        const below = window.innerHeight - r.bottom;
+        const maxH = 320;
+        const top = below > Math.min(maxH, 200) + 8 ? r.bottom + 4 : Math.max(8, r.top - Math.min(maxH, 320) - 4);
+        setPos({ left: r.left, top, width: menuWidth || r.width });
+      };
+      place();
+      const close = (e) => { if (anchorRef.current && anchorRef.current.contains(e.target)) return; if (e.target.closest && e.target.closest('.wb-menu-pop')) return; setOpen(false); };
+      const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+      window.addEventListener('mousedown', close);
+      window.addEventListener('keydown', onKey);
+      window.addEventListener('resize', place);
+      window.addEventListener('scroll', place, true);
+      return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', onKey); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
+    }, [open, menuWidth]);
+
+    const shown = selected
+      ? (typeof renderValue === 'function' ? renderValue(selected) : (
+        <>
+          {selected.icon ? <span className="wb-menu-item-icon">{selected.icon}</span> : null}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selected.label}</span>
+        </>
+      ))
+      : (typeof renderValue === 'function' ? renderValue(null) : placeholder || '');
+
+    const menu = open && pos ? (
+      <div className="wb-menu-pop" role="listbox" style={{ left: pos.left, top: pos.top, minWidth: pos.width }} data-testid={testId ? testId + '-menu' : undefined}>
+        {list.map((o) => (
+          <div
+            key={String(o.value)}
+            role="option"
+            className="wb-menu-item"
+            aria-selected={String(o.value) === String(value) ? 'true' : 'false'}
+            aria-disabled={o.disabled ? 'true' : undefined}
+            data-value={String(o.value)}
+            onClick={() => { if (o.disabled) return; setOpen(false); if (typeof onChange === 'function') onChange(o.value); }}
+          >
+            {o.flagSrc ? <img className="wb-menu-item-flag" src={o.flagSrc} alt="" /> : null}
+            {o.icon ? <span className="wb-menu-item-icon">{o.icon}</span> : null}
+            <span style={{ flex: '1 1 auto', minWidth: 0 }}>{o.label}{o.hint ? <span className="wb-menu-item-hint">{' ' + o.hint}</span> : null}</span>
+            {o.cost !== undefined && o.cost !== null ? <span className="wb-menu-item-cost">{typeof o.cost === 'number' ? '$' + o.cost.toFixed(2) : o.cost}</span> : null}
+          </div>
+        ))}
+      </div>
+    ) : null;
+
+    return (
+      <div className={cx('wb-mf', 'wb-mf-select', fullWidth && 'wb-mf-full', shrunk && 'wb-mf-shrunk', open && 'wb-mf-select-open', disabled && 'wb-mf-disabled', className)} style={style} ref={anchorRef}>
+        <div className="wb-mf-ctrl">
+          <button
+            type="button"
+            className={cx('wb-mf-input', !selected && 'wb-mf-placeholder')}
+            disabled={disabled}
+            aria-haspopup="listbox"
+            aria-expanded={open ? 'true' : 'false'}
+            aria-label={typeof label === 'string' ? label : placeholder}
+            data-testid={testId}
+            onClick={() => { if (!disabled) setOpen((v) => !v); }}
+          >
+            {shown}
+          </button>
+          <span className="wb-mf-caret"><LucideIcon name="chevron-down" size={22} /></span>
+          <fieldset className="wb-mf-outline" aria-hidden="true"><legend><span>{label || ' '}</span></legend></fieldset>
+        </div>
+        {label ? <label className="wb-mf-label">{label}</label> : null}
+        {menu}
+      </div>
+    );
+  };
+
+  return {
+    LucideIcon, StepIcon, Button, IconButton, TextField, Select, Switch, Slider, RangeSlider,
+    Tabs, Chip, Alert, Divider, Tooltip, Dialog, Menu, Scrollbar, ToastProvider, useToast,
+    FeatureLockedDialog, Spinner, EmptyState, iconUrl, cx,
+    MuiButton, MuiIconButton, MuiTextField, MuiSelect,
+  };
+};
+

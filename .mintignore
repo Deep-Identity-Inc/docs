@@ -8,3 +8,7 @@ AGENTS.md
 # Draft content
 drafts/
 *.draft.mdx
+
+# Website hero copy + Next.js source kept here for review only.
+# Mintlify tries to parse its .tsx/.md files as MDX and the build fails.
+Hero Copy from Website/

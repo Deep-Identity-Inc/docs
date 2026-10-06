@@ -1,0 +1,583 @@
+export const makeGeometry = (deps) => {
+  const { WB } = deps;
+  const C = WB.CANVAS;
+  const START_NODE_ID = WB.START_NODE_ID;
+
+  const NODE_W = C.NODE_WIDTH;
+  const NODE_H = C.NODE_HEIGHT;
+  const START_W = C.START_NODE_WIDTH;
+  const START_H = C.START_NODE_HEIGHT;
+  const MIN_ZOOM = C.MIN_ZOOM;
+  const MAX_ZOOM = C.MAX_ZOOM;
+  const ZOOM_STEP = C.ZOOM_STEP;
+  const ELBOW_GAP = C.ELBOW_GAP;
+  const CORNER_RADIUS = C.CORNER_RADIUS;
+  const GRID_SIZE = C.GRID_SIZE;
+  const ROW_GAP = C.ROW_GAP;
+  const FIT_PADDING = C.FIT_PADDING;
+  const FIT_MAX_ZOOM = C.FIT_MAX_ZOOM;
+  const ANCHOR_HIT_RADIUS = C.ANCHOR_HIT_RADIUS;
+
+  const isFiniteNum = (n) => typeof n === 'number' && Number.isFinite(n);
+  const num = (n, fallback) => (isFiniteNum(n) ? n : fallback);
+  const round2 = (n) => Math.round(n * 100) / 100;
+  const round4 = (n) => Math.round(n * 10000) / 10000;
+  const EPS = 1e-6;
+
+  const DEFAULT_VIEWPORT = { x: 0, y: 0, zoom: 1 };
+
+  const LAYOUT_AXIS_X = 400;
+  const LAYOUT_TOP_Y = 20;
+  const LAYOUT_FIRST_STEP_Y = 120;
+  const DEFAULT_START_POSITION = { x: LAYOUT_AXIS_X - START_W / 2, y: LAYOUT_TOP_Y };
+
+  const ANCHOR_SIDES = ['top', 'right', 'bottom', 'left'];
+  const START_ANCHOR_SIDES = ['bottom', 'right'];
+
+  const makeOffsets = (w, h) => ({
+    top: { x: w / 2, y: 0 },
+    right: { x: w, y: h / 2 },
+    bottom: { x: w / 2, y: h },
+    left: { x: 0, y: h / 2 },
+  });
+  const STEP_ANCHOR_OFFSETS = makeOffsets(NODE_W, NODE_H);
+  const START_ANCHOR_OFFSETS = makeOffsets(START_W, START_H);
+
+  const ANCHOR_OFFSETS = { ...STEP_ANCHOR_OFFSETS };
+  Object.defineProperty(ANCHOR_OFFSETS, 'step', { value: STEP_ANCHOR_OFFSETS, enumerable: false });
+  Object.defineProperty(ANCHOR_OFFSETS, 'start', { value: START_ANCHOR_OFFSETS, enumerable: false });
+
+  const anchorOffsets = (isStart) => (isStart ? START_ANCHOR_OFFSETS : STEP_ANCHOR_OFFSETS);
+  const nodeSize = (isStart) => (isStart ? { width: START_W, height: START_H } : { width: NODE_W, height: NODE_H });
+  const isStartId = (nodeId, isStart) => (typeof isStart === 'boolean' ? isStart : nodeId === START_NODE_ID);
+  const stepKeyOf = (step) => {
+    if (typeof step === 'string') return step;
+    return (step && (step.instanceId || step.id)) || '';
+  };
+
+  const snap = (v) => Math.round(num(v, 0) / GRID_SIZE) * GRID_SIZE;
+
+  const clampZoom = (z) => {
+    const n = num(z, 1);
+    return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, n));
+  };
+
+  const normalizeViewport = (vp) => ({
+    x: num(vp && vp.x, 0),
+    y: num(vp && vp.y, 0),
+    zoom: clampZoom(vp && vp.zoom),
+  });
+
+  const rectOrigin = (svgRect) => ({
+    left: num(svgRect && svgRect.left, 0),
+    top: num(svgRect && svgRect.top, 0),
+  });
+
+  const screenToCanvas = (clientX, clientY, viewport, svgRect) => {
+    const vp = normalizeViewport(viewport);
+    const o = rectOrigin(svgRect);
+    return {
+      x: (num(clientX, 0) - o.left - vp.x) / vp.zoom,
+      y: (num(clientY, 0) - o.top - vp.y) / vp.zoom,
+    };
+  };
+
+  const canvasToScreen = (x, y, viewport, svgRect) => {
+    const vp = normalizeViewport(viewport);
+    const o = rectOrigin(svgRect);
+    return {
+      x: num(x, 0) * vp.zoom + vp.x + o.left,
+      y: num(y, 0) * vp.zoom + vp.y + o.top,
+    };
+  };
+
+  const visibleCanvasRect = (viewport, containerW, containerH) => {
+    const vp = normalizeViewport(viewport);
+    const W = Math.max(0, num(containerW, 0));
+    const H = Math.max(0, num(containerH, 0));
+    const tl = screenToCanvas(0, 0, vp, null);
+    return { x: tl.x, y: tl.y, width: W / vp.zoom, height: H / vp.zoom };
+  };
+
+  const centerViewportOn = (viewport, canvasPt, containerW, containerH) => {
+    const vp = normalizeViewport(viewport);
+    const cx = num(canvasPt && canvasPt.x, 0);
+    const cy = num(canvasPt && canvasPt.y, 0);
+    return {
+      x: round2(num(containerW, 0) / 2 - cx * vp.zoom),
+      y: round2(num(containerH, 0) / 2 - cy * vp.zoom),
+      zoom: vp.zoom,
+    };
+  };
+
+  const hasPosition = (nodeId, positions) => {
+    const p = positions && positions[nodeId];
+    return !!(p && isFiniteNum(p.x) && isFiniteNum(p.y));
+  };
+
+  const nodePosition = (nodeId, positions, isStart) => {
+    if (hasPosition(nodeId, positions)) return { x: positions[nodeId].x, y: positions[nodeId].y };
+    return isStart ? { x: DEFAULT_START_POSITION.x, y: DEFAULT_START_POSITION.y } : { x: 0, y: 0 };
+  };
+
+  const nodeRect = (nodeId, positions, isStart) => {
+    const start = isStartId(nodeId, isStart);
+    const { x, y } = nodePosition(nodeId, positions, start);
+    const { width, height } = nodeSize(start);
+    return {
+      x,
+      y,
+      width,
+      height,
+      right: x + width,
+      bottom: y + height,
+      cx: x + width / 2,
+      cy: y + height / 2,
+      isStart: start,
+    };
+  };
+
+  const anchorPoint = (nodeId, anchor, positions, isStart) => {
+    const r = nodeRect(nodeId, positions, isStart);
+    const table = anchorOffsets(r.isStart);
+    const off = table[anchor] || (r.isStart ? table.bottom : table.top);
+    return { x: r.x + off.x, y: r.y + off.y };
+  };
+
+  const DIRS = {
+    top: { x: 0, y: -1 },
+    right: { x: 1, y: 0 },
+    bottom: { x: 0, y: 1 },
+    left: { x: -1, y: 0 },
+  };
+  const dirOf = (a) => DIRS[a] || DIRS.bottom;
+  const isVerticalAnchor = (a) => a === 'top' || a === 'bottom';
+
+  const rectFromAnchor = (p, a, size) => {
+    const w = size.width;
+    const h = size.height;
+    if (a === 'top') return { x1: p.x - w / 2, y1: p.y, x2: p.x + w / 2, y2: p.y + h };
+    if (a === 'bottom') return { x1: p.x - w / 2, y1: p.y - h, x2: p.x + w / 2, y2: p.y };
+    if (a === 'left') return { x1: p.x, y1: p.y - h / 2, x2: p.x + w, y2: p.y + h / 2 };
+    return { x1: p.x - w, y1: p.y - h / 2, x2: p.x, y2: p.y + h / 2 };
+  };
+
+  const samePt = (a, b) => Math.abs(a.x - b.x) < EPS && Math.abs(a.y - b.y) < EPS;
+
+  const simplifyPoints = (points) => {
+    const out = [];
+    for (const p of Array.isArray(points) ? points : []) {
+      if (!p || !isFiniteNum(p.x) || !isFiniteNum(p.y)) continue;
+      if (!out.length || !samePt(out[out.length - 1], p)) out.push({ x: p.x, y: p.y });
+    }
+    let changed = true;
+    while (changed && out.length > 2) {
+      changed = false;
+      for (let i = 1; i < out.length - 1; i++) {
+        const a = out[i - 1];
+        const b = out[i];
+        const c = out[i + 1];
+        const ux = b.x - a.x;
+        const uy = b.y - a.y;
+        const vx = c.x - b.x;
+        const vy = c.y - b.y;
+        const cross = ux * vy - uy * vx;
+        const dot = ux * vx + uy * vy;
+        if (Math.abs(cross) < EPS && dot > 0) {
+          out.splice(i, 1);
+          changed = true;
+          break;
+        }
+      }
+    }
+    return out;
+  };
+
+  const hasUTurn = (pts) => {
+    for (let i = 1; i < pts.length - 1; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const c = pts[i + 1];
+      const ux = b.x - a.x;
+      const uy = b.y - a.y;
+      const vx = c.x - b.x;
+      const vy = c.y - b.y;
+      if (Math.abs(ux * vy - uy * vx) < EPS && ux * vx + uy * vy < 0) return true;
+    }
+    return false;
+  };
+
+  const isOrthogonal = (pts) => {
+    for (let i = 1; i < pts.length; i++) {
+      if (Math.abs(pts[i].x - pts[i - 1].x) > EPS && Math.abs(pts[i].y - pts[i - 1].y) > EPS) return false;
+    }
+    return true;
+  };
+
+  const segHitsRect = (a, b, r) => {
+    const inset = 0.5;
+    const x1 = r.x1 + inset;
+    const y1 = r.y1 + inset;
+    const x2 = r.x2 - inset;
+    const y2 = r.y2 - inset;
+    if (x1 >= x2 || y1 >= y2) return false;
+    const minX = Math.min(a.x, b.x);
+    const maxX = Math.max(a.x, b.x);
+    const minY = Math.min(a.y, b.y);
+    const maxY = Math.max(a.y, b.y);
+    return maxX > x1 && minX < x2 && maxY > y1 && minY < y2;
+  };
+
+  const pathLength = (pts) => {
+    let L = 0;
+    for (let i = 1; i < pts.length; i++) L += Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);
+    return L;
+  };
+  const countBends = (pts) => Math.max(0, pts.length - 2);
+
+  const computeOrthogonalRoute = (p1, a1, p2, a2, opts) => {
+    const P1 = { x: num(p1 && p1.x, 0), y: num(p1 && p1.y, 0) };
+    const P2 = { x: num(p2 && p2.x, 0), y: num(p2 && p2.y, 0) };
+    const A1 = DIRS[a1] ? a1 : 'bottom';
+    const A2 = DIRS[a2] ? a2 : 'top';
+    const d1 = dirOf(A1);
+    const d2 = dirOf(A2);
+    const srcSize = (opts && opts.sourceSize) || nodeSize(false);
+    const tgtSize = (opts && opts.targetSize) || nodeSize(false);
+    const gap = Math.max(0, num(opts && opts.gap, ELBOW_GAP));
+    const srcRect = rectFromAnchor(P1, A1, srcSize);
+    const tgtRect = rectFromAnchor(P2, A2, tgtSize);
+
+    let stub1 = gap;
+    let stub2 = gap;
+    const facing = d1.x === -d2.x && d1.y === -d2.y;
+    if (facing) {
+      const forward = (P2.x - P1.x) * d1.x + (P2.y - P1.y) * d1.y;
+      if (forward >= 0 && forward < 2 * gap) {
+        stub1 = forward / 2;
+        stub2 = forward / 2;
+      }
+    }
+    const s = { x: P1.x + d1.x * stub1, y: P1.y + d1.y * stub1 };
+    const t = { x: P2.x + d2.x * stub2, y: P2.y + d2.y * stub2 };
+
+    const midX = (s.x + t.x) / 2;
+    const midY = (s.y + t.y) / 2;
+    const outXs = [Math.max(srcRect.x2, tgtRect.x2) + gap, Math.min(srcRect.x1, tgtRect.x1) - gap];
+    const outYs = [Math.max(srcRect.y2, tgtRect.y2) + gap, Math.min(srcRect.y1, tgtRect.y1) - gap];
+
+    const candidates = [];
+    candidates.push([]);
+    candidates.push([{ x: s.x, y: midY }, { x: t.x, y: midY }]);
+    candidates.push([{ x: midX, y: s.y }, { x: midX, y: t.y }]);
+    candidates.push([{ x: s.x, y: t.y }]);
+    candidates.push([{ x: t.x, y: s.y }]);
+    for (const y of outYs) candidates.push([{ x: s.x, y }, { x: t.x, y }]);
+    for (const x of outXs) candidates.push([{ x, y: s.y }, { x, y: t.y }]);
+    for (const y of outYs) {
+      for (const x of outXs) {
+        candidates.push([{ x: s.x, y }, { x, y }, { x, y: t.y }]);
+        candidates.push([{ x, y: s.y }, { x, y }, { x: t.x, y }]);
+      }
+    }
+
+    let best = null;
+    let bestScore = Infinity;
+    let relaxed = null;
+    let relaxedScore = Infinity;
+    for (const mid of candidates) {
+      const pts = simplifyPoints([P1, s, ...mid, t, P2]);
+      if (pts.length < 2 || !isOrthogonal(pts) || hasUTurn(pts)) continue;
+      const score = pathLength(pts) + countBends(pts) * gap;
+      if (score < relaxedScore) {
+        relaxed = pts;
+        relaxedScore = score;
+      }
+      let clean = true;
+      for (let i = 1; i < pts.length && clean; i++) {
+        if (segHitsRect(pts[i - 1], pts[i], srcRect) || segHitsRect(pts[i - 1], pts[i], tgtRect)) clean = false;
+      }
+      if (clean && score < bestScore) {
+        best = pts;
+        bestScore = score;
+      }
+    }
+    if (best) return best;
+    if (relaxed) return relaxed;
+    return simplifyPoints([P1, s, { x: s.x, y: midY }, { x: t.x, y: midY }, t, P2]);
+  };
+
+  const fmt = (n) => {
+    const r = Math.round(n * 100) / 100;
+    return Object.is(r, -0) ? '0' : String(r);
+  };
+
+  const buildRoundedPolyline = (points, radius) => {
+    const R = Math.max(0, num(radius, CORNER_RADIUS));
+    const pts = simplifyPoints(points);
+    if (pts.length === 0) return '';
+    if (pts.length === 1) return `M ${fmt(pts[0].x)} ${fmt(pts[0].y)}`;
+    let d = `M ${fmt(pts[0].x)} ${fmt(pts[0].y)}`;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const c = pts[i + 1];
+      const ux = b.x - a.x;
+      const uy = b.y - a.y;
+      const vx = c.x - b.x;
+      const vy = c.y - b.y;
+      const lu = Math.hypot(ux, uy);
+      const lv = Math.hypot(vx, vy);
+      const cross = ux * vy - uy * vx;
+      const dot = ux * vx + uy * vy;
+      const r = Math.min(R, lu / 2, lv / 2);
+      if (r <= 0.01 || Math.abs(cross) < EPS) {
+        d += ` L ${fmt(b.x)} ${fmt(b.y)}`;
+        continue;
+      }
+      const inX = b.x - (ux / lu) * r;
+      const inY = b.y - (uy / lu) * r;
+      const outX = b.x + (vx / lv) * r;
+      const outY = b.y + (vy / lv) * r;
+      d += ` L ${fmt(inX)} ${fmt(inY)}`;
+      if (Math.abs(dot) < EPS) {
+        d += ` A ${fmt(r)} ${fmt(r)} 0 0 ${cross > 0 ? 1 : 0} ${fmt(outX)} ${fmt(outY)}`;
+      } else {
+        d += ` Q ${fmt(b.x)} ${fmt(b.y)} ${fmt(outX)} ${fmt(outY)}`;
+      }
+    }
+    const last = pts[pts.length - 1];
+    d += ` L ${fmt(last.x)} ${fmt(last.y)}`;
+    return d;
+  };
+
+  const connectionEndpoints = (conn, positions) => {
+    const sourceId = conn && conn.sourceId != null ? conn.sourceId : START_NODE_ID;
+    const targetId = conn && conn.targetId != null ? conn.targetId : '';
+    const sourceStart = sourceId === START_NODE_ID;
+    const targetStart = targetId === START_NODE_ID;
+    const a1 = DIRS[conn && conn.sourceAnchor] ? conn.sourceAnchor : 'bottom';
+    const a2 = DIRS[conn && conn.targetAnchor] ? conn.targetAnchor : 'top';
+    return {
+      p1: anchorPoint(sourceId, a1, positions, sourceStart),
+      a1,
+      p2: anchorPoint(targetId, a2, positions, targetStart),
+      a2,
+      sourceSize: nodeSize(sourceStart),
+      targetSize: nodeSize(targetStart),
+    };
+  };
+
+  const orthogonalizeThrough = (pts, verticalFirst) => {
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      if (out.length) {
+        const q = out[out.length - 1];
+        if (Math.abs(q.x - p.x) > EPS && Math.abs(q.y - p.y) > EPS) {
+          out.push(verticalFirst ? { x: q.x, y: p.y } : { x: p.x, y: q.y });
+        }
+      }
+      out.push(p);
+    }
+    return out;
+  };
+
+  const connectionPoints = (conn, positions) => {
+    const e = connectionEndpoints(conn, positions);
+    const wps = Array.isArray(conn && conn.waypoints)
+      ? conn.waypoints.filter((w) => w && isFiniteNum(w.x) && isFiniteNum(w.y)).map((w) => ({ x: w.x, y: w.y }))
+      : [];
+    if (wps.length) {
+      const d1 = dirOf(e.a1);
+      const d2 = dirOf(e.a2);
+      const s = { x: e.p1.x + d1.x * ELBOW_GAP, y: e.p1.y + d1.y * ELBOW_GAP };
+      const t = { x: e.p2.x + d2.x * ELBOW_GAP, y: e.p2.y + d2.y * ELBOW_GAP };
+      return simplifyPoints(orthogonalizeThrough([e.p1, s, ...wps, t, e.p2], isVerticalAnchor(e.a1)));
+    }
+    return computeOrthogonalRoute(e.p1, e.a1, e.p2, e.a2, { sourceSize: e.sourceSize, targetSize: e.targetSize });
+  };
+
+  const buildConnectionPath = (conn, positions) => buildRoundedPolyline(connectionPoints(conn, positions), CORNER_RADIUS);
+
+  const pathMidpoint = (points) => {
+    const pts = simplifyPoints(points);
+    if (!pts.length) return { x: 0, y: 0 };
+    const total = pathLength(pts);
+    const half = total / 2;
+    let acc = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const L = Math.abs(b.x - a.x) + Math.abs(b.y - a.y);
+      if (acc + L >= half) {
+        const f = L > 0 ? (half - acc) / L : 0;
+        return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+      }
+      acc += L;
+    }
+    return { x: pts[pts.length - 1].x, y: pts[pts.length - 1].y };
+  };
+
+  const layoutCascade = (steps, opts) => {
+    const list = Array.isArray(steps) ? steps : [];
+    const axisX = snap(num(opts && opts.axisX, LAYOUT_AXIS_X));
+    const positions = {};
+    positions[START_NODE_ID] = { x: snap(axisX - START_W / 2), y: LAYOUT_TOP_Y };
+    list.forEach((step, i) => {
+      const key = stepKeyOf(step);
+      if (!key || key === START_NODE_ID) return;
+      positions[key] = { x: snap(axisX - NODE_W / 2), y: snap(LAYOUT_FIRST_STEP_Y + i * ROW_GAP) };
+    });
+    return positions;
+  };
+  const initialLayout = (steps, opts) => layoutCascade(steps, opts);
+  const autoLayout = (steps, opts) => layoutCascade(steps, opts);
+
+  const contentBounds = (positions, stepIds, opts) => {
+    const includeStart = !(opts && opts.includeStart === false);
+    const ids = Array.isArray(stepIds)
+      ? stepIds
+      : Object.keys(positions || {}).filter((k) => k !== START_NODE_ID);
+    const rects = [];
+    if (includeStart) rects.push(nodeRect(START_NODE_ID, positions, true));
+    for (const id of ids) {
+      if (id === START_NODE_ID || !hasPosition(id, positions)) continue;
+      rects.push(nodeRect(id, positions, false));
+    }
+    if (!rects.length) return null;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const r of rects) {
+      minX = Math.min(minX, r.x);
+      minY = Math.min(minY, r.y);
+      maxX = Math.max(maxX, r.right);
+      maxY = Math.max(maxY, r.bottom);
+    }
+    return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY, count: rects.length };
+  };
+
+  const fitToContent = (positions, stepIds, containerW, containerH) => {
+    const W = num(containerW, 0);
+    const H = num(containerH, 0);
+    const ids = (Array.isArray(stepIds) ? stepIds : []).filter((id) => id !== START_NODE_ID && hasPosition(id, positions));
+    if (!ids.length || W <= 0 || H <= 0) return { ...DEFAULT_VIEWPORT };
+    const b = contentBounds(positions, ids);
+    if (!b || !(b.width > 0) || !(b.height > 0)) return { ...DEFAULT_VIEWPORT };
+    const availW = Math.max(1, W - 2 * FIT_PADDING);
+    const availH = Math.max(1, H - 2 * FIT_PADDING);
+    const zoom = clampZoom(Math.min(FIT_MAX_ZOOM, availW / b.width, availH / b.height));
+    const x = (W - b.width * zoom) / 2 - b.minX * zoom;
+    const y = (H - b.height * zoom) / 2 - b.minY * zoom;
+    const out = { x: round2(x), y: round2(y), zoom: round4(zoom) };
+    if (!isFiniteNum(out.x) || !isFiniteNum(out.y) || !isFiniteNum(out.zoom)) return { ...DEFAULT_VIEWPORT };
+    return out;
+  };
+
+  const hitTestAnchor = (canvasPt, positions, stepIds, radius, opts) => {
+    const R = num(radius, ANCHOR_HIT_RADIUS);
+    const px = num(canvasPt && canvasPt.x, NaN);
+    const py = num(canvasPt && canvasPt.y, NaN);
+    if (!isFiniteNum(px) || !isFiniteNum(py)) return null;
+    const exclude = opts && opts.excludeNodeId;
+    const includeStart = !!(opts && opts.includeStart);
+    const ids = (Array.isArray(stepIds) ? stepIds : []).filter((id) => id !== START_NODE_ID && hasPosition(id, positions));
+    let best = null;
+    let bestD = R;
+    const test = (nodeId, sides, isStart) => {
+      if (nodeId === exclude) return;
+      for (const side of sides) {
+        const a = anchorPoint(nodeId, side, positions, isStart);
+        const d = Math.hypot(a.x - px, a.y - py);
+        if (d <= bestD) {
+          bestD = d;
+          best = { nodeId, anchor: side, x: a.x, y: a.y, distance: d };
+        }
+      }
+    };
+    if (includeStart) test(START_NODE_ID, START_ANCHOR_SIDES, true);
+    for (const id of ids) test(id, ANCHOR_SIDES, false);
+    return best;
+  };
+
+  const zoomAround = (viewport, factor, screenPt, svgRect) => {
+    const vp = normalizeViewport(viewport);
+    const newZoom = clampZoom(vp.zoom * num(factor, 1));
+    const o = rectOrigin(svgRect);
+    const sx = screenPt && isFiniteNum(screenPt.x) ? screenPt.x - o.left : num(svgRect && svgRect.width, 0) / 2;
+    const sy = screenPt && isFiniteNum(screenPt.y) ? screenPt.y - o.top : num(svgRect && svgRect.height, 0) / 2;
+    const cx = (sx - vp.x) / vp.zoom;
+    const cy = (sy - vp.y) / vp.zoom;
+    return { x: round2(sx - cx * newZoom), y: round2(sy - cy * newZoom), zoom: newZoom };
+  };
+
+  const zoomTo = (viewport, zoom, screenPt, svgRect) => {
+    const vp = normalizeViewport(viewport);
+    return zoomAround(vp, clampZoom(zoom) / vp.zoom, screenPt, svgRect);
+  };
+
+  const zoomByStep = (viewport, direction, containerW, containerH) => {
+    const vp = normalizeViewport(viewport);
+    const target = clampZoom(vp.zoom + (num(direction, 1) < 0 ? -ZOOM_STEP : ZOOM_STEP));
+    return zoomTo(vp, target, { x: num(containerW, 0) / 2, y: num(containerH, 0) / 2 }, { left: 0, top: 0 });
+  };
+
+  const wheelZoomFactor = (deltaY) => (num(deltaY, 0) < 0 ? 1 + ZOOM_STEP : 1 / (1 + ZOOM_STEP));
+
+  const minimapTransform = (positions, stepIds, w, h) => {
+    const W = Math.max(1, num(w, 180));
+    const H = Math.max(1, num(h, 130));
+    const pad = 8;
+    const b = contentBounds(positions, stepIds) || {
+      minX: 0, minY: 0, maxX: NODE_W, maxY: NODE_H, width: NODE_W, height: NODE_H, count: 0,
+    };
+    const bw = Math.max(b.width, 1);
+    const bh = Math.max(b.height, 1);
+    const scale = Math.max(EPS, Math.min((W - 2 * pad) / bw, (H - 2 * pad) / bh));
+    const offsetX = (W - bw * scale) / 2 - b.minX * scale;
+    const offsetY = (H - bh * scale) / 2 - b.minY * scale;
+    const toMini = (x, y) => ({ x: num(x, 0) * scale + offsetX, y: num(y, 0) * scale + offsetY });
+    const fromMini = (mx, my) => ({ x: (num(mx, 0) - offsetX) / scale, y: (num(my, 0) - offsetY) / scale });
+    return { width: W, height: H, scale, offsetX, offsetY, bounds: b, toMini, fromMini };
+  };
+
+  return {
+    snap,
+    screenToCanvas,
+    canvasToScreen,
+    ANCHOR_OFFSETS,
+    anchorPoint,
+    nodeRect,
+    computeOrthogonalRoute,
+    buildRoundedPolyline,
+    buildConnectionPath,
+    initialLayout,
+    autoLayout,
+    fitToContent,
+    hitTestAnchor,
+    clampZoom,
+    zoomAround,
+    minimapTransform,
+    DEFAULT_VIEWPORT,
+    DEFAULT_START_POSITION,
+    ANCHOR_SIDES,
+    START_ANCHOR_SIDES,
+    START_ANCHOR_OFFSETS,
+    anchorOffsets,
+    nodeSize,
+    stepKeyOf,
+    normalizeViewport,
+    visibleCanvasRect,
+    centerViewportOn,
+    contentBounds,
+    connectionPoints,
+    pathMidpoint,
+    simplifyPoints,
+    zoomTo,
+    zoomByStep,
+    wheelZoomFactor,
+  };
+};
+

@@ -1,0 +1,346 @@
+---
+title: Submit Workflow Step
+description: Submit and execute one step of a workflow session
+api: POST /v1/sessions/{session_id}/steps/{step_id}
+---
+
+```
+POST /v1/sessions/{session_id}/steps/{step_id}
+```
+
+Submits the data for one workflow step and executes it synchronously. The request body's shape is **config-driven** — it depends on both `step_id` and the settings configured on that step within the workflow — see [Step submission schemas](#step-submission-schemas) below.
+
+Steps must be submitted **in order**: the `step_id` in the URL must match the session's `current_step` (as returned by [Create Workflow Session](/api-reference/workflow-runner/create-workflow-session) or [Get Workflow State](/api-reference/workflow-runner/get-workflow-state)), and that step must be `PENDING` or `IN_PROGRESS`.
+
+## Request
+
+### Headers
+
+| Header | Required | Description |
+|---|---|---|
+| `x-api-key` | Yes | Your organization's API key |
+
+### Path parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `session_id` | string (uuid) | Yes | The session to submit a step for |
+| `step_id` | string | Yes | `ID_VERIFICATION` or `FACE_LIVENESS` — must match the session's current step |
+
+### Body parameters
+
+The request body depends on `step_id`:
+
+| `step_id` | Body schema |
+|---|---|
+| `ID_VERIFICATION` | [ID_VERIFICATION submission](#id_verification) |
+| `FACE_LIVENESS` | [FACE_LIVENESS submission](#face_liveness) |
+
+## Step submission schemas
+
+### ID_VERIFICATION
+
+<Info>
+  Get `uploads` values from [Create Session Uploads](/api-reference/workflow-runner/create-session-uploads) — upload each image to its presigned URL first, then submit the returned `file_key` values here.
+</Info>
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `document_type` | string | Yes | The type of the primary document being submitted, e.g. `passport-us` |
+| `secondary_document_type` | string | Only if the step requires a secondary ID | Type of the secondary document |
+| `tertiary_document_type` | string | Only if the step requires a tertiary ID | Type of the tertiary document |
+| `uploads.id_front` | string | Yes | File key for the primary document's front image |
+| `uploads.id_back` | string | Yes, unless `document_type` is a front-only type (see `front_only_document_types` in [requirements](/api-reference/workflow-runner/create-workflow-session#id_verification-requirements)) | File key for the primary document's back image. Rejected if supplied for a front-only document type |
+| `uploads.secondary_id_front` | string | Only if a secondary ID is required | File key for the secondary document's front image |
+| `uploads.secondary_id_back` | string | Same front/back rule as `id_back`, keyed off `secondary_document_type` | File key for the secondary document's back image |
+| `uploads.tertiary_id_front` | string | Only if a tertiary ID is required | File key for the tertiary document's front image |
+| `uploads.tertiary_id_back` | string | Same front/back rule as `id_back`, keyed off `tertiary_document_type` | File key for the tertiary document's back image |
+| `uploads.selfie_front` | string | Yes | File key for the selfie image |
+
+Which of these fields are required or accepted for a given session depends on that step's configuration (whether it requires a secondary/tertiary ID), not on this table alone — check the step's `requirements` from [Create Workflow Session](/api-reference/workflow-runner/create-workflow-session#id_verification-requirements) or [Get Workflow State](/api-reference/workflow-runner/get-workflow-state).
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/ID_VERIFICATION \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "document_type": "passport-us",
+    "uploads": {
+      "id_front": "3f9c1e2a-org/80e801af.../1717000000000-id_front.jpg",
+      "selfie_front": "3f9c1e2a-org/80e801af.../1717000000001-selfie_front.jpg"
+    }
+  }'
+```
+
+```javascript Node.js
+const response = await fetch(
+  "https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/ID_VERIFICATION",
+  {
+    method: "POST",
+    headers: {
+      "x-api-key": "YOUR_API_KEY",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      document_type: "passport-us",
+      uploads: {
+        id_front: "3f9c1e2a-org/80e801af.../1717000000000-id_front.jpg",
+        selfie_front: "3f9c1e2a-org/80e801af.../1717000000001-selfie_front.jpg",
+      },
+    }),
+  }
+);
+
+const result = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/ID_VERIFICATION",
+    headers={"x-api-key": "YOUR_API_KEY"},
+    json={
+        "document_type": "passport-us",
+        "uploads": {
+            "id_front": "3f9c1e2a-org/80e801af.../1717000000000-id_front.jpg",
+            "selfie_front": "3f9c1e2a-org/80e801af.../1717000000001-selfie_front.jpg",
+        },
+    },
+)
+
+result = response.json()
+```
+
+</CodeGroup>
+
+### FACE_LIVENESS
+
+The body is a discriminated union on `action`. All variants also accept `frame_count` and `clip_mime_type`, but those are only meaningful — and only validated — when `action` is `upload-url`.
+
+| `action` | Fields | Description |
+|---|---|---|
+| `start` | none | Mints a Rekognition Face Liveness session and returns streaming credentials for the client SDK |
+| `complete` | none | Fetches the liveness result server-side once the client has finished streaming |
+| `upload-url` | `frame_count` (integer, 1-8, required), `clip_mime_type` (string, optional) | Custom liveness provider only — mints upload URLs for captured frames/clip. Not used with the default provider |
+
+<CodeGroup>
+
+```bash cURL — start
+curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/FACE_LIVENESS \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "action": "start" }'
+```
+
+```bash cURL — complete
+curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/FACE_LIVENESS \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "action": "complete" }'
+```
+
+```javascript Node.js
+const start = await fetch(
+  "https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/FACE_LIVENESS",
+  {
+    method: "POST",
+    headers: { "x-api-key": "YOUR_API_KEY", "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "start" }),
+  }
+);
+
+// ... stream the liveness session with the returned credentials, then:
+
+const complete = await fetch(
+  "https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/FACE_LIVENESS",
+  {
+    method: "POST",
+    headers: { "x-api-key": "YOUR_API_KEY", "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "complete" }),
+  }
+);
+```
+
+```python Python
+import requests
+
+headers = {"x-api-key": "YOUR_API_KEY"}
+base = "https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/FACE_LIVENESS"
+
+start = requests.post(base, headers=headers, json={"action": "start"}).json()
+
+# ... stream the liveness session with the returned credentials, then:
+
+complete = requests.post(base, headers=headers, json={"action": "complete"}).json()
+```
+
+</CodeGroup>
+
+## Response
+
+The response is a common envelope for both step types; FACE_LIVENESS additionally includes a `liveness` object.
+
+### 200 — Success
+
+| Field | Type | Present when | Description |
+|---|---|---|---|
+| `step_id` | string | always | `ID_VERIFICATION` or `FACE_LIVENESS` |
+| `step_status` | string | always | `PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, or `SKIPPED` |
+| `failure_reason` | string \| null | always | Reason the step failed this attempt, or `null`. See [ID_VERIFICATION failure reasons](#id_verification-failure-reasons) and [FACE_LIVENESS failure reasons](#face_liveness-failure-reasons) |
+| `current_step` | integer \| null | always | 0-based index of the next step to submit. `null` once the run has finished |
+| `attempts_remaining` | number \| null | always | Session-wide failure budget remaining. `null` when the workflow has no failure limit configured |
+| `session_status` | string | always | Session status: `PENDING`, `SUBMITTED`, `VERIFIED`, `REJECTED`, `VOIDED`, `EXPIRED`, or `FAILED` |
+| `session_progress` | string | always | `PENDING`, `STARTED`, or `COMPLETED` |
+| `liveness` | object | `step_id` is `FACE_LIVENESS` | Shape depends on the submitted `action` — see [FACE_LIVENESS results](#face_liveness-results) |
+
+<Note>
+  Advisory checks (age, expiry, document validity period, state) never fail an `ID_VERIFICATION` step and are not included in the response — only the blocking checks below can produce a `failure_reason`.
+</Note>
+
+### ID_VERIFICATION failure reasons
+
+| `failure_reason` | Meaning |
+|---|---|
+| `FACE_NOT_DETECTED_IN_ID` | No face was detected on the primary document's front image |
+| `OCR_NAME_MISSING` | No first/last/middle name could be extracted from the document |
+| `ID_CLASSIFICATION_FAILED` | The document's detected type doesn't match, or isn't an accepted, document type |
+| `ID_TYPE_UNRECOGNIZED` | The document's type field couldn't be read |
+| `ID_TYPE_LOW_CONFIDENCE` | The document's type field was read with too little confidence |
+| `DOC_TYPE_NOT_ALLOWED` | The detected document type doesn't match the declared `document_type` family |
+| `NO_FACE_DETECTED` | No face was detected in the selfie image |
+| `FACE_MISMATCH` | The selfie face doesn't match the document's face closely enough |
+| `LIVENESS_ID_MISMATCH` | The face captured during the `FACE_LIVENESS` step doesn't match the document's face |
+
+### FACE_LIVENESS results
+
+`liveness` depends on the submitted `action`:
+
+**`start`**
+
+| Field | Type | Description |
+|---|---|---|
+| `liveness_session_id` | string | The Rekognition Face Liveness session ID the client streams to |
+| `region` | string | AWS region for the liveness session, e.g. `us-east-1` |
+| `credentials.access_key_id` | string | Temporary AWS access key |
+| `credentials.secret_access_key` | string | Temporary AWS secret key |
+| `credentials.session_token` | string | Temporary AWS session token |
+| `credentials.expiration` | string | ISO 8601 expiry of the credentials (~15 minutes) |
+| `expires_at` | string | ISO 8601 expiry of the liveness session |
+
+**`complete`**
+
+| Field | Type | Description |
+|---|---|---|
+| `status` | string | Normalized Rekognition liveness status, e.g. `SUCCEEDED` or `FAILED` |
+| `confidence` | number \| null | Liveness confidence score (0-100), or `null` when Rekognition didn't return one |
+| `passed` | boolean | `true` when `status` is `SUCCEEDED` and `confidence` meets the step's configured threshold |
+
+### FACE_LIVENESS failure reasons
+
+| `failure_reason` | Meaning |
+|---|---|
+| `FACE_LIVENESS_CHECK_FAILED` | The liveness check completed but did not pass (`passed: false`). Returned in a `200` response, not an error |
+
+<Note>
+  Calling `complete` before `start`, or before Rekognition has finished processing, returns a `409` with `failure_reason` of `FACE_LIVENESS_NOT_STARTED` or `FACE_LIVENESS_RESULT_NOT_READY` — see [Error responses](#error-responses). These are retryable and don't consume an attempt.
+</Note>
+
+### Error responses
+
+| Status | Description |
+|---|---|
+| `400` | Invalid `session_id`/`step_id` path parameters, the request body fails the step's schema, or an upload key in the body doesn't belong to this session |
+| `401` | Invalid or missing API key |
+| `403` | The session belongs to a different organization |
+| `404` | Session not found, `step_id` isn't `ID_VERIFICATION`/`FACE_LIVENESS`, the step isn't part of this session's workflow, or no workflow execution state exists for this session |
+| `409` | The session is terminal, the step is out of order or not in a submittable state, a concurrent submission conflict occurred, or (`FACE_LIVENESS` only) `complete` was called before `start` or before the result was ready |
+| `429` | Too many requests |
+| `501` | This step type isn't runnable through the API yet |
+
+<ResponseExample>
+
+```json 200 — ID_VERIFICATION completed
+{
+  "step_id": "ID_VERIFICATION",
+  "step_status": "COMPLETED",
+  "failure_reason": null,
+  "current_step": 1,
+  "attempts_remaining": 3,
+  "session_status": "PENDING",
+  "session_progress": "STARTED"
+}
+```
+
+```json 200 — ID_VERIFICATION failed
+{
+  "step_id": "ID_VERIFICATION",
+  "step_status": "PENDING",
+  "failure_reason": "FACE_MISMATCH",
+  "current_step": 0,
+  "attempts_remaining": 2,
+  "session_status": "PENDING",
+  "session_progress": "STARTED"
+}
+```
+
+```json 200 — FACE_LIVENESS start
+{
+  "step_id": "FACE_LIVENESS",
+  "step_status": "IN_PROGRESS",
+  "failure_reason": null,
+  "current_step": 1,
+  "attempts_remaining": 3,
+  "session_status": "PENDING",
+  "session_progress": "STARTED",
+  "liveness": {
+    "liveness_session_id": "12345678-90ab-cdef-1234-567890abcdef",
+    "region": "us-east-1",
+    "credentials": {
+      "access_key_id": "ASIAEXAMPLE",
+      "secret_access_key": "secretExampleValue",
+      "session_token": "tokenExampleValue",
+      "expiration": "2026-09-08T14:20:00.000Z"
+    },
+    "expires_at": "2026-09-08T14:20:00.000Z"
+  }
+}
+```
+
+```json 200 — FACE_LIVENESS complete (passed)
+{
+  "step_id": "FACE_LIVENESS",
+  "step_status": "COMPLETED",
+  "failure_reason": null,
+  "current_step": null,
+  "attempts_remaining": 3,
+  "session_status": "VERIFIED",
+  "session_progress": "COMPLETED",
+  "liveness": {
+    "status": "SUCCEEDED",
+    "confidence": 93.1,
+    "passed": true
+  }
+}
+```
+
+```json 409 — Out of order
+{
+  "error": "Workflow step is out of order",
+  "current_step": 0,
+  "step_id": "FACE_LIVENESS"
+}
+```
+
+```json 409 — Liveness not started
+{
+  "error": "Face liveness has not been started for this session",
+  "failure_reason": "FACE_LIVENESS_NOT_STARTED",
+  "current_step": 1,
+  "step_id": "FACE_LIVENESS"
+}
+```
+
+</ResponseExample>

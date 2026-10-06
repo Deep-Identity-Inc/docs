@@ -8,6 +8,9 @@
     "dark": "#1456A0"
   },
   "favicon": "/logo/favicon.svg",
+  "icons": {
+    "library": "lucide"
+  },
   "css": "/custom.css",
   "navigation": {
     "tabs": [
@@ -86,11 +89,21 @@
             ]
           },
           {
-            "group": "Management API 🔧",
+            "group": "Management API",
             "pages": [
               "api-reference/workflows/create-workflow",
               "api-reference/workflows/list-workflows",
               "api-reference/workflows/retrieve-workflow"
+            ]
+          },
+          {
+            "group": "Workflow Runner",
+            "pages": [
+              "api-reference/workflow-runner/create-workflow-session",
+              "api-reference/workflow-runner/get-workflow-state",
+              "api-reference/workflow-runner/start-workflow",
+              "api-reference/workflow-runner/create-session-uploads",
+              "api-reference/workflow-runner/submit-workflow-step"
             ]
           },
           {
@@ -109,6 +122,15 @@
             ]
           },
           {
+            "group": "Carrier Intelligence",
+            "pages": [
+              "api-reference/carrier-intelligence/overview",
+              "api-reference/carrier-intelligence/phone-trust",
+              "api-reference/carrier-intelligence/carrier-age-gate",
+              "api-reference/carrier-intelligence/phone-ownership"
+            ]
+          },
+          {
             "group": "Async Jobs",
             "pages": ["api-reference/async-jobs/get-async-job"]
           },
@@ -121,6 +143,29 @@
               "api-reference/server-to-server/face-compare",
               "api-reference/server-to-server/face-estimate-age",
               "api-reference/server-to-server/identity-verify"
+            ]
+          },
+          {
+            "group": "iGaming Checks",
+            "pages": [
+              "api-reference/igaming/overview",
+              "api-reference/igaming/injection",
+              "api-reference/igaming/vpn-detection",
+              "api-reference/igaming/ip-jurisdiction",
+              "api-reference/igaming/anti-cheat"
+            ]
+          },
+          {
+            "group": "iGaming Self-Exclusion & Management",
+            "pages": [
+              "api-reference/igaming/self-exclusion-overview",
+              "api-reference/igaming/add-identity",
+              "api-reference/igaming/remove-identity",
+              "api-reference/igaming/exclude-face",
+              "api-reference/igaming/clear-face",
+              "api-reference/igaming/list-registry",
+              "api-reference/igaming/exclude-applicant",
+              "api-reference/igaming/purge-enrollment"
             ]
           },
           {
@@ -201,6 +246,15 @@
             "pages": ["chain-layer/faq", "chain-layer/reference"]
           }
         ]
+      },
+      {
+        "tab": "Workflow Builder",
+        "groups": [
+          {
+            "group": "Builder",
+            "pages": ["workflow-builder"]
+          }
+        ]
       }
     ],
     "global": {
@@ -213,13 +267,13 @@
         {
           "anchor": "Admin Console",
           "href": "https://app.deepidv.com",
-          "icon": "grid-2",
+          "icon": "layout-grid",
           "isExternal": true
         },
         {
           "anchor": "Agent Skills",
           "href": "https://github.com/Deep-Identity-Inc/agent-skills",
-          "icon": "robot",
+          "icon": "bot",
           "isExternal": true
         }
       ]

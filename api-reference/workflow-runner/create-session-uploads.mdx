@@ -1,0 +1,136 @@
+---
+title: Create Session Uploads
+description: Get presigned URLs to upload document and selfie images for a workflow session
+api: POST /v1/sessions/{session_id}/uploads
+---
+
+```
+POST /v1/sessions/{session_id}/uploads
+```
+
+Mints presigned S3 upload URLs for the images an `ID_VERIFICATION` step needs. Upload each image directly to its `upload_url`, then pass the returned `file_key` values in the `uploads` object when you call [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step).
+
+## Request
+
+### Headers
+
+| Header | Required | Description |
+|---|---|---|
+| `x-api-key` | Yes | Your organization's API key |
+
+### Path parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `session_id` | string (uuid) | Yes | The session to upload images for |
+
+### Body parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `files` | array | Yes | At least one file to request an upload URL for. No two entries may share the same `upload_type` |
+| `files[].file_name` | string | Yes | Original file name, used to derive the stored file extension |
+| `files[].content_type` | string | Yes | MIME type of the file, e.g. `image/jpeg` |
+| `files[].upload_type` | string | Yes | One of `id_front`, `id_back`, `secondary_id_front`, `secondary_id_back`, `tertiary_id_front`, `tertiary_id_back`, `selfie_front` |
+
+### Example request
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/uploads \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "files": [
+      { "file_name": "id_front.jpg", "content_type": "image/jpeg", "upload_type": "id_front" },
+      { "file_name": "selfie.jpg", "content_type": "image/jpeg", "upload_type": "selfie_front" }
+    ]
+  }'
+```
+
+```javascript Node.js
+const response = await fetch(
+  "https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/uploads",
+  {
+    method: "POST",
+    headers: {
+      "x-api-key": "YOUR_API_KEY",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      files: [
+        { file_name: "id_front.jpg", content_type: "image/jpeg", upload_type: "id_front" },
+        { file_name: "selfie.jpg", content_type: "image/jpeg", upload_type: "selfie_front" },
+      ],
+    }),
+  }
+);
+
+const { signed_urls } = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/uploads",
+    headers={"x-api-key": "YOUR_API_KEY"},
+    json={
+        "files": [
+            {"file_name": "id_front.jpg", "content_type": "image/jpeg", "upload_type": "id_front"},
+            {"file_name": "selfie.jpg", "content_type": "image/jpeg", "upload_type": "selfie_front"},
+        ]
+    },
+)
+
+signed_urls = response.json()["signed_urls"]
+```
+
+</CodeGroup>
+
+## Response
+
+### 200 — Success
+
+| Field | Type | Description |
+|---|---|---|
+| `signed_urls` | array | One entry per requested file |
+| `signed_urls[].file_key` | string | Pass this value back as the corresponding field in the `uploads` object of [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step) |
+| `signed_urls[].upload_type` | string | Echoes the requested `upload_type` |
+| `signed_urls[].upload_url` | string | Presigned URL — upload the raw file bytes to this URL with an HTTP `PUT` |
+
+<Note>
+  Upload URLs expire after a short time. Request them immediately before uploading, and submit the step promptly afterward.
+</Note>
+
+### Error responses
+
+| Status | Description |
+|---|---|
+| `400` | Invalid request body |
+| `401` | Invalid or missing API key |
+| `404` | Session not found |
+| `409` | Session is already in a terminal state |
+| `429` | Too many requests |
+
+<ResponseExample>
+
+```json 200
+{
+  "signed_urls": [
+    {
+      "file_key": "3f9c1e2a-org/80e801af-991b-425c-96fc-f5e07d794253/1717000000000-id_front.jpg",
+      "upload_type": "id_front",
+      "upload_url": "https://deepidv-sessions-uploads.s3.amazonaws.com/..."
+    },
+    {
+      "file_key": "3f9c1e2a-org/80e801af-991b-425c-96fc-f5e07d794253/1717000000001-selfie_front.jpg",
+      "upload_type": "selfie_front",
+      "upload_url": "https://deepidv-sessions-uploads.s3.amazonaws.com/..."
+    }
+  ]
+}
+```
+
+</ResponseExample>
