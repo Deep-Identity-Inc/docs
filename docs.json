@@ -115,6 +115,13 @@
             ]
           },
           {
+            "group": "AML",
+            "pages": [
+              "api-reference/aml/save-transactions",
+              "api-reference/aml/add-monitored-user"
+            ]
+          },
+          {
             "group": "Carrier Intelligence",
             "pages": [
               "api-reference/carrier-intelligence/overview",

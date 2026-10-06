@@ -1,0 +1,145 @@
+---
+title: Add a User to Monitoring
+description: Place a customer under ongoing AML monitoring by a bot
+api: POST /v1/aml/bots/{bot_id}/monitored-users
+---
+
+```
+POST /v1/aml/bots/{bot_id}/monitored-users
+```
+
+Places one of your customers under ongoing AML monitoring by the given bot. The bot re-checks each enrolled subject on its configured cadence.
+
+<Note>
+  You usually don't need this endpoint. [Saving transactions](/api-reference/aml/save-transactions) auto-provisions and enrols a subject on first sight. Use this to enrol a customer who has no transactions yet, or to attach an existing customer to an additional bot.
+</Note>
+
+Field names are documented in `snake_case` and responses always use `snake_case`; requests also accept `camelCase`.
+
+The call is **idempotent**. Re-adding a subject who is already enrolled returns `200` with the existing enrolment and does **not** reset its cadence or check schedule. Re-adding a subject who was previously removed reactivates them.
+
+## Request
+
+### Headers
+
+| Header         | Required | Description        |
+| -------------- | -------- | ------------------ |
+| `x-api-key`    | Yes      | Your API key       |
+| `Content-Type` | Yes      | `application/json` |
+
+### Path parameters
+
+| Parameter | Type   | Required | Description                                                       |
+| --------- | ------ | -------- | ----------------------------------------------------------------- |
+| `bot_id`   | string | Yes      | The monitoring bot to enrol into. Must belong to your organization. |
+
+### Body parameters
+
+| Parameter       | Type   | Required | Description                                              |
+| --------------- | ------ | -------- | -------------------------------------------------------- |
+| `subject_user_id` | string | Yes      | Your own identifier for the customer to place under monitoring. |
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.deepidv.com/v1/aml/bots/agt-1a2b3c4d/monitored-users \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "subject_user_id": "cust-8821"
+  }'
+```
+
+```javascript Node.js
+const response = await fetch(
+  "https://api.deepidv.com/v1/aml/bots/agt-1a2b3c4d/monitored-users",
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": "YOUR_API_KEY",
+    },
+    body: JSON.stringify({ subject_user_id: "cust-8821" }),
+  },
+);
+
+// 201 = newly enrolled, 200 = already enrolled (no change made)
+const monitoredUser = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://api.deepidv.com/v1/aml/bots/agt-1a2b3c4d/monitored-users",
+    headers={
+        "Content-Type": "application/json",
+        "x-api-key": "YOUR_API_KEY",
+    },
+    json={"subject_user_id": "cust-8821"},
+)
+
+# 201 = newly enrolled, 200 = already enrolled (no change made)
+monitored_user = response.json()
+```
+
+</CodeGroup>
+
+## Response
+
+### 201 — Enrolled · 200 — Already enrolled
+
+`201` means the subject was newly enrolled. `200` means they were already enrolled and the existing enrolment is returned unchanged.
+
+| Field             | Type           | Description                                                          |
+| ----------------- | -------------- | -------------------------------------------------------------------- |
+| `org_id`           | string         | Your organization id                                                 |
+| `bot_id`           | string         | The bot the subject is enrolled into                                  |
+| `subject_user_id`   | string         | Your identifier for the customer                                      |
+| `subject_user_name` | string \| null | Display name derived from the customer's stored identity, if known    |
+| `subject_country`  | string         | ISO 3166-1 alpha-2, or `XX` when unknown                              |
+| `status`          | string         | `active` while under monitoring                                       |
+| `cadence_days`     | number         | How often the bot re-checks this subject. `0` means real-time.        |
+| `next_check_at`     | string         | When the next check is due (ISO 8601)                                 |
+| `last_checked_at`   | string \| null | When the subject was last checked, or `null` if never                 |
+| `added_at`         | string         | When the enrolment was created (ISO 8601)                             |
+| `added_by`         | string \| null | Id of the API key that created the enrolment                          |
+| `updated_at`       | string         | When the enrolment was last modified (ISO 8601)                       |
+
+### Error responses
+
+| Status             | Description                                                                     |
+| ------------------ | ------------------------------------------------------------------------------- |
+| `400 Bad Request`  | `subject_user_id` is missing or empty, or the bot's check interval is not configured usably (code `BOT_CADENCE_INVALID`) |
+| `401 Unauthorized` | API key is invalid                                                              |
+| `403 Forbidden`    | API key is missing                                                              |
+| `404 Not Found`    | The bot or the subject does not exist in your organization                       |
+| `500 Server Error` | Unexpected server error                                                         |
+
+<ResponseExample>
+```json 201
+{
+  "org_id": "b890e92f-7d4f-43f6-a989-32d35660c64e",
+  "bot_id": "agt-1a2b3c4d",
+  "subject_user_id": "cust-8821",
+  "subject_user_name": "Jane Chen",
+  "subject_country": "XX",
+  "status": "active",
+  "cadence_days": 30,
+  "next_check_at": "2026-09-02T09:00:00.000Z",
+  "last_checked_at": null,
+  "added_at": "2026-08-03T09:00:00.000Z",
+  "added_by": "key-7f2c",
+  "updated_at": "2026-08-03T09:00:00.000Z"
+}
+```
+</ResponseExample>
+
+## Sandbox
+
+With a sandbox API key this endpoint performs full validation — an unknown bot or subject still returns `404` — and returns a realistic enrolment, but **stores nothing**.
+
+## Coming next
+
+Endpoints to list and remove monitored users, and to retrieve monitoring alerts, are in development.
