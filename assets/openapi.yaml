@@ -4846,6 +4846,8 @@ components:
           enum:
             - not_found
             - reverify_disabled
+            - user_not_found
+            - not_previously_verified
       required:
         - error
     CreateReVerificationRequest:
@@ -4857,6 +4859,12 @@ components:
           maxLength: 128
           description: The workflow to re-verify against. Its ID-verification step must
             have re-verification enabled.
+        email:
+          type: string
+          minLength: 1
+          maxLength: 320
+          description: The applicant's email address. Matched case-insensitively against
+            users in your organization; no user is created.
         device_fingerprint:
           type: string
           minLength: 1
@@ -4865,6 +4873,7 @@ components:
             session.
       required:
         - workflow_id
+        - email
       additionalProperties: false
     ReVerificationLivenessStartResponse:
       type: object
@@ -9394,10 +9403,10 @@ paths:
       tags:
         - Re-Verifications
       summary: Create a re-verification session
-      description: "Creates a pending re-verification session for a workflow whose
-        ID-verification step has re-verification enabled. The applicant is not
-        named by the request: they are identified by the face search at
-        liveness/complete. This creates no billable work."
+      description: Creates a pending re-verification session for the user with this
+        email in your organization, on a workflow whose ID-verification step has
+        re-verification enabled. The user must have a verified session under the
+        same workflow.
       security: *a2
       requestBody:
         required: true
@@ -9440,7 +9449,10 @@ paths:
                 $ref: "#/components/schemas/ReVerificationErrorResponse"
         "422":
           description: The workflow is not active or does not have re-verification enabled
-            on its ID-verification step.
+            (`reverify_disabled`); no user with this email exists in your
+            organization (`user_not_found`); or that user has no verified
+            session under this workflow that re-verification can match against
+            (`not_previously_verified`).
           content:
             application/json:
               schema:
