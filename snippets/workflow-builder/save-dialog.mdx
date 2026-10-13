@@ -270,7 +270,7 @@ export const makeSaveDialog = ({ WB, utils, store, ui, mui }) => {
 
   const SESSION_FIELDS = [
     ['first_name', 'string', 'Applicant first name (required)'], ['last_name', 'string', 'Applicant last name (required)'], ['email', 'string', 'Applicant email (required)'],
-    ['phone', 'string', 'E.164 phone number, e.g. +15192223333 (required)'], ['workflow_id', 'string', 'The id returned by POST /v1/workflows in step 1'],
+    ['phone', 'string', 'E.164 phone number, e.g. +15192223333 (required if the workflow includes a phone verification step)'], ['workflow_id', 'string', 'The id returned by POST /v1/workflows in step 1'],
     ['external_id', 'string', 'Your own reference for this applicant'], ['redirect_url', 'string', 'HTTPS URL the applicant returns to after the session'],
     ['send_email_invite', 'boolean', 'Send the hosted link by email (default true)'], ['send_phone_invite', 'boolean', 'Send the hosted link by SMS (default true)'], ['expires_in_hours', 'integer', '1-8760, overrides the workflow expiry'],
   ];
