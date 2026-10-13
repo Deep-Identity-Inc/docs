@@ -37,7 +37,7 @@ Both camelCase and snake_case parameter names are accepted. If both are provided
 | `email` | — | string | Yes | Email address of the person completing the session |
 | `first_name` | `firstName` | string | Yes | First name of the person completing the session |
 | `last_name` | `lastName` | string | Yes | Last name of the person completing the session |
-| `phone` | — | string | Yes | Phone number in E.164 format, e.g. `+14155552671` |
+| `phone` | — | string | No | Phone number in E.164 format, e.g. `+14155552671`. Required if the workflow includes a phone verification step |
 | `external_id` | `externalId` | string | No | Your own identifier for this session, echoed back on retrieval |
 | `expires_in_hours` | `expiresInHours` | integer | No | Overrides the workflow's default session expiry. `1`-`8760` |
 
