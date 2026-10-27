@@ -210,7 +210,7 @@ Reason codes:
 | `id_matches_liveness` | boolean | Whether the Face Liveness capture matched the ID portrait (Face Liveness workflows only). `null` if not evaluated |
 | `compare_faces_data` | object | Face comparison results |
 | `pep_sanctions_data` | object | PEP & sanctions screening results |
-| `adverse_media_data` | object | Adverse media screening results |
+| `adverse_media_data` | object | Adverse media screening results (see [`adverse_media_data` object](#adverse_media_data-object)) |
 | `secondary_id_analysis_data` | object | Secondary ID document analysis |
 | `tertiary_id_analysis_data` | object | Tertiary ID document analysis |
 | `selected_document_types` | object | Document types selected by applicant |
@@ -257,6 +257,35 @@ Carrier checks never change the session's top-level `status` on their own.
 | `expiry_date_pass` | boolean | Whether the ID has not expired |
 | `valid_state_pass` | boolean | Whether the ID state/province is valid |
 | `age_restriction_pass` | boolean | Whether the applicant meets age requirements |
+
+### `adverse_media_data` object
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `risk_level` | string | `LOW`, `MEDIUM`, `HIGH` or `CRITICAL`. `ERROR` when the check could not be completed (for example, no news source could be searched); treat it as "not screened", not as clean |
+| `risk_score` | number | 0–100 |
+| `summary` | string | One-sentence summary of the result |
+| `findings` | array | Adverse media confirmed to be about the applicant (see below). Empty when nothing was confirmed |
+| `news_exposures` | object | Confirmed findings grouped by exposure category. Every category key is always present: `financial_crime`, `terrorism`, `regulatory`, `political`, `organized_crime`, `violent_crime`, `criminal_legal`, `reputational`, `court_records` |
+| `total_hits` | number | Number of confirmed findings and court records |
+| `timestamp` | string | ISO 8601 time the check completed |
+
+Each entry in `findings`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `finding_id` | string | Unique ID of the finding |
+| `severity` | string | `MEDIUM`, `HIGH` or `CRITICAL` |
+| `category` | string | For example `FRAUD`, `MONEY_LAUNDERING`, `CORRUPTION`, `TERRORISM`, `SANCTIONS_VIOLATION`, `ORGANIZED_CRIME`, `TRAFFICKING`, `OTHER_FINANCIAL_CRIME`, `MISCONDUCT`, `REPUTATIONAL` |
+| `title` | string | Headline of the source |
+| `detail` | string | What the source says about the applicant |
+| `source_url` | string \| null | Link to the source |
+| `source_name` | string \| null | Publisher name |
+| `article_date` | string \| null | Publication date of the source, if known |
+| `confidence` | number | 0–1 confidence that the source is about the applicant and is adverse |
+| `confirmed_by` | array | Source types that corroborate the finding: `news`, `watchlist-database`, `court-records` |
+
+Each category in `news_exposures` has `category`, `hits` and `articles`. Each article has `timestamp`, `headline`, `source_link` and `source` (`news`, `watchlist-database` or `court-records`). Articles in `court_records` also carry `docket_number`, `court` and `nature_of_suit`.
 
 ### `pep_sanctions_data` object
 
@@ -523,50 +552,46 @@ Both `user` (the applicant) and `sender_user` (the session creator) share the sa
         }
       },
       "adverse_media_data": {
-        "total_hits": 10,
+        "risk_level": "MEDIUM",
+        "risk_score": 45,
+        "summary": "1 adverse media finding(s) from news search.",
+        "findings": [
+          {
+            "finding_id": "8f6d3c1e-2b7a-4c55-9a1e-4f0b6d2c7e91",
+            "severity": "MEDIUM",
+            "category": "FRAUD",
+            "title": "Example headline about a fraud investigation",
+            "detail": "The applicant is named in a regulator's fraud investigation.",
+            "source_url": "https://example.com/article-1",
+            "source_name": "Example News",
+            "article_date": "2025-09-14",
+            "confidence": 0.92,
+            "confirmed_by": ["news"]
+          }
+        ],
         "news_exposures": {
-          "violent_crime": {
-            "category": "violent_crime",
-            "hits": 2,
+          "financial_crime": {
+            "category": "financial_crime",
+            "hits": 1,
             "articles": [
               {
-                "source": "serper",
-                "headline": "Example headline about violent crime",
+                "source": "news",
+                "headline": "Example headline about a fraud investigation",
                 "source_link": "https://example.com/article-1",
-                "timestamp": "3 weeks ago"
+                "timestamp": "2025-09-14"
               }
             ]
           },
           "terrorism": { "category": "terrorism", "hits": 0, "articles": [] },
           "regulatory": { "category": "regulatory", "hits": 0, "articles": [] },
-          "financial_crime": { "category": "financial_crime", "hits": 0, "articles": [] },
           "political": { "category": "political", "hits": 0, "articles": [] },
-          "uncategorized": {
-            "category": "uncategorized",
-            "hits": 6,
-            "articles": [
-              {
-                "source": "serper",
-                "headline": "Example uncategorized article headline",
-                "source_link": "https://example.com/article-2",
-                "timestamp": "Sep 14, 2025"
-              }
-            ]
-          },
           "organized_crime": { "category": "organized_crime", "hits": 0, "articles": [] },
-          "criminal_legal": {
-            "category": "criminal_legal",
-            "hits": 2,
-            "articles": [
-              {
-                "source": "serper",
-                "headline": "Example criminal legal article headline",
-                "source_link": "https://example.com/article-3",
-                "timestamp": "Sep 9, 2025"
-              }
-            ]
-          }
+          "violent_crime": { "category": "violent_crime", "hits": 0, "articles": [] },
+          "criminal_legal": { "category": "criminal_legal", "hits": 0, "articles": [] },
+          "reputational": { "category": "reputational", "hits": 0, "articles": [] },
+          "court_records": { "category": "court_records", "hits": 0, "articles": [] }
         },
+        "total_hits": 1,
         "timestamp": "2025-01-15T10:43:16.338Z"
       },
       "selected_document_types": {
