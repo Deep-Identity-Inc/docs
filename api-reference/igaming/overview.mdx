@@ -26,7 +26,7 @@ Every check returns a `verdict` (the raw finding) and an `action` (what your int
 
 <Note>
   These checks fail **soft**. If an internal error occurs or an input can't be
-  used (a non-IPv4 address, no detectable face), the endpoint still returns
+  used (no detectable face), the endpoint still returns
   `200` with `verdict: "UNAVAILABLE"` and `action: "allow"` — it never blocks
   the applicant or returns a 5xx for this reason. Design your integration to
   treat `UNAVAILABLE` as "no signal," not as an error. A body that fails schema
@@ -38,6 +38,15 @@ Every check returns a `verdict` (the raw finding) and an `action` (what your int
 A `404` response means the `session_id` either doesn't exist or doesn't belong to your org — the two cases are indistinguishable from the response. A request with no `x-api-key` header returns `403`; an invalid key returns `401`.
 
 Each check persists its result onto the session, and the persisted record is often richer than the response (settings snapshot, checked IP, anti-cheat similarity and links). Read it back from `analysis_data` on [Retrieve session](/api-reference/sessions/retrieve-session#igaming-check-data). Run the checks **sequentially** — each one read-modify-writes the session's analysis data, so concurrent calls can overwrite each other's persisted result.
+
+## In the hosted verification flow
+
+When applicants verify through deepidv's hosted flow, the IP jurisdiction and VPN checks run automatically when the applicant opens their link, using the IP address deepidv sees directly (not a forwarded header). Injection detection and anti-cheat run inside the flow's camera and selfie steps.
+
+- **VPN, proxy, Tor or datacenter blocks** don't end the session immediately. The applicant is asked to turn the service off and tap **Retry**, and the IP checks run again. After 3 blocked attempts the session fails.
+- **Jurisdiction blocks** end the session; the applicant is told the service isn't available in their region.
+- **Self-exclusion** shows a player-protection message. **Duplicate or multi-account blocks** show a neutral security message that never reveals the reason.
+- Reopening a session that has already ended does not re-run the checks, so the recorded reason for a block is preserved.
 
 ## Endpoints
 
