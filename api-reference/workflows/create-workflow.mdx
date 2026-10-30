@@ -102,7 +102,7 @@ Config keys are snake_case. Enforcement actions are one of `block`, `flag`, `ste
 | `tor_enabled` | boolean | `true` | Detect Tor exit nodes |
 | `tor_action` | string | `"block"` | Action when a Tor exit node is detected |
 | `relay_enabled` | boolean | `true` | Detect Apple iCloud Private Relay egress addresses as their own type (`RELAY`). When `false`, relay addresses are evaluated as datacenter/VPN |
-| `relay_action` | string | `"flag"` | Action when a Private Relay address is detected |
+| `relay_action` | string | `"flag"` | Action when a Private Relay address is detected. Workflows saved before Private Relay detection existed have no `relay_action` and use their `datacenter_action` instead, so their behaviour doesn't change until you set it. For US state-level geofencing, consider `block`: Apple guarantees only the user's country and time zone, not their state |
 | `trusted_ip_list` | string[] | `[]` | IPs or CIDR ranges that bypass the check |
 | `trusted_asn_list` | string[] | `[]` | ASNs that bypass the check |
 | `confidence_threshold` | integer | `70` | Minimum confidence (1–100) to treat a hit as positive. Matches carry fixed confidences — Tor `95`, datacenter `90`, VPN `85`, Private Relay `80` — so a threshold above `80` disables relay hits, above `85` disables VPN hits, above `90` disables datacenter hits |
