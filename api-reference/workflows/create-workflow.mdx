@@ -87,7 +87,7 @@ Config keys are snake_case. Enforcement actions are one of `block`, `flag`, `ste
 | `allowed_jurisdictions` | string[] | `[]` | Jurisdictions that are allowed (allowlist) — ISO 3166 country codes (`CA`) or country-subdivision codes (`CA-ON`, `US-WA`). When non-empty, locations outside the list are out-of-jurisdiction |
 | `blocked_jurisdictions` | string[] | `[]` | Jurisdictions to block, same code format. Checked before the allowlist |
 | `out_of_jurisdiction_action` | string | `"block"` | Action when the resolved location is blocked (or not in a non-empty allowlist) |
-| `datacenter_ip_action` | string | `"flag"` | Action when an in-jurisdiction IP resolves to a datacenter / hosting network. `allow` skips the datacenter rule |
+| `datacenter_ip_action` | string | `"flag"` | Action when an in-jurisdiction IP resolves to a datacenter / hosting network. `allow` skips the datacenter rule. iCloud Private Relay addresses count as datacenter addresses for this rule |
 | `trusted_ip_list` | string[] | `[]` | CIDR ranges or ASNs (`AS64496`) exempt from the **datacenter rule only** — they do not bypass the jurisdiction lists |
 | `escalation_type` | string | `"none"` | Escalation type to run when the action is `step-up` |
 
@@ -101,7 +101,7 @@ Config keys are snake_case. Enforcement actions are one of `block`, `flag`, `ste
 | `datacenter_action` | string | `"block"` | Action when a datacenter IP is detected |
 | `tor_enabled` | boolean | `true` | Detect Tor exit nodes |
 | `tor_action` | string | `"block"` | Action when a Tor exit node is detected |
-| `relay_enabled` | boolean | `true` | Detect Apple iCloud Private Relay egress addresses as their own type (`RELAY`). When `false`, relay addresses are evaluated as datacenter/VPN |
+| `relay_enabled` | boolean | `true` | Detect Apple iCloud Private Relay egress addresses as their own type (`RELAY`). When `false`, relay addresses are evaluated as datacenter/VPN. Workflows saved before Private Relay detection existed use their `datacenter_enabled` value until this is set |
 | `relay_action` | string | `"flag"` | Action when a Private Relay address is detected. Workflows saved before Private Relay detection existed have no `relay_action` and use their `datacenter_action` instead, so their behaviour doesn't change until you set it. For US state-level geofencing, consider `block`: Apple guarantees only the user's country and time zone, not their state |
 | `trusted_ip_list` | string[] | `[]` | IPs or CIDR ranges that bypass the check |
 | `trusted_asn_list` | string[] | `[]` | ASNs that bypass the check |

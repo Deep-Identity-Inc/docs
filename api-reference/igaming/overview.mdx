@@ -46,6 +46,7 @@ When applicants verify through deepidv's hosted flow, the IP jurisdiction and VP
 - **VPN, proxy, Tor or datacenter blocks** don't end the session immediately. The applicant is asked to turn the service off and tap **Retry**, and the IP checks run again. After 3 blocked attempts the session fails.
 - **Jurisdiction blocks** end the session; the applicant is told the service isn't available in their region.
 - **Self-exclusion** shows a player-protection message. **Duplicate or multi-account blocks** show a neutral security message that never reveals the reason.
+- Each request is judged by the IP it comes from, and each IP is checked once per session. If an applicant starts on one device and continues on another, the device doing the steps is what counts: a call from a flagged connection is refused until that device passes the check, but it never fails the session on its own. Only opening the session can use up a retry or end the session.
 - Reopening a session that has already ended does not re-run the checks, so the recorded reason for a block is preserved.
 
 ## Endpoints
