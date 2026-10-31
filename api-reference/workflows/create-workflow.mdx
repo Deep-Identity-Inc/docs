@@ -87,7 +87,7 @@ Config keys are snake_case. Enforcement actions are one of `block`, `flag`, `ste
 | `allowed_jurisdictions` | string[] | `[]` | Jurisdictions that are allowed (allowlist) — ISO 3166 country codes (`CA`) or country-subdivision codes (`CA-ON`, `US-WA`). When non-empty, locations outside the list are out-of-jurisdiction |
 | `blocked_jurisdictions` | string[] | `[]` | Jurisdictions to block, same code format. Checked before the allowlist |
 | `out_of_jurisdiction_action` | string | `"block"` | Action when the resolved location is blocked (or not in a non-empty allowlist) |
-| `datacenter_ip_action` | string | `"flag"` | Action when an in-jurisdiction IP resolves to a datacenter / hosting network. `allow` skips the datacenter rule |
+| `datacenter_ip_action` | string | `"flag"` | Action when an in-jurisdiction IP resolves to a datacenter / hosting network. `allow` skips the datacenter rule. iCloud Private Relay addresses that fall in datacenter ranges count as datacenter addresses for this rule |
 | `trusted_ip_list` | string[] | `[]` | CIDR ranges or ASNs (`AS64496`) exempt from the **datacenter rule only** — they do not bypass the jurisdiction lists |
 | `escalation_type` | string | `"none"` | Escalation type to run when the action is `step-up` |
 
@@ -96,14 +96,16 @@ Config keys are snake_case. Enforcement actions are one of `block`, `flag`, `ste
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `vpn_enabled` | boolean | `true` | Detect commercial VPN ranges |
-| `vpn_action` | string | `"step-up"` | Action when a VPN is detected |
+| `vpn_action` | string | `"block"` | Action when a VPN is detected |
 | `datacenter_enabled` | boolean | `true` | Detect datacenter / hosting ranges |
 | `datacenter_action` | string | `"block"` | Action when a datacenter IP is detected |
 | `tor_enabled` | boolean | `true` | Detect Tor exit nodes |
 | `tor_action` | string | `"block"` | Action when a Tor exit node is detected |
+| `relay_enabled` | boolean | `true` | Detect Apple iCloud Private Relay egress addresses as their own type (`RELAY`). When `false`, relay addresses are evaluated as datacenter/VPN. Defaults to `true` on new workflows. Workflows saved before Private Relay detection existed have it off (relay addresses keep being evaluated as datacenter/VPN, exactly as before) until you set it |
+| `relay_action` | string | `"flag"` | Action when a Private Relay address is detected. If Private Relay detection is turned on without a `relay_action`, the workflow's `datacenter_action` is used. For US state-level geofencing, consider `block`: Apple guarantees only the user's country and time zone, not their state |
 | `trusted_ip_list` | string[] | `[]` | IPs or CIDR ranges that bypass the check |
 | `trusted_asn_list` | string[] | `[]` | ASNs that bypass the check |
-| `confidence_threshold` | integer | `70` | Minimum confidence (1–100) to treat a hit as positive. Matches carry fixed confidences — Tor `95`, datacenter `90`, VPN `85` — so a threshold above `85` disables VPN hits, above `90` disables datacenter hits |
+| `confidence_threshold` | integer | `70` | Minimum confidence (1–100) to treat a hit as positive. Matches carry fixed confidences — Tor `95`, datacenter `90`, VPN `85`, Private Relay `80` — so a threshold above `80` disables relay hits, above `85` disables VPN hits, above `90` disables datacenter hits |
 | `escalation_type` | string | `"none"` | Escalation type to run when the action is `step-up` |
 
 #### INJECTION_DETECTION config
@@ -114,10 +116,6 @@ Config keys are snake_case. Enforcement actions are one of `block`, `flag`, `ste
 | `automation_handling` | string | `"block"` | Action when automation/emulator signals fire. One of `block`, `flag`, `step-up`, `ignore` |
 | `confidence_threshold` | integer | `70` | Minimum **trust** confidence (1–100) for a capture to pass. The client-reported `media_source` and `frame_timing` scores (higher = cleaner) are combined `0.6 / 0.4`; a result **below** this threshold is a detection |
 | `escalation_type` | string | `"none"` | Escalation type to run when the action is `step-up` |
-
-<Warning>
-  Standalone `POST /v1/igaming/injection` calls apply these defaults even when the workflow has **no** `INJECTION_DETECTION` step — the other three iGaming checks skip when their step is absent. See [Injection detection](/api-reference/igaming/injection).
-</Warning>
 
 <Note>
   **`step-up` requires a configured escalation.** For IP jurisdiction, VPN detection, and injection detection, an action that resolves to `step-up` is only emitted when the step also sets an `escalation_type` (other than `none`). If a step-up would fire with no escalation configured, the check **downgrades it to `flag`** — so it never returns a step-up with nothing for you to step up to. (Anti-cheat uses `manual-review` instead of `step-up`.)

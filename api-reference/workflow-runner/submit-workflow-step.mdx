@@ -25,7 +25,7 @@ Steps must be submitted **in order**: the `step_id` in the URL must match the se
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `session_id` | string (uuid) | Yes | The session to submit a step for |
-| `step_id` | string | Yes | `ID_VERIFICATION` or `FACE_LIVENESS` — must match the session's current step |
+| `step_id` | string | Yes | `ID_VERIFICATION`, `FACE_LIVENESS`, `IP_JURISDICTION`, `VPN_DETECTION`, `INJECTION_DETECTION`, or `ANTI_CHEAT` — must match the session's current step |
 
 ### Body parameters
 
@@ -35,6 +35,7 @@ The request body depends on `step_id`:
 |---|---|
 | `ID_VERIFICATION` | [ID_VERIFICATION submission](#id_verification) |
 | `FACE_LIVENESS` | [FACE_LIVENESS submission](#face_liveness) |
+| `IP_JURISDICTION`, `VPN_DETECTION`, `INJECTION_DETECTION`, `ANTI_CHEAT` | [iGaming step submissions](#igaming-steps) |
 
 ## Step submission schemas
 
@@ -179,15 +180,35 @@ complete = requests.post(base, headers=headers, json={"action": "complete"}).jso
 
 </CodeGroup>
 
+### iGaming steps
+
+The four iGaming checks can run as workflow steps through the runner, with the same inputs and verdicts as their [standalone endpoints](/api-reference/igaming/overview). The session's `steps[].requirements` (from [Create Workflow Session](/api-reference/workflow-runner/create-workflow-session)) lists the fields each one needs.
+
+| `step_id` | Body | Result field in the response |
+|---|---|---|
+| `IP_JURISDICTION` | `{ "ip_address": "<applicant IPv4 or IPv6>" }` | `ip_jurisdiction` — same shape as [IP jurisdiction](/api-reference/igaming/ip-jurisdiction) |
+| `VPN_DETECTION` | `{ "ip_address": "<applicant IPv4 or IPv6>" }` | `vpn_detection` — same shape as [VPN detection](/api-reference/igaming/vpn-detection) |
+| `INJECTION_DETECTION` | `{ "device_integrity": {...}, "media_source": {...}, "frame_timing": {...} }` (each `{ pass, score, signals }`) | `injection_detection` — same shape as [Injection detection](/api-reference/igaming/injection) |
+| `ANTI_CHEAT` | `{ "image": "<base64 JPEG/PNG>", "device_fingerprint": "<optional>" }` | `anti_cheat` — same shape as [Anti-cheat](/api-reference/igaming/anti-cheat) |
+
+A `block` action fails the step and the session. Submit the steps one at a time, in the session's step order.
+
+```bash
+curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/IP_JURISDICTION \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "ip_address": "102.88.25.10" }'
+```
+
 ## Response
 
-The response is a common envelope for both step types; FACE_LIVENESS additionally includes a `liveness` object.
+The response is a common envelope for every step type. FACE_LIVENESS additionally includes a `liveness` object, and each iGaming step includes its result field (see [iGaming steps](#igaming-steps)).
 
 ### 200 — Success
 
 | Field | Type | Present when | Description |
 |---|---|---|---|
-| `step_id` | string | always | `ID_VERIFICATION` or `FACE_LIVENESS` |
+| `step_id` | string | always | The submitted step id |
 | `step_status` | string | always | `PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, or `SKIPPED` |
 | `failure_reason` | string \| null | always | Reason the step failed this attempt, or `null`. See [ID_VERIFICATION failure reasons](#id_verification-failure-reasons) and [FACE_LIVENESS failure reasons](#face_liveness-failure-reasons) |
 | `current_step` | integer \| null | always | 0-based index of the next step to submit. `null` once the run has finished |

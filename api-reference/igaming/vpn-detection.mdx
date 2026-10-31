@@ -8,15 +8,19 @@ api: POST /v1/igaming/vpn-detection
 POST /v1/igaming/vpn-detection
 ```
 
-Checks the applicant's IP address against the anonymizer feed — Tor exit nodes, VPN ranges, and datacenter ranges — using the session's `vpn-detection` step configuration. Persists its result to the session.
+Checks the applicant's IP address against the anonymizer feed — Tor exit nodes, Apple iCloud Private Relay egress ranges, datacenter ranges, and VPN ranges — using the session's `vpn-detection` step configuration. Persists its result to the session.
 
-Each match type carries a fixed confidence — Tor `95`, datacenter `90`, VPN `85` — and is checked in that order; the first enabled match wins and is compared against `confidence_threshold` (default `70`). A threshold above a type's confidence effectively disables that type. `trusted_ip_list` (CIDRs) and `trusted_asn_list` short-circuit to `CLEAR`.
+Each match type carries a fixed confidence — Tor `95`, Private Relay `80`, datacenter `90`, VPN `85` — and is checked in that order (Tor, Private Relay, datacenter, VPN); the first enabled match wins and is compared against `confidence_threshold` (default `70`). A threshold above a type's confidence effectively disables that type. `trusted_ip_list` (CIDRs) and `trusted_asn_list` short-circuit to `CLEAR`.
 
 <Note>
-  This check fails **soft**. If an internal error occurs, or the supplied
-  `ip_address` isn't a valid IPv4 address, it returns `200` with
-  `verdict: "UNAVAILABLE"` and `action: "allow"` rather than blocking or
-  erroring.
+  **iCloud Private Relay** egress addresses are published by Apple and matched as their own type, `RELAY`, before the datacenter and VPN ranges they overlap. Apple keeps a relay user in their real country and region, so on new workflows a relay hit defaults to `flag` (`relay_action`) rather than `block`. Workflows saved before Private Relay detection existed keep it off, so relay addresses are evaluated exactly as before (as datacenter/VPN) until you turn `relay_enabled` on. Apple guarantees only country and time zone, so for US state-level geofencing consider `relay_action: "block"`. Set `relay_action` to change that, or `relay_enabled: false` to treat relay addresses like any other datacenter/VPN address.
+</Note>
+
+<Note>
+  This check fails **soft**. If an internal error occurs or the anonymizer feed
+  can't be loaded, it returns `200` with `verdict: "UNAVAILABLE"` and
+  `action: "allow"` rather than blocking or erroring. A value that isn't a valid
+  IPv4 or IPv6 address returns `400`.
 </Note>
 
 ## Request
@@ -35,7 +39,7 @@ Bodies use **snake_case** field names — there are no camelCase aliases.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `session_id` | string | Yes | The session to score |
-| `ip_address` | string | Yes | The applicant's public **IPv4** address as seen by your server — not your server's own egress IP. A non-IPv4 value returns `UNAVAILABLE` (fails soft to `allow`) |
+| `ip_address` | string | Yes | The applicant's public **IPv4 or IPv6** address as seen by your server — not your server's own egress IP. IPv4-mapped IPv6 (`::ffff:a.b.c.d`) is evaluated as IPv4. A value that isn't a valid IP address returns `400` |
 
 ### Example request
 
@@ -99,18 +103,19 @@ response = requests.post(
 
 | Verdict | Meaning |
 | --- | --- |
-| `HIT` | The IP matched an enabled Tor, datacenter, or VPN rule at or above `confidence_threshold` |
+| `HIT` | The IP matched an enabled Tor, Private Relay, datacenter, or VPN rule at or above `confidence_threshold` |
 | `CLEAR` | No match against the anonymizer feed, or the IP/ASN is trusted |
-| `UNAVAILABLE` | The step isn't configured on the workflow, the IP wasn't valid IPv4, or the anonymizer feed couldn't be loaded — fails soft to `allow` |
+| `UNAVAILABLE` | The step isn't configured on the workflow, or the anonymizer feed couldn't be loaded — fails soft to `allow` |
 
 ### Evidence
 
 | Field | Present | Description |
 | --- | --- | --- |
 | `asn`, `asnOrg` | always (may be `null`) | Autonomous system of the IP |
-| `matched` | always | `tor-exit-list`, `datacenter-ranges`, `vpn-ranges`, `trusted-cidr`, `trusted-asn`, or `null` when nothing matched |
-| `type` | on `HIT` | `TOR`, `DATACENTER`, or `VPN` |
-| `confidence` | on `HIT` | `95`, `90`, or `85` respectively |
+| `matched` | always | `tor-exit-list`, `relay-ranges`, `datacenter-ranges`, `vpn-ranges`, `trusted-cidr`, `trusted-asn`, or `null` when nothing matched |
+| `type` | on `HIT` | `TOR`, `RELAY`, `DATACENTER`, or `VPN` |
+| `confidence` | on `HIT` | `95`, `80`, `90`, or `85` respectively |
+| `anonymizerCoverage` | IPv6 only, when the feed has no IPv6 ranges yet | `"ipv4-only"` — the IPv6 address was not checked against anonymizer ranges, so a `CLEAR` is not a full check |
 | `feedVersion`, `stale` | always | Version of the anonymizer feed used, and whether it is older than the freshness window |
 | `reason` | when the step is absent | `"step-not-configured"` |
 

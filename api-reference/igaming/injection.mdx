@@ -17,13 +17,13 @@ Scores signals collected during the applicant's liveness capture for indicators 
   erroring. (`frame_timing` on its own does not count as a signal.)
 </Note>
 
-<Warning>
-  Unlike the other iGaming checks, this endpoint does **not** skip when the
-  session's workflow has no `INJECTION_DETECTION` step. It scores the supplied
-  signals with the default config (`action_on_detection: block`,
-  `automation_handling: block`, `confidence_threshold: 70`) and can fail the
-  session. Only call it on sessions whose workflow includes the step.
-</Warning>
+<Note>
+  Like the other iGaming checks, this endpoint **skips** when the session's
+  workflow has no `INJECTION_DETECTION` step: it returns `200` with
+  `verdict: "UNAVAILABLE"`, `action: "allow"` and
+  `evidence: { "reason": "step-not-configured" }`, and leaves the session
+  unchanged.
+</Note>
 
 ## Request
 

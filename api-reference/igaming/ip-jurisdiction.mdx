@@ -13,7 +13,7 @@ Resolves the applicant's IP address to a jurisdiction (via MaxMind GeoLite2) and
 Jurisdictions are compared as ISO 3166 codes: a country (`CA`, `US`) or a country-subdivision (`CA-ON`, `US-WA`). The resolved location matches a list entry if either its country code or its `country-subdivision` code is listed. Evaluation order: blocked list → allowed list (when non-empty) → datacenter rule.
 
 <Warning>
-  This check **fails open on unknown locations**. A valid IPv4 address that
+  This check **fails open on unknown locations**. A valid IP address that
   can't be geolocated — private (`10.x`, `192.168.x`), loopback, reserved, or
   documentation ranges such as `203.0.113.x`, or a lookup miss — returns
   `CLEAR` / `allow` with `evidence.locationDetails: "Unknown"`, because the
@@ -23,10 +23,9 @@ Jurisdictions are compared as ISO 3166 codes: a country (`CA`, `US`) or a countr
 </Warning>
 
 <Note>
-  This check fails **soft**. If an internal error occurs, or the supplied
-  `ip_address` isn't a valid IPv4 address, it returns `200` with
+  This check fails **soft**. If an internal error occurs, it returns `200` with
   `verdict: "UNAVAILABLE"` and `action: "allow"` rather than blocking or
-  erroring.
+  erroring. A value that isn't a valid IPv4 or IPv6 address returns `400`.
 </Note>
 
 ## Request
@@ -45,7 +44,7 @@ Bodies use **snake_case** field names — there are no camelCase aliases.
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `session_id` | string | Yes | The session to score |
-| `ip_address` | string | Yes | The applicant's public **IPv4** address as seen by your server — not your server's own egress IP. A non-IPv4 value returns `UNAVAILABLE` (fails soft to `allow`) |
+| `ip_address` | string | Yes | The applicant's public **IPv4 or IPv6** address as seen by your server — not your server's own egress IP. IPv4-mapped IPv6 (`::ffff:a.b.c.d`) is evaluated as IPv4. A value that isn't a valid IP address returns `400` |
 
 ### Example request
 
@@ -111,7 +110,7 @@ response = requests.post(
 | --- | --- |
 | `HIT` | The IP resolved to a blocked jurisdiction, was outside a non-empty allowed list, or matched the datacenter rule |
 | `CLEAR` | The IP's jurisdiction is allowed and no datacenter rule fired |
-| `UNAVAILABLE` | The step isn't configured on the workflow, the IP wasn't valid IPv4, or an internal error occurred — fails soft to `allow`. (A lookup that finds no location is `CLEAR` with `locationDetails: "Unknown"`, see above) |
+| `UNAVAILABLE` | The step isn't configured on the workflow, or an internal error occurred — fails soft to `allow`. (A lookup that finds no location is `CLEAR` with `locationDetails: "Unknown"`, see above) |
 
 ### Evidence
 
