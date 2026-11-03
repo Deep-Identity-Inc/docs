@@ -54,7 +54,7 @@ const session = await client.sessions.create({
 });
 
 console.log(session.sessionUrl);
-// → "https://verify.deepidv.com/session/abc123"
+// → "https://verify.deepidv.com/verification/abc123?oid=your-org-id" (no workflowId)
 // Send this URL to your user
 ```
 

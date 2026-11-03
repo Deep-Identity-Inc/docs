@@ -24,8 +24,10 @@ Runs face-based deduplication against your org's enrollment collection, and chec
 
 <Warning>
   Anti-cheat only evaluates sessions that are **not** in a terminal status
-  (`FAILED`, `REJECTED`, `VOIDED`, `EXPIRED`) and whose workflow includes the
-  `ANTI_CHEAT` step; otherwise it returns `UNAVAILABLE` / `allow`. If another
+  (`FAILED`, `REJECTED`, `VOIDED`, `EXPIRED`); a terminal session returns
+  `UNAVAILABLE` / `allow`. The session's workflow must include the
+  `ANTI_CHEAT` step, or the check returns `409` `STEP_NOT_CONFIGURED` (see
+  [Step not configured](#step-not-configured)). If another
   check blocked the session first, anti-cheat will not run — order your checks
   accordingly.
 </Warning>
@@ -115,11 +117,22 @@ response = requests.post(
 | `UNIQUE` | First sight of this face — enrolled into the org's dedup collection. Action is `allow` unless multi-accounting links fire |
 | `DUPLICATE` | The face matches an existing enrollment at or above `match_threshold` — action is `action_on_duplicate` (default `flag`). The face is **not** enrolled again |
 | `SELF_EXCLUSION` | The applicant's document number or matched face is on the self-exclusion registry — action is always `block` |
-| `UNAVAILABLE` | No usable face, the step isn't configured, the session is terminal, or the body was invalid — fails soft to `allow` |
+| `UNAVAILABLE` | No usable face, the session is terminal, or the body was invalid — fails soft to `allow` |
 
 <Note>
   When `action` is `block`, the session is marked as **failed**. The response is redacted to `verdict` and `action`; the full record — `similarity`, `matched_session_id`, `face_id`, multi-accounting `links`, and the applied actions — is persisted as `anti_cheat_data` on the session. See [Retrieve session → iGaming check data](/api-reference/sessions/retrieve-session#igaming-check-data).
 </Note>
+
+### Step not configured
+
+If the session's workflow doesn't include the `ANTI_CHEAT` step, or the session has no workflow, the check returns `409` and nothing is evaluated or stored. Add the step to the workflow first.
+
+```json
+{
+  "code": "STEP_NOT_CONFIGURED",
+  "error": "This session's workflow doesn't include this check. Add the step to the workflow first."
+}
+```
 
 ### Error responses
 
@@ -128,6 +141,7 @@ response = requests.post(
 | `401 Unauthorized` | Invalid or revoked API key |
 | `403 Forbidden` | `x-api-key` header missing |
 | `404 Not Found` | Session not found, or not in your org |
+| `409 Conflict` | The session's workflow doesn't include the `ANTI_CHEAT` step, or the session has no workflow (`code: STEP_NOT_CONFIGURED`). Nothing is evaluated or stored |
 
 <ResponseExample>
 ```json 200

@@ -14,6 +14,8 @@ Asks the subscriber's mobile carrier whether the account holder of a phone numbe
 Carrier coverage varies by country. Where the carrier route is not live the outcome is `NO_DATA`. UK numbers return live data today; US and Canadian numbers return `NO_DATA`.
 </Note>
 
+If the phone data provider rejects the request, `outcome` and `ageVerified` are `ERROR`: the check did not run and is not billed. `ERROR` doesn't block the applicant; treat it as "no signal".
+
 ## Request
 
 ### Headers
@@ -85,11 +87,11 @@ response = requests.post(
 
 | Field              | Type    | Description |
 | ------------------ | ------- | ----------- |
-| `outcome`          | string  | `PASS` (carrier confirms at least `requiredAge`), `FAIL` (carrier reports under it) or `NO_DATA` (carrier holds no servable data for this number) |
-| `ageVerified`      | string  | `VERIFIED`, `NOT_VERIFIED` or `NO_DATA` |
+| `outcome`          | string  | `PASS` (carrier confirms at least `requiredAge`), `FAIL` (carrier reports under it) or `NO_DATA` (carrier holds no servable data for this number) or `ERROR` (the phone data provider rejected the request; the check did not run and is not billed) |
+| `ageVerified`      | string  | `VERIFIED`, `NOT_VERIFIED`, `NO_DATA` or `ERROR` |
 | `requiredAge`      | integer | The age the outcome is measured against. Always `18` today |
 | `carrierThreshold` | integer | The threshold the carrier applied, when reported |
-| `statusMessage`    | string  | Carrier status text |
+| `statusMessage`    | string  | Carrier status text. `"Phone provider rejected the request"` when `outcome` is `ERROR` |
 | `checkedAt`        | string  | ISO 8601 timestamp of the check |
 | `correlationId`    | string  | Provider correlation id. Quote it in support requests |
 | `sessionId`        | string  | Present when the result was attached to a verification session |
@@ -127,6 +129,16 @@ response = requests.post(
   "statusMessage": "No commands available in country [CA]",
   "checkedAt": "2026-09-16T15:55:00.280Z",
   "correlationId": "8a7ce168-11cc-4a7f-a6e8-661a96dc37c2"
+}
+```
+
+```json 200 (provider rejected the request)
+{
+  "outcome": "ERROR",
+  "ageVerified": "ERROR",
+  "requiredAge": 18,
+  "statusMessage": "Phone provider rejected the request",
+  "checkedAt": "2026-09-16T15:56:12.402Z"
 }
 ```
 </ResponseExample>
