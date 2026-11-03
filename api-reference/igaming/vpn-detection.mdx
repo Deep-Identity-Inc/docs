@@ -105,7 +105,7 @@ response = requests.post(
 | --- | --- |
 | `HIT` | The IP matched an enabled Tor, Private Relay, datacenter, or VPN rule at or above `confidence_threshold` |
 | `CLEAR` | No match against the anonymizer feed, or the IP/ASN is trusted |
-| `UNAVAILABLE` | The step isn't configured on the workflow, or the anonymizer feed couldn't be loaded — fails soft to `allow` |
+| `UNAVAILABLE` | The anonymizer feed couldn't be loaded — fails soft to `allow` |
 
 ### Evidence
 
@@ -117,7 +117,17 @@ response = requests.post(
 | `confidence` | on `HIT` | `95`, `80`, `90`, or `85` respectively |
 | `anonymizerCoverage` | IPv6 only, when the feed has no IPv6 ranges yet | `"ipv4-only"` — the IPv6 address was not checked against anonymizer ranges, so a `CLEAR` is not a full check |
 | `feedVersion`, `stale` | always | Version of the anonymizer feed used, and whether it is older than the freshness window |
-| `reason` | when the step is absent | `"step-not-configured"` |
+
+### Step not configured
+
+If the session's workflow doesn't include the `VPN_DETECTION` step, or the session has no workflow, the check returns `409` and nothing is evaluated or stored. Add the step to the workflow first.
+
+```json
+{
+  "code": "STEP_NOT_CONFIGURED",
+  "error": "This session's workflow doesn't include this check. Add the step to the workflow first."
+}
+```
 
 ### Error responses
 
@@ -127,6 +137,7 @@ response = requests.post(
 | `401 Unauthorized` | Invalid or revoked API key |
 | `403 Forbidden` | `x-api-key` header missing |
 | `404 Not Found` | Session not found, or not in your org |
+| `409 Conflict` | The session's workflow doesn't include the `VPN_DETECTION` step, or the session has no workflow (`code: STEP_NOT_CONFIGURED`). Nothing is evaluated or stored |
 
 <ResponseExample>
 ```json clear

@@ -59,6 +59,11 @@ response = requests.get(
 | `workflows[].status` | string | Workflow status (`active` or `inactive`) |
 | `workflows[].steps` | array | Array of step identifiers included in the workflow (e.g. `ID_VERIFICATION`, `FACE_LIVENESS`) |
 | `workflows[].created_at` | string | ISO 8601 creation timestamp |
+| `workflows[].failure_settings` | object \| null | Retry limit stored on the workflow. `null` means no limit is set (typically older workflows), so applicants can retry without limit |
+| `workflows[].failure_settings.active` | boolean | Whether the retry limit is enforced |
+| `workflows[].failure_settings.max_attempts` | integer \| null | Failed attempts allowed before the session fails |
+
+Some steps can only be configured in the Admin Console and may appear on workflows you retrieve. When an applicant reaches `max_attempts` failed attempts, the session fails. To change the retry limit on an existing workflow, use the Admin Console.
 
 ### Error responses
 
@@ -81,7 +86,11 @@ response = requests.get(
         "PEP_SANCTIONS",
         "DOCUMENT_UPLOAD"
       ],
-      "created_at": "2026-03-01T17:30:24.573Z"
+      "created_at": "2026-03-01T17:30:24.573Z",
+      "failure_settings": {
+        "active": true,
+        "max_attempts": 3
+      }
     },
     {
       "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
@@ -91,7 +100,8 @@ response = requests.get(
         "ID_VERIFICATION",
         "FACE_LIVENESS"
       ],
-      "created_at": "2026-02-15T09:30:00.000Z"
+      "created_at": "2026-02-15T09:30:00.000Z",
+      "failure_settings": null
     }
   ]
 }

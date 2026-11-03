@@ -9,7 +9,7 @@ All four checks:
 
 - Are session-scoped — the `session_id` must belong to a session in your org
 - Accept `application/json` request bodies using **snake_case** field names (no camelCase aliases)
-- Are driven by the session's **workflow step configuration** — if the corresponding step isn't configured on the session's workflow, VPN detection, IP jurisdiction, and anti-cheat return `UNAVAILABLE`; injection detection instead scores with the default config (see [Injection detection](/api-reference/igaming/injection))
+- Are driven by the session's **workflow step configuration** — if the session's workflow doesn't include the corresponding step (or the session has no workflow), the check returns `409` with code `STEP_NOT_CONFIGURED` and nothing is evaluated or stored
 - Persist their result to the session for later retrieval
 
 ## Verdict and action model
@@ -34,6 +34,15 @@ Every check returns a `verdict` (the raw finding) and an `action` (what your int
   injection, VPN detection, and IP jurisdiction; anti-cheat returns `200` /
   `UNAVAILABLE` even then.
 </Note>
+
+A `409` response means the session's workflow doesn't include the step for that check. Add the step to the workflow first:
+
+```json
+{
+  "code": "STEP_NOT_CONFIGURED",
+  "error": "This session's workflow doesn't include this check. Add the step to the workflow first."
+}
+```
 
 A `404` response means the `session_id` either doesn't exist or doesn't belong to your org — the two cases are indistinguishable from the response. A request with no `x-api-key` header returns `403`; an invalid key returns `401`.
 

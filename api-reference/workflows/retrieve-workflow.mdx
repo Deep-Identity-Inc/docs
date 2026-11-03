@@ -69,6 +69,9 @@ response = requests.get(
 | `workflow.created_at` | string | ISO 8601 creation timestamp |
 | `workflow.updated_at` | string | ISO 8601 last-updated timestamp |
 | `workflow.steps` | array | Ordered list of verification steps |
+| `workflow.failure_settings` | object \| null | Retry limit stored on the workflow. `null` means no limit is set (typically older workflows), so applicants can retry without limit |
+| `workflow.failure_settings.active` | boolean | Whether the retry limit is enforced |
+| `workflow.failure_settings.max_attempts` | integer \| null | Failed attempts allowed before the session fails |
 
 ### Step object
 
@@ -76,6 +79,10 @@ response = requests.get(
 |-------|------|-------------|
 | `steps[].id` | string | Step identifier (e.g. `id-verification`, `face-liveness`) |
 | `steps[].config` | object | Step-specific configuration settings |
+
+Some steps can only be configured in the Admin Console and may appear on workflows you retrieve.
+
+When an applicant reaches `failure_settings.max_attempts` failed attempts, the session fails. To change the retry limit on an existing workflow, use the Admin Console.
 
 <Tip>
   To list sessions associated with a workflow, use the [List Sessions](/api-reference/sessions/list-sessions) endpoint with the `workflow_id` query parameter.
@@ -201,7 +208,11 @@ response = requests.get(
         "id": "ai-bank-statement-analysis",
         "config": {}
       }
-    ]
+    ],
+    "failure_settings": {
+      "active": true,
+      "max_attempts": 3
+    }
   }
 }
 ```

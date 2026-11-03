@@ -28,6 +28,9 @@ Currently supported steps: `ID_VERIFICATION`, `FACE_LIVENESS`, `AGE_ESTIMATION`,
 | `steps` | array | Yes | Ordered list of verification steps (1–10, no duplicates) |
 | `steps[].id` | string | Yes | Step identifier (see [Available Steps](#available-steps)) |
 | `steps[].config` | object | No | Step-specific configuration overrides (see [Step Configuration](#step-configuration)) |
+| `failure_settings` | object | No | Retry limit for the workflow (see [Retry limit](#retry-limit)). Defaults to `{ "active": true, "max_attempts": 3 }` when omitted |
+| `failure_settings.active` | boolean | Yes, if `failure_settings` is sent | Whether the retry limit is enforced. When `false`, applicants can retry without limit |
+| `failure_settings.max_attempts` | integer | Yes, if `active` is `true` | Failed attempts allowed before the session fails (1–10). Defaults to `3` when `active` is `false` |
 
 ### Available Steps
 
@@ -90,6 +93,10 @@ Config keys are snake_case. Enforcement actions are one of `block`, `flag`, `ste
 | `datacenter_ip_action` | string | `"flag"` | Action when an in-jurisdiction IP resolves to a datacenter / hosting network. `allow` skips the datacenter rule. iCloud Private Relay addresses that fall in datacenter ranges count as datacenter addresses for this rule |
 | `trusted_ip_list` | string[] | `[]` | CIDR ranges or ASNs (`AS64496`) exempt from the **datacenter rule only** — they do not bypass the jurisdiction lists |
 | `escalation_type` | string | `"none"` | Escalation type to run when the action is `step-up` |
+
+<Warning>
+  Set at least one of `allowed_jurisdictions` or `blocked_jurisdictions`. A step with both lists empty would allow every country, so the request is rejected with `400`: "List at least one allowed or blocked country."
+</Warning>
 
 #### VPN_DETECTION config
 
@@ -161,6 +168,33 @@ Enforcement actions are one of `flag`, `manual-review`, `block`, `allow`. The st
   signal simply doesn't contribute (the other signals still apply).
 </Info>
 
+### Retry limit
+
+Every workflow you create through the API has a retry limit. If you omit `failure_settings`, the workflow uses the default: `{ "active": true, "max_attempts": 3 }`. When an applicant reaches the limit, the session fails.
+
+Send `failure_settings` to choose a different limit (1–10) or turn it off:
+
+```json
+{
+  "failure_settings": {
+    "active": true,
+    "max_attempts": 5
+  }
+}
+```
+
+```json
+{
+  "failure_settings": {
+    "active": false
+  }
+}
+```
+
+<Note>
+  There's no endpoint to update a workflow yet. To change the retry limit on an existing workflow, use the Admin Console.
+</Note>
+
 ### Fraud Analysis & Escalation
 
 The `ID_VERIFICATION` step supports optional fraud analysis and conditional escalation. When fraud analysis is enabled, submitted IDs are evaluated synchronously for tampering and fraud signals before the session completes.
@@ -226,7 +260,11 @@ curl -X POST "https://api.deepidv.com/v1/workflows" \
       { "id": "AGE_ESTIMATION" },
       { "id": "PEP_SANCTIONS" },
       { "id": "ADVERSE_MEDIA" }
-    ]
+    ],
+    "failure_settings": {
+      "active": true,
+      "max_attempts": 5
+    }
   }'
 ```
 
@@ -259,6 +297,10 @@ const response = await fetch(
         { id: "PEP_SANCTIONS" },
         { id: "ADVERSE_MEDIA" },
       ],
+      failure_settings: {
+        active: true,
+        max_attempts: 5,
+      },
     }),
   }
 );
@@ -295,6 +337,10 @@ response = requests.post(
             {"id": "PEP_SANCTIONS"},
             {"id": "ADVERSE_MEDIA"},
         ],
+        "failure_settings": {
+            "active": True,
+            "max_attempts": 5,
+        },
     },
 )
 ```
@@ -316,6 +362,9 @@ Returns the full workflow record. The response uses the same format as [Retrieve
 | `workflow.created_at` | string | ISO 8601 creation timestamp |
 | `workflow.updated_at` | string | ISO 8601 last-updated timestamp |
 | `workflow.steps` | array | Ordered list of steps with full resolved configuration |
+| `workflow.failure_settings` | object | Retry limit stored on the workflow |
+| `workflow.failure_settings.active` | boolean | Whether the retry limit is enforced |
+| `workflow.failure_settings.max_attempts` | integer \| null | Failed attempts allowed before the session fails |
 
 ### Error responses
 
@@ -391,7 +440,11 @@ Returns the full workflow record. The response uses the same format as [Retrieve
       },
       { "id": "pep-sanctions", "config": {} },
       { "id": "adverse-media", "config": {} }
-    ]
+    ],
+    "failure_settings": {
+      "active": true,
+      "max_attempts": 5
+    }
   }
 }
 ```

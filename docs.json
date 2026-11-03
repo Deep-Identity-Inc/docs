@@ -77,10 +77,6 @@
             ]
           },
           {
-            "group": "Credit Check",
-            "pages": ["api-reference/credit-check/create-credit-check"]
-          },
-          {
             "group": "Financial",
             "pages": [
               "api-reference/financial/retrieve-bank-statement",

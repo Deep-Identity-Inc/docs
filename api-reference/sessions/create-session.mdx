@@ -108,7 +108,7 @@ response = requests.post(
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | string | Unique identifier for the created session |
-| `session_url` | string | Base URL where the applicant completes verification |
+| `session_url` | string | URL where the applicant completes verification. Workflow sessions use `/session/<id>`; sessions created without a `workflow_id` use `/verification/<id>` |
 | `externalId` | string | Your external ID (only returned if provided in the request) |
 | `expires_at` | string | ISO 8601 timestamp when the session will auto-expire (only present if expiry is configured) |
 | `links` | array | Associated verification links |
