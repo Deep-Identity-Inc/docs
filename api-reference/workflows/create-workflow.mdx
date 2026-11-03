@@ -56,7 +56,7 @@ Each step accepts optional configuration. If omitted, sensible defaults are appl
 |-------|------|---------|-------------|
 | `minimum_age` | integer | `18` | Minimum accepted age |
 | `maximum_age` | integer | `51` | Maximum accepted age |
-| `expiry_date_years` | integer | `2` | Maximum years until ID expiry is rejected |
+| `expiry_date_years` | integer | `2` | Minimum time the ID must stay valid past the verification date. A mode, not a number of years: `0` = off (no minimum-validity check), `1` = 30 days, `2` = 60 days, `3` = 180 days, `4` = 365 days |
 | `require_secondary_id` | boolean | `false` | Require a second form of ID |
 | `require_tertiary_id` | boolean | `false` | Require a third form of ID |
 | `face_front_photo_only` | boolean | `false` | Only capture front-facing photo |
@@ -246,7 +246,7 @@ curl -X POST "https://api.deepidv.com/v1/workflows" \
         "id": "ID_VERIFICATION",
         "config": {
           "minimum_age": 21,
-          "expiry_date_years": 5,
+          "expiry_date_years": 3,
           "escalation_type": "nfc-passport",
           "escalation_risk_threshold": 75
         }
@@ -284,7 +284,7 @@ const response = await fetch(
           id: "ID_VERIFICATION",
           config: {
             minimum_age: 21,
-            expiry_date_years: 5,
+            expiry_date_years: 3,
             escalation_type: "nfc-passport",
             escalation_risk_threshold: 75,
           },
@@ -324,7 +324,7 @@ response = requests.post(
                 "id": "ID_VERIFICATION",
                 "config": {
                     "minimum_age": 21,
-                    "expiry_date_years": 5,
+                    "expiry_date_years": 3,
                     "escalation_type": "nfc-passport",
                     "escalation_risk_threshold": 75,
                 },
@@ -394,7 +394,7 @@ Returns the full workflow record. The response uses the same format as [Retrieve
             "country_category_minimum_age": null,
             "minimum_age": { "lower": 21, "upper": 51 }
           },
-          "expiry_date_settings": { "expiry_date": 5 },
+          "expiry_date_settings": { "expiry_date": 3 },
           "face_scan_settings": { "face_front_photo_only": false },
           "id_scan_face_settings": { "require_front_only": false },
           "id_scan_settings": {

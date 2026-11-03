@@ -28,13 +28,24 @@ Both camelCase and snake_case parameter names are accepted. If both are provided
 | `first_name`        | `firstName`       | string  | Yes      | Applicant's first name                                                                               |
 | `last_name`         | `lastName`        | string  | Yes      | Applicant's last name                                                                                |
 | `email`             | —                 | string  | Yes      | Applicant's email address                                                                            |
-| `phone`             | —                 | string  | No       | Applicant's phone number in E.164 format (e.g. `+15192223333`). Required if the workflow includes a phone verification step |
+| `phone`             | —                 | string  | No       | Applicant's phone number in E.164 format (e.g. `+15192223333`). Required when the workflow has a step that uses the applicant's phone and the applicant has no valid phone on file. See [Phone number](#phone-number) |
 | `external_id`       | `externalId`      | string  | No       | Your internal reference ID for this session                                                          |
 | `send_email_invite` | `sendEmailInvite` | boolean | No       | Send an email invitation to the applicant. Defaults to `true`                                        |
 | `send_phone_invite` | `sendPhoneInvite` | boolean | No       | Send an SMS invitation to the applicant. Defaults to `true`. Skipped if the applicant has no phone on file |
 | `workflow_id`       | `workflowId`      | string  | No       | ID of the workflow to use. If omitted, runs as a standalone verification                             |
 | `redirect_url`      | `redirectUrl`     | string  | No       | HTTPS URL to redirect the end-user to after the verification session ends. Must be a valid HTTPS URL |
 | `expires_in_hours`  | `expiresInHours`  | integer | No       | Auto-expire the session after this many hours (1-8760). Overrides the workflow's expiry setting if both are provided. If omitted, the workflow's expiry setting is used (if configured) |
+
+### Phone number
+
+A workflow with a step that uses the applicant's phone (`PHONE_VERIFICATION`, `PHONE_TRUST_CHECK`, `CARRIER_AGE_GATE`, or `PHONE_OWNERSHIP_MATCH`) needs a valid phone for the applicant. Otherwise `phone` is optional.
+
+- A phone counts as on file only if it's a valid E.164 number.
+- If the applicant already has a valid phone on file, that phone is kept, even if you send a different one.
+- If the applicant's phone on file is missing or invalid, the `phone` you send fills it.
+- If there's no valid phone on file and you don't send one, the create returns `400` with `code` `PHONE_REQUIRED` and `steps` listing the steps that need the phone.
+
+A ProofCall step doesn't need the applicant's phone: it calls the references sent with its own submission.
 
 ### Example request
 
@@ -110,14 +121,14 @@ response = requests.post(
 | `id` | string | Unique identifier for the created session |
 | `session_url` | string | URL where the applicant completes verification. Workflow sessions use `/session/<id>`; sessions created without a `workflow_id` use `/verification/<id>` |
 | `externalId` | string | Your external ID (only returned if provided in the request) |
-| `expires_at` | string | ISO 8601 timestamp when the session will auto-expire (only present if expiry is configured) |
+| `expires_at` | string | ISO 8601 timestamp when the session will auto-expire. Only present when the session has an expiry (`expires_in_hours`, or the workflow's session expiry setting). If it's absent, the link doesn't expire |
 | `links` | array | Associated verification links |
 
 ### Error responses
 
 | Status                  | Description                                                   |
 | ----------------------- | ------------------------------------------------------------- |
-| `400 Bad Request`       | Invalid request body — check required fields and, if provided, phone format |
+| `400 Bad Request`       | Invalid request body — check required fields and, if provided, phone format. Also returned with `code` `PHONE_REQUIRED` (and `steps`) when the workflow needs the applicant's phone and none was sent or is on file |
 | `401 Unauthorized`      | Missing or invalid API key                                    |
 | `402 Payment Required`  | Insufficient token balance                                    |
 | `404 Not Found`         | Workflow ID not found                                         |
@@ -141,6 +152,14 @@ response = requests.post(
       "description": "Use this ref to fetch the session details"
     }
   ]
+}
+```
+
+```json 400 — Phone required
+{
+  "error": "A phone number is required for this workflow.",
+  "code": "PHONE_REQUIRED",
+  "steps": ["PHONE_VERIFICATION"]
 }
 ```
 </ResponseExample>
