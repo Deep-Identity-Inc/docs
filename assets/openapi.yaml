@@ -1228,7 +1228,6 @@ components:
         - email
         - firstName
         - lastName
-        - phone
       description: Body for creating an IDV/verification session. Snake_case keys are
         also accepted.
     ListSessionsResponse:
