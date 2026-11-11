@@ -1,0 +1,40 @@
+---
+title: Privacy
+description: "What the deepidv iOS SDK collects and uploads, its privacy manifest, and what to declare in your app's App Store privacy details."
+---
+
+## The SDK's privacy manifest
+
+The SDK ships `PrivacyInfo.xcprivacy`, which Xcode adds to your app's privacy report. It declares the data the SDK sends to deepidv. All of it is linked to the user, used for app functionality (identity verification and fraud prevention), and never for tracking.
+
+| Data type | What |
+|---|---|
+| Photos or Videos | ID photos, selfies, liveness frames and the liveness replay clip |
+| Sensitive Info | Biometric use of face images: face match, liveness, face search |
+| Name, Email Address, Phone Number | The `WorkflowUser` fields, when the app creates a workflow session |
+
+The SDK uses none of Apple's required-reason APIs and doesn't track users.
+
+## What you declare yourself
+
+Two values are sent only when your app passes them:
+
+| Value | When | Declare as |
+|---|---|---|
+| `deviceFingerprint` | You pass it to `checkAntiCheat` | Device ID, for fraud prevention |
+| `ipAddress` | You pass it to `checkVPN` or `checkIPJurisdiction` from the app | Coarse location or other data, per your use |
+
+If you create sessions on your backend (recommended), the user's name and email aren't sent by the app at all.
+
+## What leaves the device
+
+- **ID photos**, cut to the frame on screen, so the surroundings aren't uploaded.
+- **Extra frames** of the card front, in workflows. deepidv reads them only to recover an unreadable expiry date or date of birth, then deletes them.
+- **Recognition frames** during capture (workflows): small, compressed crops of the card, sent about once a second to recognize the document.
+- **The selfie** and **liveness frames**, with a short replay clip for reviewers.
+
+Photos go over HTTPS to presigned upload URLs. The SDK never saves them to the photo library, and no images come back to the app from deepidv.
+
+## Your privacy policy
+
+Tell your users you use deepidv to verify identity, what you collect (ID, face), and why. See [Security and compliance](/security/security-compliance) for how deepidv stores and protects the data.

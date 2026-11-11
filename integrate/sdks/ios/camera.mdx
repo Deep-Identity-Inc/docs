@@ -1,0 +1,54 @@
+---
+title: Camera
+description: "Choose the front or back camera for document capture in the iOS SDK, for phones, tablets and kiosks."
+---
+
+## Which camera for the document
+
+| Setup | Use |
+|---|---|
+| Phone, user holds the phone and points it at their ID | `.back` |
+| Tablet or kiosk facing the user, user holds the ID up to the screen | `.front` (the default) |
+
+The selfie and face liveness always use the front camera.
+
+Set the default for every view in the config:
+
+```swift
+let client = DeepIDVClient(config: DeepIDVConfig(
+    apiKey: userToken,
+    baseURL: proxyURL,
+    documentCamera: .back
+))
+```
+
+Or for one view only, with `documentCamera:` on `DeepIDVWorkflowView`, `DeepIDVVerificationView` or `DocumentScannerView`:
+
+```swift
+DeepIDVWorkflowView(client: client, sessionID: sessionID, documentCamera: .back) { result in /* … */ }
+```
+
+The per-view value wins over the config.
+
+<Warning>
+  The default changed to `.front` in version 1.3.0. If your app runs on phones and didn't set `documentCamera`, set it to `.back`. See [Migrating to 1.3](/integrate/sdks/ios/reference/migrating-to-1-3).
+</Warning>
+
+## Photo quality
+
+Document photos are taken at the largest size the camera offers, up to 12 MP, then cut to the frame on screen. Cameras with more pixels (48 MP) are used at 12 MP.
+
+## Center Stage
+
+On iPads with Center Stage, document capture turns it off so the camera doesn't zoom or pan while the card is photographed. Your app's own setting is restored afterwards.
+
+## Kiosks and fixed tablets
+
+- Mount the tablet so the front camera is at the user's chest or face height.
+- Light the area evenly from the front; avoid a window behind the user.
+- Lock the orientation. If the tablet turns during a scan, capture continues, but the photo is sent whole instead of cut to the frame.
+- Use [proxy mode](/integrate/sdks/ios/proxy-mode) even on managed devices: kiosks are physically accessible.
+
+## Permission
+
+The SDK asks for camera access the first time a camera screen opens. You need `NSCameraUsageDescription` in your `Info.plist`; see [Installation](/integrate/sdks/ios/installation#declare-camera-access).

@@ -1,0 +1,105 @@
+---
+title: Build with AI
+description: "Everything an AI coding assistant needs to integrate the deepidv iOS SDK correctly: the decision tree, hard rules, exact APIs, and copy-ready prompts."
+---
+
+Use this page to brief an AI coding assistant (Claude, Cursor, Copilot and others), or point it here. Every page on this site is also available as Markdown (append `.md` to its URL) and through the page menu's **Copy page** and **Open in…** options.
+
+## Prompt to start with
+
+```text
+Integrate the deepidv iOS SDK into this app following https://docs.deepidv.com/integrate/sdks/ios/ai-agents.
+Use a workflow (DeepIDVWorkflowView) with a session created by our backend, and proxy mode for the API key.
+Read the linked pages for exact signatures before writing code. Don't invent APIs.
+```
+
+## Hard rules
+
+1. **Never put the deepidv API key in the app.** Use [proxy mode](/integrate/sdks/ios/proxy-mode): `DeepIDVConfig(apiKey: <app user token>, baseURL: <your backend>/deepidv)`, and a backend route that checks the user and session ownership, then adds `x-api-key`.
+2. **Never treat `onResult` as the verification decision.** Grant access only from the `session.status.verified` webhook or `GET /v1/sessions/{id}` on the backend.
+3. **Add `NSCameraUsageDescription`** to `Info.plist`, or the app ends when the camera opens.
+4. **Create workflow sessions on the backend** with `POST /v1/workflows/{workflow_id}/sessions` and pass `session_id` to `DeepIDVWorkflowView(client:sessionID:onResult:)`.
+5. **Forward `POST /v1/sessions/{id}/id-capture/detect`** in the proxy, or document recognition silently turns off.
+6. **Present SDK views full screen** and close them in `onResult`, which fires exactly once.
+7. **Use `.back` for `documentCamera` on phones.** The default is `.front`, for kiosks and tablets.
+8. **Keep a `default` branch** when switching on `DeepIDVError.Kind`, `SessionStatus`, `APIErrorCode` and the failure codes: they're open sets.
+9. **Never show `error.message` or `failure.message` to users.** Write copy from `kind`, `code` or `userAction`.
+10. **Test on a real device.** The camera doesn't work in the iOS Simulator.
+
+## Decision tree
+
+| The user wants to… | Use | Page |
+|---|---|---|
+| Verify a new user (ID + face) | `DeepIDVWorkflowView` | [Run a workflow](/integrate/sdks/ios/workflows/run-a-workflow) |
+| Confirm a returning user | `client.makeReVerifyView(workflowID:email:onResult:)` | [Re-verification](/integrate/sdks/ios/re-verification) |
+| Add only an ID scan to an existing flow | `DocumentScannerView` | [Document capture](/integrate/sdks/ios/document-capture) |
+| Add only a selfie | `SelfieCaptureView` | [Selfie](/integrate/sdks/ios/selfie) |
+| Run liveness alone | `CustomFaceLivenessView` (workflow session at its liveness step) | [Face liveness](/integrate/sdks/ios/face-liveness) |
+| ID + selfie without a workflow | `DeepIDVVerificationView` | [Drop-in verification](/integrate/sdks/ios/drop-in-verification) |
+| Analyze existing images | `scanDocument`, `verifyIdentity` | [Headless](/integrate/sdks/ios/headless/document-and-identity) |
+| Gaming checks | `checkAntiCheat`, `checkVPN`, `checkIPJurisdiction` | [iGaming](/integrate/sdks/ios/headless/igaming) |
+| Match the brand | `.deepIDVAppearance(DeepIDVAppearance(...))` | [Branding](/integrate/sdks/ios/branding) |
+
+## Minimal correct integration
+
+```swift
+import DeepIDV
+import SwiftUI
+
+@MainActor
+final class Verification: ObservableObject {
+    let client: DeepIDVClient
+    init(userToken: String) {
+        client = DeepIDVClient(config: DeepIDVConfig(
+            apiKey: userToken,                                     // app's own token, not the deepidv key
+            baseURL: URL(string: "https://api.example.com/deepidv")!,
+            documentCamera: .back                                  // phone app
+        ))
+    }
+}
+
+struct VerifyScreen: View {
+    @StateObject var verification: Verification
+    let sessionID: String                                         // from POST /verification/start on your backend
+    @State private var presenting = false
+
+    var body: some View {
+        Button("Verify your identity") { presenting = true }
+            .fullScreenCover(isPresented: $presenting) {
+                DeepIDVWorkflowView(client: verification.client, sessionID: sessionID) { result in
+                    presenting = false
+                    if case .failure(let error) = result, error.kind != .cancelled {
+                        // show a generic error; log error.kind and error.apiCode
+                    }
+                    // Otherwise show "We're reviewing your details".
+                    // The backend's webhook handler grants access.
+                }
+            }
+    }
+}
+```
+
+## Facts to get right
+
+| Fact | Value |
+|---|---|
+| Package URL | `https://github.com/Deep-Identity-Inc/deepidv-sdk-swift`, product `DeepIDV`, `from: "1.3.0"` |
+| Platform | iOS 15+, Swift 6.2 / Xcode 26+, no dependencies |
+| Workflow steps supported | ID verification, face liveness |
+| Image input | `FileInput`: `.data`, `.fileURL`, `.base64`; JPEG or PNG, at most 15 MiB |
+| Confidence scales | `DocumentScanResult.confidence` 0 to 1; everything else 0 to 100 |
+| Languages | English, Spanish, French; follows the device unless `DeepIDVConfig.language` is set |
+| Re-verification | Needs a user verified on the same workflow; the app passes their email; the view draws nothing after `onResult` |
+| Retries | `429` and `5xx` retried automatically (`maxRetries`, default 3) |
+
+## Checking the integration
+
+Ask your assistant to confirm:
+
+- [ ] No deepidv API key in the app bundle, source or config files.
+- [ ] Sessions are created on the backend; the proxy checks session ownership.
+- [ ] The proxy forwards the endpoints in [Proxy mode](/integrate/sdks/ios/proxy-mode) and nothing else.
+- [ ] Access is granted from the webhook, not from `onResult`.
+- [ ] `NSCameraUsageDescription` is set.
+- [ ] `documentCamera` matches the device type.
+- [ ] Every `switch` on SDK types has a `default` branch.

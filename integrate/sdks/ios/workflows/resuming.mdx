@@ -1,0 +1,50 @@
+---
+title: Resuming a session
+description: "Continue an unfinished workflow session from its current step after the user closes the app, cancels, or hits an error."
+---
+
+A run can stop before the session is finished: the user cancels, the app is closed, or a step ends on an error. The session stays open on deepidv, so continue it instead of creating a new one.
+
+```swift
+DeepIDVWorkflowView(client: client, resumingSessionID: sessionID) { result in
+    // handle the result
+}
+```
+
+The view opens on **Picking up where you left off** and continues from the session's current step.
+
+## What carries over
+
+| | On resume |
+|---|---|
+| Completed steps | Kept. The final `WorkflowRunResult` covers the whole session. |
+| Attempts | Kept. Attempts used before the resume stay used. |
+| Photos from the earlier run | Not kept. The current step starts again from its beginning: the document picker for ID verification, a new capture for liveness. |
+
+## Check before you resume
+
+To decide whether to offer "Continue verification", read the state first:
+
+```swift
+do {
+    let state = try await client.resumeWorkflowSession(sessionID: sessionID)
+    let attemptsLeft = state.attemptsRemaining
+    let lastFailure = state.steps.compactMap(\.failure).last
+    // Offer to continue, and explain lastFailure if there was one.
+} catch let error as DeepIDVError where error.apiCode == .sessionTerminal {
+    // Finished already: read the outcome instead.
+    let final = try await client.fetchWorkflowState(sessionID: sessionID)
+}
+```
+
+## When resuming fails
+
+| Situation | Result |
+|---|---|
+| The session is finished (submitted, completed, failed or expired) | `.failure` with kind `.conflict` and `apiCode == .sessionTerminal` |
+| The session ID doesn't exist for your organization | `.failure` with kind `.notFound` |
+| The session expired while the user was away | `.success` with `sessionFailure?.code == .sessionExpired`, or `.conflict` if it had already expired |
+
+<Tip>
+  Store the session ID on your backend with the user. If the app is reinstalled, your backend can still hand back the open session.
+</Tip>

@@ -1,0 +1,40 @@
+---
+title: Results
+description: "Every result type the iOS SDK returns, which call returns it, and the confidence scale each uses."
+---
+
+| Call | Returns | Details |
+|---|---|---|
+| `DeepIDVWorkflowView` | `WorkflowRunResult` | [Results and the decision](/integrate/sdks/ios/workflows/results) |
+| `makeReVerifyView` | `ReVerifyResult` | [Re-verification](/integrate/sdks/ios/re-verification#results) |
+| `DeepIDVVerificationView` | `DeepIDVVerificationResult` | [Drop-in verification](/integrate/sdks/ios/drop-in-verification#deepidvverificationresult) |
+| `DocumentScannerView`, `scanDocument` | `DocumentScanResult` | [Document capture](/integrate/sdks/ios/document-capture#documentscanresult) |
+| `verifyIdentity` | `IdentityVerifyResult` | [Identity verify](/integrate/sdks/ios/headless/document-and-identity#identityverifyresult) |
+| `SelfieCaptureView` | `FileInput` (the photo) | [Selfie](/integrate/sdks/ios/selfie) |
+| `CustomFaceLivenessView`, `checkMovementLiveness` | `FaceLivenessResult` | [Face liveness](/integrate/sdks/ios/face-liveness#facelivenessresult) |
+| `checkAntiCheat`, `AntiCheatCheckView` | `AntiCheatResult` | [iGaming](/integrate/sdks/ios/headless/igaming#anticheatresult) |
+| `checkVPN`, `checkIPJurisdiction` | `IPCheckResult` | [iGaming](/integrate/sdks/ios/headless/igaming#ipcheckresult) |
+| `faceProbe` | `FaceProbe` | [Liveness with your own camera](/integrate/sdks/ios/headless/liveness) |
+
+Every view calls `onResult` exactly once, with a `Result<…, DeepIDVError>`.
+
+## Confidence scales
+
+Scales differ by result. The SDK passes them through unchanged.
+
+| Field | Scale |
+|---|---|
+| `DocumentScanResult.confidence` | **0 to 1** |
+| `IdentityVerifyResult.overallConfidence`, `.document.confidence`, `.faceDetection.confidence`, `.faceMatch.confidence`, `.faceMatch.threshold` | 0 to 100 |
+| `FaceLivenessResult.confidence` | 0 to 100 (`nil` on a failed workflow attempt) |
+| `FaceProbe.widthRatio`, `.centerOffset` | 0 to 1 (geometry, not confidence) |
+
+Workflow results expose no scores or thresholds. Read them on your backend from [Retrieve session](/api-reference/sessions/retrieve-session).
+
+## Open sets
+
+These types are structs or tolerant enums, so a newer server can send a value this SDK version doesn't know. Always keep a `default` branch.
+
+- `SessionStatus`, `APIErrorCode`, `WorkflowFailure.Code`, `WorkflowSessionFailure.Code`
+- `AntiCheatResult.Verdict` and `.Action`, `IPCheckResult.Verdict`: unknown values arrive as `.unknown(String)`
+- `DeepIDVError.Kind`: may gain cases

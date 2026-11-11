@@ -1,0 +1,43 @@
+---
+title: Drop-in verification
+description: "DeepIDVVerificationView runs document capture, a selfie and identity verification in one iOS view, without a workflow."
+---
+
+`DeepIDVVerificationView` runs a complete ID-and-selfie verification without a workflow: the document picker, guided front and back capture, the selfie, then [`verifyIdentity`](/integrate/sdks/ios/headless/document-and-identity). It returns the analysis to your app.
+
+<Info>
+  For new integrations, prefer a [workflow](/integrate/sdks/ios/workflows/run-a-workflow). Workflows add face liveness, document recognition during capture, retries, configurable rules, and one reviewable session in the Admin Console. This view doesn't include face liveness.
+</Info>
+
+```swift
+DeepIDVVerificationView(client: client) { result in
+    switch result {
+    case .success(let outcome):
+        print("verified:", outcome.identity.verified)
+        print("face match (0–100):", outcome.identity.faceMatch.confidence)
+    case .failure(let error):
+        if error.kind == .cancelled { return }
+        print("verification failed:", error.kind)
+    }
+}
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `client` | `DeepIDVClient` | required | |
+| `igamingSessionID` | `String?` | `nil` | Runs the [anti-cheat check](/integrate/sdks/ios/headless/igaming#in-the-drop-in-view) on the selfie, against this session. |
+| `documentCamera` | `DocumentCamera?` | `nil` | Camera for the document, for this view only. |
+| `onResult` | `(Result<DeepIDVVerificationResult, DeepIDVError>) -> Void` | required | Called once. |
+
+## `DeepIDVVerificationResult`
+
+| Property | Type | Meaning |
+|---|---|---|
+| `identity` | `IdentityVerifyResult` | `verified`, the document fields, face detection, face match and `overallConfidence`. See [Results](/integrate/sdks/ios/reference/results). |
+| `antiCheat` | `AntiCheatResult?` | Set when you passed `igamingSessionID`. |
+
+`identity.verified` comes from the device. Store or re-check results on your backend before you rely on them.
+
+## Screens
+
+The view uses the same [document camera](/integrate/sdks/ios/document-capture-screens) (without recognition) and [selfie](/integrate/sdks/ios/selfie) screens, then shows **Verifying your identity** while it uploads and checks.

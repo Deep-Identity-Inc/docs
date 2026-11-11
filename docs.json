@@ -210,6 +210,77 @@
                 ]
               }
             ]
+          },
+          {
+            "group": "iOS",
+            "icon": "apple",
+            "pages": [
+              {
+                "group": "Get started",
+                "pages": [
+                  "integrate/sdks/ios/overview",
+                  "integrate/sdks/ios/quickstart",
+                  "integrate/sdks/ios/installation",
+                  "integrate/sdks/ios/choose-an-integration",
+                  "integrate/sdks/ios/ai-agents"
+                ]
+              },
+              {
+                "group": "Workflows",
+                "pages": [
+                  "integrate/sdks/ios/workflows/run-a-workflow",
+                  "integrate/sdks/ios/workflows/resuming",
+                  "integrate/sdks/ios/workflows/results",
+                  "integrate/sdks/ios/workflows/failures"
+                ]
+              },
+              {
+                "group": "Components",
+                "pages": [
+                  "integrate/sdks/ios/document-capture",
+                  "integrate/sdks/ios/document-capture-screens",
+                  "integrate/sdks/ios/selfie",
+                  "integrate/sdks/ios/face-liveness",
+                  "integrate/sdks/ios/re-verification",
+                  "integrate/sdks/ios/drop-in-verification"
+                ]
+              },
+              {
+                "group": "Headless API",
+                "pages": [
+                  "integrate/sdks/ios/headless/document-and-identity",
+                  "integrate/sdks/ios/headless/liveness",
+                  "integrate/sdks/ios/headless/igaming"
+                ]
+              },
+              {
+                "group": "Customize",
+                "pages": [
+                  "integrate/sdks/ios/branding",
+                  "integrate/sdks/ios/languages",
+                  "integrate/sdks/ios/camera"
+                ]
+              },
+              {
+                "group": "Production",
+                "pages": [
+                  "integrate/sdks/ios/security-and-api-keys",
+                  "integrate/sdks/ios/proxy-mode",
+                  "integrate/sdks/ios/privacy",
+                  "integrate/sdks/ios/troubleshooting"
+                ]
+              },
+              {
+                "group": "Reference",
+                "pages": [
+                  "integrate/sdks/ios/reference/configuration",
+                  "integrate/sdks/ios/reference/errors",
+                  "integrate/sdks/ios/reference/results",
+                  "integrate/sdks/ios/reference/changelog",
+                  "integrate/sdks/ios/reference/migrating-to-1-3"
+                ]
+              }
+            ]
           }
         ]
       },

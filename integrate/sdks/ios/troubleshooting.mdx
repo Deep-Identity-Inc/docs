@@ -1,0 +1,84 @@
+---
+title: Troubleshooting
+description: "Fixes for common iOS SDK problems: the camera won't open, auto-capture never fires, the document isn't recognized, sessions fail with conflict, and more."
+---
+
+Each entry starts with what you see.
+
+## The app closes when the camera opens
+
+**Cause:** `NSCameraUsageDescription` is missing from your `Info.plist`. iOS ends the app without it.
+**Fix:** add the key. See [Installation](/integrate/sdks/ios/installation#declare-camera-access).
+
+## "Camera access is off"
+
+**Cause:** the user denied camera access, or it's restricted by Screen Time or device management.
+**Fix:** the screen's **Open Settings** button takes the user there. Your app also receives `.failure` with kind `.cameraPermissionDenied`.
+
+## The camera is black
+
+**Cause:** you're on the iOS Simulator, which has no camera, or another app or view holds the camera.
+**Fix:** test on a real device. Present only one SDK camera view at a time.
+
+## Auto-capture never fires
+
+**Causes and fixes:**
+- **Glare or low light.** The message says **Avoid the glare**, or the frame never turns green. Move to even light.
+- **The card is too small in the frame.** **Move a little closer**. On a tablet, the user may need to hold the card closer to the screen.
+- **Movement.** The bar resets if the card moves. Rest the card or the phone on something.
+- **The wrong camera.** A phone using `.front` asks the user to hold the card up to the selfie camera. Use `.back` on phones. See [Camera](/integrate/sdks/ios/camera).
+
+The manual shutter appears after 8 seconds with a card in view, or 15 seconds at most, so the user is never stuck.
+
+## The document's name never appears on the frame
+
+**Cause:** document recognition isn't reaching deepidv. Capture still works with on-device checks.
+**Fixes:**
+- If you use [proxy mode](/integrate/sdks/ios/proxy-mode), forward `POST /v1/sessions/{id}/id-capture/detect`.
+- Check `usesDocumentClassifier` isn't `false` in your config.
+- Recognition runs only in workflows, not in `DocumentScannerView`.
+
+## "Turn your license sideways" on an iPad held correctly
+
+**Cause:** the iPad was turned during the scan.
+**Fix:** lock the orientation on kiosks and fixed tablets. Reopen the view after turning the device.
+
+## `.conflict` when presenting a workflow
+
+| `error.apiCode` | Meaning | Fix |
+|---|---|---|
+| `.sessionAlreadyStarted` | `sessionID:` was given a session that already started. | Use `resumingSessionID:`. |
+| `.sessionTerminal` | The session is finished (submitted, failed or expired). | Read the outcome with `fetchWorkflowState`, or create a new session. |
+| `.stepOutOfOrder` | `CustomFaceLivenessView` ran before the session reached its liveness step. | Run the earlier steps first. |
+
+## `.validation` before the camera opens
+
+**Cause:** the workflow contains a step the SDK can't run. Supported steps are ID verification and face liveness.
+**Fix:** run the other steps elsewhere, or use a workflow with only these steps.
+
+## `.authentication` or `.authorization`
+
+**Cause:** the key or token in `apiKey` was rejected, by deepidv or by your proxy.
+**Fix:** in proxy mode, check your proxy accepts the user's token and adds the deepidv key. Never ship the deepidv key in the app.
+
+## `.insufficientFunds`
+
+**Cause:** your organization's balance can't cover the check.
+**Fix:** top up in the Admin Console.
+
+## Re-verification says `.userNotFound` or `.notPreviouslyVerified`
+
+See [Not eligible reasons](/integrate/sdks/ios/re-verification#noteligiblereason). Most often the email doesn't match the email of the verified session, or the user was verified on a different workflow.
+
+## Contacting support
+
+Send [support](mailto:support@deepidv.com):
+
+- the SDK version and iOS version, and the device model;
+- the session ID or re-verification ID;
+- `error.kind`, `error.apiCode` and `error.code`;
+- what the user saw, and roughly when.
+
+<Warning>
+  Don't send API keys, user tokens, or photos of anyone's ID or face. The session ID is enough for us to find the details.
+</Warning>
