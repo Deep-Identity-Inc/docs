@@ -38,13 +38,31 @@ Currently supported steps: `ID_VERIFICATION`, `FACE_LIVENESS`, `AGE_ESTIMATION`,
 |---------|-------------|
 | `ID_VERIFICATION` | Government ID scanning and validation |
 | `FACE_LIVENESS` | Active anti-spoofing liveness detection |
+| `FACE_LIVENESS_CONSENT_SETTINGS` | Collect applicant consent before the face-liveness capture |
 | `AGE_ESTIMATION` | Biometric age estimation |
+| `DEEPFAKE_DETECTION` | Analyze a guided media capture for liveness and synthetic-media risk |
+| `DEEP_AGE` | Verify that an applicant meets the age requirement in a hosted flow |
+| `ADDRESS_VERIFICATION` | Verify address knowledge through the hosted DeepAddy flow |
+| `TITLE_SEARCH` | Retrieve US property-title and ownership information for an address |
 | `PEP_SANCTIONS` | Politically exposed persons & sanctions screening |
 | `ADVERSE_MEDIA` | Negative press and media mention detection |
 | `IP_JURISDICTION` | iGaming: block/allow by the applicant's resolved country + datacenter-IP handling |
 | `VPN_DETECTION` | iGaming: detect VPN / Tor / datacenter (anonymizer) connections |
 | `INJECTION_DETECTION` | iGaming: detect injected media, virtual cameras, and emulators |
 | `ANTI_CHEAT` | iGaming: biometric duplicate detection, multi-accounting linkage, and self-exclusion |
+| `CUSTOM_PROMPT` | Ask the applicant to capture one photo for each configured instruction |
+| `CONSENT` | Present configured terms and record the applicant's acceptance or decline |
+| `BANK_STATEMENT_UPLOAD` | Collect and analyze bank statements through the hosted applicant flow |
+| `AI_BANK_STATEMENT_ANALYSIS` | Acknowledge the analysis queued by an earlier bank-statement upload step |
+| `DOCUMENT_UPLOAD` | Collect configured required and optional documents from the applicant |
+| `WHITE_LABEL` | Apply the organization's configured branding to the workflow session |
+| `PHONE_TRUST_CHECK` | Check recent SIM changes and call forwarding for the session phone |
+| `CARRIER_AGE_GATE` | Ask the carrier to confirm that the session phone subscriber is at least 18 |
+| `PHONE_OWNERSHIP_MATCH` | Compare the session applicant name with the carrier subscriber record |
+| `PHONE_VERIFICATION` | Verify the applicant by comparing a spoken phrase during a phone call |
+| `E_SIGNATURE` | Collect legally binding electronic signatures with an existing DeepSign template. Hosted workflows only: it can't be run through the Workflow Runner API |
+
+Steps without a section under [Step Configuration](#step-configuration) take their defaults when you omit `config`. The [OpenAPI spec](/api-reference/openapi-spec) lists every setting each step accepts.
 
 ### Step Configuration
 
