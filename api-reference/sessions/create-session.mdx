@@ -25,8 +25,8 @@ Both camelCase and snake_case parameter names are accepted. If both are provided
 
 | Parameter           | Alias             | Type    | Required | Description                                                                                          |
 | ------------------- | ----------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------- |
-| `first_name`        | `firstName`       | string  | Yes      | Applicant's first name                                                                               |
-| `last_name`         | `lastName`        | string  | Yes      | Applicant's last name                                                                                |
+| `first_name`        | `firstName`       | string  | No       | Applicant's first name. Optional, see [Applicant names](#applicant-names)                                                                             |
+| `last_name`         | `lastName`        | string  | No       | Applicant's last name. Optional, see [Applicant names](#applicant-names)                                                                                |
 | `email`             | —                 | string  | Yes      | Applicant's email address                                                                            |
 | `phone`             | —                 | string  | No       | Applicant's phone number in E.164 format (e.g. `+15192223333`). Required when the workflow has a step that uses the applicant's phone and the applicant has no valid phone on file. See [Phone number](#phone-number) |
 | `external_id`       | `externalId`      | string  | No       | Your internal reference ID for this session                                                          |
@@ -35,6 +35,18 @@ Both camelCase and snake_case parameter names are accepted. If both are provided
 | `workflow_id`       | `workflowId`      | string  | No       | ID of the workflow to use. If omitted, runs as a standalone verification                             |
 | `redirect_url`      | `redirectUrl`     | string  | No       | HTTPS URL to redirect the end-user to after the verification session ends. Must be a valid HTTPS URL |
 | `expires_in_hours`  | `expiresInHours`  | integer | No       | Auto-expire the session after this many hours (1-8760). Overrides the workflow's expiry setting if both are provided. If omitted, the workflow's expiry setting is used (if configured) |
+
+### Applicant names
+
+`first_name` and `last_name` are optional. Sending only one of them is fine, for applicants with a single name.
+
+If you send neither (or both are blank), the session is created without names:
+
+- The session and its webhooks carry `names_provided: false`.
+- The names are read from the applicant's ID document, and the name-matches-ID check is skipped.
+- The workflow must include an ID verification step. It can't include a step that matches on the name (`DEEP_AGE`, `CREDIT_CHECK`, `PHONE_OWNERSHIP_MATCH` or an identity-number lookup), and it can't have an `E_SIGNATURE`, `PEP_SANCTIONS`, `BACKGROUND_CHECK` or `ADDRESS_VERIFICATION` step before the ID verification step.
+
+Otherwise the create returns `400` with `code` `NAMES_REQUIRED_NO_ID_STEP` (the workflow has no ID verification step) or `NAMES_REQUIRED_FOR_STEP` (with `steps` listing the steps that need the name).
 
 ### Phone number
 
@@ -128,7 +140,7 @@ response = requests.post(
 
 | Status                  | Description                                                   |
 | ----------------------- | ------------------------------------------------------------- |
-| `400 Bad Request`       | Invalid request body — check required fields and, if provided, phone format. Also returned with `code` `PHONE_REQUIRED` (and `steps`) when the workflow needs the applicant's phone and none was sent or is on file |
+| `400 Bad Request`       | Invalid request body — check required fields and, if provided, phone format. Also returned with `code` `PHONE_REQUIRED` (and `steps`) when the workflow needs the applicant's phone and none was sent or is on file, and with `code` `NAMES_REQUIRED_NO_ID_STEP` or `NAMES_REQUIRED_FOR_STEP` when no names were sent but the workflow needs them (see [Applicant names](#applicant-names)) |
 | `401 Unauthorized`      | Missing or invalid API key                                    |
 | `402 Payment Required`  | Insufficient token balance                                    |
 | `404 Not Found`         | Workflow ID not found                                         |
