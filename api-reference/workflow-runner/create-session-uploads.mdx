@@ -8,7 +8,7 @@ api: POST /v1/sessions/{session_id}/uploads
 POST /v1/sessions/{session_id}/uploads
 ```
 
-Mints presigned S3 upload URLs for the images an `ID_VERIFICATION` step needs. Upload each image directly to its `upload_url`, then pass the returned `file_key` values in the `uploads` object when you call [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step).
+Mints presigned S3 upload URLs for the files the current workflow step needs: ID and selfie images, custom prompt photos, documents, or a consent signature. Upload each file directly to its `upload_url`, then pass the returned `file_key` values in the `uploads` object when you call [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step).
 
 ## Request
 
@@ -28,10 +28,13 @@ Mints presigned S3 upload URLs for the images an `ID_VERIFICATION` step needs. U
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `files` | array | Yes | At least one file to request an upload URL for. No two entries may share the same `upload_type` |
+| `files` | array | Yes | At least one file to request an upload URL for. No two entries may share the same `upload_type` or `slot` |
 | `files[].file_name` | string | Yes | Original file name, used to derive the stored file extension |
 | `files[].content_type` | string | Yes | MIME type of the file, e.g. `image/jpeg` |
-| `files[].upload_type` | string | Yes | One of `id_front`, `id_back`, `secondary_id_front`, `secondary_id_back`, `tertiary_id_front`, `tertiary_id_back`, `selfie_front` |
+| `files[].upload_type` | string | One of `upload_type` or `slot` | For ID and selfie images: one of `id_front`, `id_back`, `secondary_id_front`, `secondary_id_back`, `tertiary_id_front`, `tertiary_id_back`, `selfie_front` |
+| `files[].slot` | string | One of `upload_type` or `slot` | A slot from the current step's requirements, such as `custom-prompts-list_0`, `signature_upload`, or a `DOCUMENT_UPLOAD` document id like `proof_of_address`. The ID and selfie slots above work here too. Send `upload_type` or `slot`, not both |
+
+Slots are checked against the **current** step. A slot the current step doesn't need returns `400` with `code` `UPLOAD_SLOT_NOT_REQUIRED`, plus `invalid_slots` and the `allowed_slots` you can use.
 
 ### Example request
 
@@ -97,7 +100,8 @@ signed_urls = response.json()["signed_urls"]
 |---|---|---|
 | `signed_urls` | array | One entry per requested file |
 | `signed_urls[].file_key` | string | Pass this value back as the corresponding field in the `uploads` object of [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step) |
-| `signed_urls[].upload_type` | string | Echoes the requested `upload_type` |
+| `signed_urls[].slot` | string | The slot the file is for. Use it as the key in `uploads` |
+| `signed_urls[].upload_type` | string | Echoes the requested `upload_type`. Only present when you sent one |
 | `signed_urls[].upload_url` | string | Presigned URL — upload the raw file bytes to this URL with an HTTP `PUT` |
 
 <Note>
@@ -108,10 +112,10 @@ signed_urls = response.json()["signed_urls"]
 
 | Status | Description |
 |---|---|
-| `400` | Invalid request body |
+| `400` | Invalid request body, or a `slot` the current step doesn't need (`UPLOAD_SLOT_NOT_REQUIRED`) |
 | `401` | Invalid or missing API key |
 | `404` | Session not found |
-| `409` | Session is already in a terminal state |
+| `409` | Session is already in a terminal state (`SESSION_TERMINAL`), or a `slot` was requested while the session has no active step (`NO_ACTIVE_STEP`) |
 | `429` | Too many requests |
 
 <ResponseExample>
@@ -121,15 +125,38 @@ signed_urls = response.json()["signed_urls"]
   "signed_urls": [
     {
       "file_key": "3f9c1e2a-org/80e801af-991b-425c-96fc-f5e07d794253/1717000000000-id_front.jpg",
+      "slot": "id_front",
       "upload_type": "id_front",
       "upload_url": "https://deepidv-sessions-uploads.s3.amazonaws.com/..."
     },
     {
       "file_key": "3f9c1e2a-org/80e801af-991b-425c-96fc-f5e07d794253/1717000000001-selfie_front.jpg",
+      "slot": "selfie_front",
       "upload_type": "selfie_front",
       "upload_url": "https://deepidv-sessions-uploads.s3.amazonaws.com/..."
     }
   ]
+}
+```
+
+```json 200 — slot request (CUSTOM_PROMPT)
+{
+  "signed_urls": [
+    {
+      "file_key": "3f9c1e2a-org/80e801af-991b-425c-96fc-f5e07d794253/1717000000002-0-custom-prompts-list_0.jpg",
+      "slot": "custom-prompts-list_0",
+      "upload_url": "https://deepidv-sessions-uploads.s3.amazonaws.com/..."
+    }
+  ]
+}
+```
+
+```json 400 — slot the current step doesn't need
+{
+  "error": "Upload slot is not required by the current workflow step",
+  "invalid_slots": ["not_a_slot"],
+  "allowed_slots": ["proof_of_address"],
+  "code": "UPLOAD_SLOT_NOT_REQUIRED"
 }
 ```
 

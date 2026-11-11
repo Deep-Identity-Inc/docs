@@ -1,0 +1,72 @@
+---
+title: Workflow Runner overview
+description: Run a workflow from your own app or backend, one step at a time
+---
+
+The Workflow Runner lets you run a workflow **headless**: your app or backend collects what each step needs and submits it through the API, instead of sending the applicant to the hosted verification page.
+
+Use it when you want your own capture UI, or when the steps can run entirely server-side (screening, phone checks). For the native iOS capture flow, the [iOS SDK](/integrate/sdks/ios/overview) wraps these endpoints for you.
+
+## How a session runs
+
+<Steps>
+  <Step title="Create the workflow">
+    [Create Workflow](/api-reference/workflows/create-workflow) once, with the steps you need. A workflow can have up to 10 steps. Reuse it for every applicant.
+  </Step>
+  <Step title="Create a workflow session">
+    [Create Workflow Session](/api-reference/workflow-runner/create-workflow-session) for each applicant. The response lists every step with its `requirements`.
+  </Step>
+  <Step title="Read the current step">
+    [Get Workflow State](/api-reference/workflow-runner/get-workflow-state) returns `current_step_index` and, for each step, its `status`, `attempts` and `requirements`. Steps run strictly in order.
+  </Step>
+  <Step title="Upload any files the step needs">
+    For a step that needs images or documents, call [Create Session Uploads](/api-reference/workflow-runner/create-session-uploads), `PUT` each file to its `upload_url`, and keep the returned `file_key`.
+  </Step>
+  <Step title="Submit the step">
+    [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step) with the body for that step type. The response says whether the step completed, failed, or is waiting on something, and which step is next.
+  </Step>
+  <Step title="Repeat until the session finishes">
+    When the last step completes, the session moves to its final status and the usual [webhooks](/webhooks/overview) fire.
+  </Step>
+</Steps>
+
+<Info>
+  [Start Workflow](/api-reference/workflow-runner/start-workflow) is optional. It only checks that the session can still run. Submitting a step performs the same checks.
+</Info>
+
+## How each step type is submitted
+
+Every step uses one of five submission patterns. The pattern decides what you send to [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step).
+
+| Pattern | What you do | Steps |
+|---|---|---|
+| **Submit once** | Send the step's data in one call | `ID_VERIFICATION`, `AGE_ESTIMATION`, `PEP_SANCTIONS`, `TITLE_SEARCH`, `CUSTOM_PROMPT`, `DOCUMENT_UPLOAD`, `IP_JURISDICTION`, `VPN_DETECTION`, `INJECTION_DETECTION`, `ANTI_CHEAT` |
+| **Start, then complete** | Send `{ "action": "start" }`, do the capture or wait, then send `{ "action": "complete" }`. Repeat `complete` while the result isn't ready yet | `FACE_LIVENESS`, `DEEPFAKE_DETECTION`, `ADVERSE_MEDIA`, `PHONE_VERIFICATION` |
+| **Hosted** | `start` returns a URL to send the applicant to. After they finish, send `complete` | `DEEP_AGE`, `ADDRESS_VERIFICATION`, `BANK_STATEMENT_UPLOAD` |
+| **Acknowledge** | Record the applicant's answer to something you showed them | `CONSENT` (`accepted`), `FACE_LIVENESS_CONSENT_SETTINGS` (`accepted` when the step asks for liveness consent, otherwise `{}`), `WHITE_LABEL` (`acknowledged: true`) |
+| **Server-side** | Send an empty body `{}`. deepidv runs the check with what's already on the session | `PHONE_TRUST_CHECK`, `CARRIER_AGE_GATE`, `PHONE_OWNERSHIP_MATCH`, `AI_BANK_STATEMENT_ANALYSIS` |
+
+`E_SIGNATURE` can't be run through the Workflow Runner. Creating a workflow session for a workflow that contains it returns `400` with `code` `UNSUPPORTED_WORKFLOW_STEPS`. Use the hosted flow for e-signature workflows.
+
+## Requirements and upload slots
+
+Each step's `requirements` (in the create-session response and in [Get Workflow State](/api-reference/workflow-runner/get-workflow-state)) tell you exactly what that step needs for **this** workflow's config: which ID sides, how many prompt photos, which documents, whether a signature is required.
+
+Files are referenced by **slot**:
+
+- ID and selfie images use the fixed slots `id_front`, `id_back`, `secondary_id_front`, `secondary_id_back`, `tertiary_id_front`, `tertiary_id_back` and `selfie_front`.
+- Other steps use slots from their requirements, such as `custom-prompts-list_0` for the first custom prompt photo, `signature_upload` for a consent signature, or the document id you configured on a `DOCUMENT_UPLOAD` step.
+
+Request upload URLs for the current step's slots, upload the files, then send each `file_key` under its slot in the step's `uploads` object. Upload URLs can only be requested for the current step's slots.
+
+## Failures and retries
+
+A step that doesn't pass returns a `failure` with a `code`, a `category`, a `user_action` and `retryable`. `user_action` says what would fix it (for example `RETAKE_DOCUMENT` or `RETRY_STEP`; `NONE` means nothing the applicant can fix). `retryable` says whether another attempt is still allowed, so check both. The full list is under [Failure codes](/api-reference/workflow-runner/get-workflow-state#failure-codes).
+
+Failed attempts count against the workflow's retry limit (`failure_settings.max_attempts`). When it runs out, the session fails. Some errors don't use an attempt, such as completing a liveness step before uploading its frames (`409`): fix the cause and submit again.
+
+## Order and conflicts
+
+- Only the current step can be submitted. Submitting another step returns `409` (`STEP_OUT_OF_ORDER`), and submitting to a finished session returns `409` (`SESSION_TERMINAL`).
+- `step_id` in the path accepts any casing or separator: `ID_VERIFICATION`, `id_verification` and `id-verification` all work.
+- Steps that use the applicant's phone return `400` `PHONE_REQUIRED` if the session has no phone on file. Send `phone` when you [create the session](/api-reference/workflow-runner/create-workflow-session).
