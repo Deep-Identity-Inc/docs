@@ -1,0 +1,62 @@
+---
+title: Upload Logo
+description: Request a presigned URL to upload a branding profile logo
+api: POST /v1/profiles/logo-upload-url
+---
+
+## POST /v1/profiles/logo-upload-url
+
+Returns a presigned S3 URL for uploading a logo image. This step is optional — skip it if your branding profile won't have a logo.
+
+### Request
+
+#### Headers
+
+| Header | Required | Description |
+|---|---|---|
+| `x-api-key` | Yes | Your API key |
+| `Content-Type` | Yes | `application/json` |
+
+#### Body parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `contentType` | string | Yes | One of `image/jpeg`, `image/png`, `image/webp`, `image/gif` |
+| `byteLength` | integer | Yes | Exact file size in bytes. Max 15 MiB (15,728,640 bytes) |
+
+#### Example request
+
+curl -X POST https://api.deepidv.com/v1/profiles/logo-upload-url \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "contentType": "image/png",
+    "byteLength": 204800
+  }'
+
+### Response
+
+#### 200 — Success
+
+| Field | Type | Description |
+|---|---|---|
+| `uploadUrl` | string | Presigned S3 URL, valid for 15 minutes |
+| `fileKey` | string | Pass this as `logoUrl` when creating the profile |
+
+Example response:
+
+{
+  "uploadUrl": "https://...",
+  "fileKey": "org-id/profiles/logos/uuid"
+}
+
+### Uploading the file
+
+PUT the raw image bytes to `uploadUrl`, with a `Content-Type` header matching the `contentType` you requested. The byte count must match `byteLength` exactly — the URL is signed against it.
+
+### Error responses
+
+| Status | Description |
+|---|---|
+| 400 Bad Request | Invalid contentType or byteLength |
+| 401 Unauthorized | Missing or invalid API key |

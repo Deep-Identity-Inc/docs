@@ -1,0 +1,51 @@
+---
+title: List Profiles
+description: List all branding profiles for your organization
+api: GET /v1/profiles
+---
+
+## GET /v1/profiles
+
+Returns all branding profiles belonging to your organization.
+
+### Request
+
+#### Headers
+
+| Header | Required | Description |
+|---|---|---|
+| `x-api-key` | Yes | Your API key |
+
+#### Example request
+
+curl -X GET https://api.deepidv.com/v1/profiles \
+  -H "x-api-key: YOUR_API_KEY"
+
+### Response
+
+#### 200 — Success
+
+| Field | Type | Description |
+|---|---|---|
+| `profiles` | array | List of profile objects (same shape as Create Profile's response) |
+
+Example response:
+
+{
+  "profiles": [
+    {
+      "id": "uuid",
+      "organizationId": "uuid",
+      "name": "Acme Branding",
+      "logoUrl": "org-id/profiles/logos/uuid",
+      "createdAt": "2026-07-23T12:00:00.000Z",
+      "updatedAt": "2026-07-23T12:00:00.000Z"
+    }
+  ]
+}
+
+### Error responses
+
+| Status | Description |
+|---|---|
+| 401 Unauthorized | Missing or invalid API key |

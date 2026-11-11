@@ -1,0 +1,66 @@
+---
+title: Create Profile
+description: Create a new branding profile
+api: POST /v1/profiles
+---
+
+## POST /v1/profiles
+
+Creates a branding profile. Attach it to a session to customize the applicant-facing verification page with your logo and display name.
+
+### Request
+
+#### Headers
+
+| Header | Required | Description |
+|---|---|---|
+| `x-api-key` | Yes | Your API key |
+| `Content-Type` | Yes | `application/json` |
+
+#### Body parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Display name for the profile |
+| `logoUrl` | string | No | The `fileKey` returned from Upload Logo. Omit for a profile with no logo |
+
+#### Example request
+
+curl -X POST https://api.deepidv.com/v1/profiles \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "name": "Acme Branding",
+    "logoUrl": "org-id/profiles/logos/uuid"
+  }'
+
+### Response
+
+#### 201 — Created
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Unique identifier for the profile |
+| `organizationId` | string | Your organization's ID |
+| `name` | string | Display name for the profile |
+| `logoUrl` | string | The logo's file key, if one was provided |
+| `createdAt` | string | ISO 8601 creation timestamp |
+| `updatedAt` | string | ISO 8601 last-updated timestamp |
+
+Example response:
+
+{
+  "id": "uuid",
+  "organizationId": "uuid",
+  "name": "Acme Branding",
+  "logoUrl": "org-id/profiles/logos/uuid",
+  "createdAt": "2026-07-23T12:00:00.000Z",
+  "updatedAt": "2026-07-23T12:00:00.000Z"
+}
+
+### Error responses
+
+| Status | Description |
+|---|---|
+| 400 Bad Request | logoUrl doesn't belong to your organization, or doesn't reference a file that was actually uploaded to that key |
+| 401 Unauthorized | Missing or invalid API key |

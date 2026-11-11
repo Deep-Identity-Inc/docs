@@ -35,6 +35,7 @@ Both camelCase and snake_case parameter names are accepted. If both are provided
 | `workflow_id`       | `workflowId`      | string  | No       | ID of the workflow to use. If omitted, runs as a standalone verification                             |
 | `redirect_url`      | `redirectUrl`     | string  | No       | HTTPS URL to redirect the end-user to after the verification session ends. Must be a valid HTTPS URL |
 | `expires_in_hours`  | `expiresInHours`  | integer | No       | Auto-expire the session after this many hours (1-8760). Overrides the workflow's expiry setting if both are provided. If omitted, the workflow's expiry setting is used (if configured) |
+| `profile_id`        | `profileId`       | string  | No       | ID of a branding profile to use for this session's applicant-facing page. If omitted, default branding is used |
 
 ### Example request
 
@@ -121,6 +122,8 @@ response = requests.post(
 | `401 Unauthorized`      | Missing or invalid API key                                    |
 | `402 Payment Required`  | Insufficient token balance                                    |
 | `404 Not Found`         | Workflow ID not found                                         |
+| `403 Forbidden`         | profile_id belongs to a different organization                |
+| `404 Not Found`         | profile_id doesn't exist (message: "Profile not found")       |
 | `429 Too Many Requests` | Rate limit exceeded                                           |
 
 <ResponseExample>
