@@ -1,0 +1,60 @@
+---
+title: Migrating to 1.3
+description: "Upgrade an iOS app from deepidv SDK 1.2 to 1.3: the changed defaults, the new status words, and what to remove."
+---
+
+1.3.0 adds no breaking API changes, but it changes some defaults and values. Check each item.
+
+## 1. The document camera defaults to the front camera
+
+1.3 is designed for kiosks and tablets as well as phones. If your app runs on phones and never set `documentCamera`, the document scan now opens the selfie camera.
+
+```swift
+// Before (1.2): back camera by default
+let client = DeepIDVClient(apiKey: key)
+
+// After (1.3): set it explicitly on phones
+let client = DeepIDVClient(config: DeepIDVConfig(apiKey: key, documentCamera: .back))
+```
+
+## 2. The capture intro is off by default
+
+The three-page tips intro before the document camera no longer shows. To keep it:
+
+```swift
+DeepIDVConfig(apiKey: key, showsDocumentCaptureIntro: true)
+```
+
+The tips are still one tap away on the camera screen's **?** button.
+
+## 3. Workflows end on a thank-you screen
+
+A submitted run now shows **Thanks, you're done** before `onResult` fires. It closes after 3 seconds or with **Done**. If your app shows its own closing screen, turn it off to avoid two:
+
+```swift
+DeepIDVConfig(apiKey: key, showsCompletionScreen: false)
+```
+
+## 4. Status words match the API
+
+`WorkflowRunResult.sessionStatus` now uses the same words as the API and webhooks.
+
+| Before (1.2) | After (1.3) |
+|---|---|
+| `SessionStatus(rawValue: "AUTO_APPROVE")` | `.verified` (`VERIFIED`) |
+| `SessionStatus(rawValue: "DECLINED")` | `.rejected` (`REJECTED`) |
+
+Update any code that compares raw values.
+
+## 5. Remove your own re-verification close button
+
+The re-verification view now has a close button while it gets ready and during the face check. If you drew a Cancel button over it, remove yours.
+
+## 6. Proxies: forward document recognition
+
+If your app sends the SDK's requests through your own backend, forward `POST /v1/sessions/{id}/id-capture/detect`. Without it, capture still works, but without document recognition. See [Proxy mode](/integrate/sdks/ios/proxy-mode).
+
+## Worth a look
+
+- [Branding](/integrate/sdks/ios/branding): the screens can now carry your colors and fonts.
+- [Languages](/integrate/sdks/ios/languages): Spanish and French follow the device automatically. Set `language` if your app has its own setting.

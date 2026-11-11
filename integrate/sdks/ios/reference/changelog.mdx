@@ -1,0 +1,65 @@
+---
+title: Changelog
+description: "Release notes for the deepidv iOS SDK."
+---
+
+The full notes are in [CHANGELOG.md](https://github.com/Deep-Identity-Inc/deepidv-sdk-swift/blob/main/CHANGELOG.md) on GitHub. The SDK follows semantic versioning; minor releases can change defaults, listed under **Upgrading**.
+
+<Update label="1.3.0" description="November 2026">
+  A redesigned capture experience: recognized ID cards and passports, one instruction at a time, brand styling, English, Spanish and French, and ID photos cut to the capture frame.
+
+  **Upgrading from 1.2** — see [Migrating to 1.3](/integrate/sdks/ios/reference/migrating-to-1-3)
+  - `documentCamera` defaults to `.front`. Phones should pass `.back`.
+  - `showsDocumentCaptureIntro` defaults to `false`.
+  - A submitted workflow run ends on a thank-you screen before `onResult` (`showsCompletionScreen`).
+  - `sessionStatus` reads `.verified` / `.rejected` where it read `AUTO_APPROVE` / `DECLINED`.
+  - The re-verification view has its own close button.
+  - Proxies must forward `POST /v1/sessions/{id}/id-capture/detect`.
+
+  **Added**
+  - Document recognition during capture in workflows: the document's name on the frame, an upside-down check, health cards never auto-captured, and "This looks like…" for the wrong document.
+  - Passports auto-capture, with a passport-shaped frame.
+  - Turn-to-landscape guidance for cards held sideways.
+  - Redesigned document, selfie and liveness screens, and shared wait, result and error screens, in light and dark.
+  - The closing thank-you screen.
+  - `.deepIDVAppearance(_:)` for colors, fonts, corner radius and appearance.
+  - English, Spanish and French, and `DeepIDVConfig.language`.
+  - `documentCamera:` on `DeepIDVWorkflowView`, `DeepIDVVerificationView` and `DocumentScannerView`.
+  - Center Stage is turned off during document capture.
+
+  **Changed**
+  - ID photos are taken at up to 12 MP and cut to the frame on screen.
+  - Two extra frames of each card front and passport page go with the ID step, to recover an unreadable expiry date or date of birth.
+  - The document picker is skipped when the workflow accepts only one document type.
+  - US spelling on screen, except official document names.
+  - The submitting screen no longer offers Cancel while photos are being sent.
+</Update>
+
+<Update label="1.2.1" description="October 2026">
+  - `WorkflowUser.phone` is optional (`String?`, default `nil`).
+</Update>
+
+<Update label="1.2.0" description="October 2026">
+  - **Breaking:** `makeReVerifyView(workflowID:onResult:)` is replaced by `makeReVerifyView(workflowID:email:onResult:)`.
+  - Added `NotEligibleReason.userNotFound` and `.notPreviouslyVerified`.
+</Update>
+
+<Update label="1.1.0" description="October 2026">
+  - Typed workflow failures: `WorkflowFailure`, `WorkflowSessionFailure`, `WorkflowDocumentSlot`, `DeepIDVError.apiCode` and `APIErrorCode`.
+  - Resume a session: `resumeWorkflowSession(sessionID:)` and `DeepIDVWorkflowView(client:resumingSessionID:onResult:)`.
+  - **Breaking:** `failureReason: String?` removed; use `failure: WorkflowFailure?`.
+  - Public enums are non-exhaustive: `switch` needs `@unknown default`.
+  - Targeted retries and SDK-written error text in workflows.
+</Update>
+
+<Update label="1.0.2" description="September 2026">
+  - `SECURITY.md` and `CHANGELOG.md`.
+</Update>
+
+<Update label="1.0.1" description="September 2026">
+  - Apple privacy manifest.
+</Update>
+
+<Update label="1.0.0" description="September 2026">
+  Initial public release: `DeepIDVClient`, headless scan and verify, workflows, drop-in verification, composable views, native face liveness, re-verification and iGaming checks.
+</Update>

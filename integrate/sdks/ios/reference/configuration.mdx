@@ -1,0 +1,57 @@
+---
+title: Configuration
+description: "Every DeepIDVConfig option in the iOS SDK, with its type and default."
+---
+
+Create one `DeepIDVClient` and reuse it. `DeepIDVClient(apiKey:)` uses every default; pass a `DeepIDVConfig` to change them.
+
+```swift
+let client = DeepIDVClient(config: DeepIDVConfig(
+    apiKey: userToken,
+    baseURL: URL(string: "https://api.example.com/deepidv")!,
+    timeout: 30,
+    maxRetries: 3,
+    initialRetryDelay: 0.5,
+    uploadTimeout: 120,
+    documentCamera: .front,
+    showsDocumentCaptureIntro: false,
+    usesDocumentClassifier: true,
+    showsCompletionScreen: true,
+    language: nil
+))
+```
+
+The resolved values are readable on `client.config`.
+
+## `DeepIDVConfig`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `apiKey` | `String` | required | Sent as `x-api-key`. In [proxy mode](/integrate/sdks/ios/proxy-mode), your own user token. Redacted in all errors and logs. |
+| `baseURL` | `URL` | `https://api.deepidv.com` | Where requests go. Paths such as `/v1/sessions/{id}/workflow` are appended, keeping any path in the URL. |
+| `timeout` | `TimeInterval` | `30` | Seconds per request attempt. |
+| `maxRetries` | `Int` | `3` | Retries for `429` and `5xx`, with exponential backoff. |
+| `initialRetryDelay` | `TimeInterval` | `0.5` | Base of the backoff, in seconds. |
+| `uploadTimeout` | `TimeInterval` | `120` | Seconds per upload attempt. |
+| `documentCamera` | `DocumentCamera` | `.front` | `.front` or `.back` for document capture. Views can override it with `documentCamera:`. See [Camera](/integrate/sdks/ios/camera). |
+| `showsDocumentCaptureIntro` | `Bool` | `false` | Shows a three-page tips intro before the document camera. |
+| `usesDocumentClassifier` | `Bool` | `true` | Document recognition during capture in workflows. With it off, capture uses on-device checks only. |
+| `showsCompletionScreen` | `Bool` | `true` | Ends a submitted workflow run on a short thank-you screen before `onResult`. |
+| `language` | `DeepIDVLanguage?` | `nil` | `.english`, `.spanish`, `.french`, or `nil` to follow the device. Applies app-wide; the last client created wins. See [Languages](/integrate/sdks/ios/languages). |
+
+## Per-view options
+
+| View | Option | Description |
+|---|---|---|
+| `DeepIDVWorkflowView`, `DeepIDVVerificationView`, `DocumentScannerView` | `documentCamera:` | Overrides `DeepIDVConfig.documentCamera` for this view. |
+| `DeepIDVVerificationView` | `igamingSessionID:` | Runs the anti-cheat check on the selfie. |
+| Any SDK view | `.deepIDVAppearance(_:)` | Your brand. See [Branding](/integrate/sdks/ios/branding). |
+
+## Types
+
+| Type | Values |
+|---|---|
+| `DocumentType` | `.driversLicense`, `.idCard`, `.passport`, `.auto` (headless `scanDocument` only) |
+| `DocumentCamera` | `.front`, `.back` |
+| `DeepIDVLanguage` | `.english`, `.spanish`, `.french` |
+| `FileInput` | `.data(Data)`, `.fileURL(URL)`, `.base64(String)`. JPEG or PNG, at most 15 MiB. |

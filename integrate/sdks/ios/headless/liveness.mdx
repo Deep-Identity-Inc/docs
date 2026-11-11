@@ -1,0 +1,58 @@
+---
+title: Liveness with your own camera
+description: "Run deepidv's movement liveness check from your own camera screen: faceProbe to time the capture, checkMovementLiveness to score it, and an optional replay clip."
+---
+
+If you must keep your own camera screen, you can still run deepidv's **movement** liveness check. You capture frames as the user moves closer; deepidv scores them.
+
+<Info>
+  The light challenge (flashing colors) needs the SDK's own screen. If the workflow step is set to it, `checkMovementLiveness` throws `.validation`. Use [`CustomFaceLivenessView`](/integrate/sdks/ios/face-liveness) instead.
+</Info>
+
+## 1. Time the capture with `faceProbe`
+
+`faceProbe` reads one camera frame on the device (no network) and tells you where the face is.
+
+```swift
+let probe = client.faceProbe(pixelBuffer)   // CVPixelBuffer from your AVCaptureVideoDataOutput
+
+if probe.faceCount != 1 {
+    show("Only your face, please")
+} else if probe.centerOffset > FaceProbe.centeredMaxOffset {
+    show("Center your face")
+} else if probe.widthRatio < FaceProbe.centeredMinWidth {
+    show("Move closer")
+} else {
+    // Centered and close enough: capture frames as widthRatio rises
+    // toward FaceProbe.closeTargetWidth.
+}
+```
+
+| Property | Meaning |
+|---|---|
+| `faceCount` | Faces in the frame. Capture only with exactly 1. |
+| `widthRatio` | Face width ÷ frame width, 0 to 1. Larger is closer. |
+| `centerOffset` | Distance of the face from the center, 0 to 1. 0 is centered. |
+| `FaceProbe.centeredMaxOffset` | `0.20`: at or below counts as centered. |
+| `FaceProbe.centeredMinWidth` | `0.25`: close enough to start the move-closer capture. |
+| `FaceProbe.closeTargetWidth` | `0.55`: fully close. |
+
+## 2. Score it with `checkMovementLiveness`
+
+```swift
+let recorder = client.makeMovementReplayRecorder()   // optional
+// For every camera frame: recorder.append(pixelBuffer)
+
+let result = try await client.checkMovementLiveness(
+    sessionID: sessionID,          // a workflow session at its face liveness step
+    frames: capturedJPEGs.map(FileInput.data),
+    clip: await recorder.finish()  // optional replay for reviewers
+)
+print(result.passed, result.confidence ?? 0)
+```
+
+- Pass **3 to 8 frames** in capture order. Fewer than 3 throws `.validation`; more than 8 are evenly reduced to 8.
+- `passed` is decided by deepidv against the workflow step's threshold.
+- The replay clip is shown to reviewers in the Admin Console. `MovementReplayRecorder.append(_:)` can be called from any queue.
+
+Returns [`FaceLivenessResult`](/integrate/sdks/ios/face-liveness#facelivenessresult).

@@ -1,0 +1,120 @@
+---
+title: "Document capture: screens and states"
+description: "Every screen the iOS document camera can show, what triggers it, what your app receives, and guidance to give your users for a fast capture."
+---
+
+The document camera shows one instruction at a time. The frame changes color as the capture goes: white while searching, blue while adjusting, amber when something needs the user, red for a document that can't be used, green when it's ready.
+
+Screenshots are iPhone, with the deepidv default look. Your [branding](/integrate/sdks/ios/branding) changes the colors and fonts.
+
+## Before the camera
+
+<Frame>
+  <img src="/images/ios/document-capture-picker.webp" alt="iPhone screen titled 'Which ID will you use?' with three rows: Driver's license, Passport and ID card." width="240" />
+  <img src="/images/ios/document-capture-permission.webp" alt="iPhone screen: camera access is off, with an Open Settings button." width="240" />
+</Frame>
+
+| Screen | When | Your app receives |
+|---|---|---|
+| **Which ID will you use?** | In workflows, before each document. Lists only the types the workflow accepts; skipped when there's just one. A second document shows **Now choose your secondary ID**. | Nothing |
+| **Camera access is off** | The user denied camera access. **Open Settings** opens your app's settings. | `.failure`, kind `.cameraPermissionDenied` |
+
+## Finding and lining up the card
+
+<Frame>
+  <img src="/images/ios/document-capture-find.webp" alt="Capture screen: an empty white frame with 'Fill the frame with your license, the photo will be taken automatically'." width="240" />
+  <img src="/images/ios/document-capture-checking.webp" alt="Capture screen: a sample license in a blue frame with the label 'Ontario Driver's License' and 'Checking your license… hold it steady for a moment'." width="240" />
+  <img src="/images/ios/document-capture-hold-still.webp" alt="Capture screen: the sample license in a green frame, label 'Ontario Driver's License' with a tick, 'Hold still… taking the photo', and a progress bar." width="240" />
+</Frame>
+
+| State | Message | Frame |
+|---|---|---|
+| Searching | **Fill the frame with your license** · The photo will be taken automatically | White |
+| Recognizing (workflows) | **Checking your license…** · Hold it steady for a moment. The document's name appears above the frame once recognized. | Blue |
+| Ready | **Hold still…** · Taking the photo, with a progress bar | Green |
+
+## Adjustments
+
+<Frame caption="Move closer, fit in the frame, avoid glare, turn sideways.">
+  <img src="/images/ios/document-capture-adjust.webp" alt="Four capture screens side by side: 'Move a little closer', 'Fit the whole license in the frame', 'Avoid the glare, tilt it slightly away from the light', and 'Turn your license sideways'." />
+</Frame>
+
+| State | Message | Cause |
+|---|---|---|
+| Too far | **Move a little closer** · Your license should fill the frame | The card covers too little of the frame. |
+| Off the frame | **Fit the whole license in the frame** · Keep all four corners in view | The card's shape doesn't match, often because it's tilted or partly out of view. |
+| Glare | **Avoid the glare** · Tilt it slightly away from the light | Too much of the card is washed out. |
+| Sideways | **Turn your license sideways** · Hold it so it's wider than it is tall | A card held portrait. Not shown for passports. |
+
+## Needs the user (workflows)
+
+<Frame>
+  <img src="/images/ios/document-capture-upside-down.webp" alt="Capture screen: amber frame, 'Your license is upside down, turn it the right way up', with the manual shutter below." width="240" />
+  <img src="/images/ios/document-capture-wrong-document.webp" alt="Capture screen: amber frame labeled 'Passport', 'This looks like a passport, please use your license instead'." width="240" />
+  <img src="/images/ios/document-capture-health-card.webp" alt="Capture screen: red frame labeled 'Health card', 'Health cards can't be used, please use a different ID', with the manual shutter." width="240" />
+</Frame>
+
+| State | Message | Capture |
+|---|---|---|
+| Upside down | **Your license is upside down** · Turn it the right way up | Waits until it's turned. |
+| Wrong document | **This looks like a passport** · Please use your license instead | Never automatic. The manual shutter still works. |
+| Health card | **Health cards can't be used** · Please use a different ID | Never automatic. The manual shutter still works. |
+
+## Captured, flip, done
+
+<Frame>
+  <img src="/images/ios/document-capture-captured.webp" alt="Capture screen: the card frozen in a green frame with a tick, 'Front captured'." width="240" />
+  <img src="/images/ios/document-capture-flip.webp" alt="Screen with a card-turning animation: 'Now show the back of your license, turn it over'." width="240" />
+  <img src="/images/ios/document-capture-done.webp" alt="Screen with a green tick: 'All done! Your license was captured', with the captured card." width="240" />
+</Frame>
+
+| State | Message | Notes |
+|---|---|---|
+| Front captured | **Front captured**, with a tick | Shown briefly. |
+| Flip | **Now show the back of your license** | Cards only. The back is armed after 2 s, or as soon as the card leaves the frame. |
+| Back | **Fill the frame with the back of your license** | |
+| Done | **All done!** · Your license was captured | Then the photos upload. |
+
+## Passports
+
+<Frame>
+  <img src="/images/ios/document-capture-passport.webp" alt="Capture screen: a passport-shaped frame with 'Fill the frame with your passport photo page'." width="240" />
+</Frame>
+
+The frame takes the shape of the photo page. Only the photo page is captured, with no flip. In workflows it's captured once it has been in view and steady for 1.5 seconds.
+
+## Help and the manual shutter
+
+<Frame>
+  <img src="/images/ios/document-capture-tips.webp" alt="Sheet titled 'Tips for a quick scan': find good light, avoid glare, fill the frame, hold still, still stuck?" width="240" />
+</Frame>
+
+- The **?** button opens **Tips for a quick scan**.
+- **Having trouble? Take the photo yourself** and a shutter button appear 8 seconds after a card first comes into view, or 15 seconds into the side at the latest. A manual photo goes through the same checks on deepidv's side.
+- The **✕** button closes the camera. Your app receives `.failure` with kind `.cancelled`.
+
+## Accessibility
+
+- Each new instruction is announced by VoiceOver, and the capture has haptic feedback.
+- With Reduce Motion on, animations are replaced by simple fades.
+- Messages are in English, Spanish or French. See [Languages](/integrate/sdks/ios/languages).
+
+## Guidance for your users
+
+Put this in your own onboarding or help pages:
+
+| Do | Don't |
+|---|---|
+| Use bright, even light | Stand under a single strong lamp or in direct sun |
+| Lay the card flat or hold it steady | Move the card while the bar fills |
+| Fill the frame edge to edge | Hold the card far away or at an angle |
+| Tilt it slightly if there's glare | Cover the card with fingers |
+| Remove the card from a sleeve or wallet | Use a photo of a card, or a screen |
+
+## On iPad
+
+<Frame caption="The same screen on a 12.9-inch iPad in landscape.">
+  <img src="/images/ios/document-capture-ipad.webp" alt="iPad in landscape: the capture frame in the center with the sample license recognized, 'Hold still… taking the photo'." />
+</Frame>
+
+The frame keeps the card's shape and scales to the screen. If the iPad is turned during a scan, capture continues and the photo is sent whole instead of cut to the frame.

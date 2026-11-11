@@ -1,0 +1,93 @@
+---
+title: Errors
+description: "DeepIDVError in the iOS SDK: every error kind and API error code, what it means, what the user sees, and what your app should do."
+---
+
+Every error the SDK reports is a `DeepIDVError`. Branch on `kind` for the class of error and on `apiCode` for the exact server reason.
+
+```swift
+case .failure(let error):
+    switch error.kind {
+    case .cancelled:
+        break
+    case .network, .timeout:
+        offerRetryLater()
+    case .conflict where error.apiCode == .sessionTerminal:
+        showAlreadyFinished()
+    default:
+        report(error)          // log error.kind, error.code, error.apiCode
+    }
+```
+
+<Note>
+  `Kind` can gain cases in future releases. In Swift 6, a `switch` over it needs a `default` (or `@unknown default`) branch.
+</Note>
+
+## `DeepIDVError`
+
+| Property | Type | Meaning |
+|---|---|---|
+| `kind` | `Kind` | The class of error (below). |
+| `apiCode` | `APIErrorCode?` | The server's reason, when it gave one (below). |
+| `code` | `String?` | A stable string for the kind, such as `"validation_error"`. |
+| `status` | `Int?` | The HTTP status, for server errors. |
+| `retryAfter` | `TimeInterval?` | Seconds to wait, from `Retry-After` on a `429`. |
+| `conflict` | `ConflictInfo?` | For `.conflict`: the session's current step and why. |
+| `message` | `String` | For logs only. It can contain raw server text: never show it to users. |
+
+## Kinds
+
+| Kind | Meaning | What the user sees | What to do |
+|---|---|---|---|
+| `.cancelled` | The user closed the view. | Nothing more. | Return to your screen. Not an error to report. |
+| `.cameraPermissionDenied` | Camera access is off. | **Camera access is off**, with **Open Settings**. | Explain why you need the camera. |
+| `.captureFailed` | The camera couldn't start or take a photo. | An error screen. | Let the user try again; check another app isn't using the camera. |
+| `.network` | No connection, or it dropped. | An error screen with **Try again** in workflows. | Retry later. |
+| `.timeout` | A request took too long. | As `.network`. | Retry later. |
+| `.rateLimit` | Too many requests (`429`), after the SDK's retries. | An error screen. | Wait `retryAfter`, then retry. |
+| `.serviceUnavailable` | deepidv is temporarily unavailable (`503`). | An error screen with **Try again**. | Retry later. |
+| `.api` | Any other HTTP error, usually a `5xx`. `status` has the code. | An error screen with **Try again**. | Retry later; contact support if it persists. |
+| `.authentication` | The key or token was rejected (`401`). | An error screen. | Check your proxy and key. |
+| `.authorization` | Not allowed (`403`). | An error screen. | Check the key's permissions, or your proxy's ownership check. |
+| `.notFound` | The session, workflow or other resource doesn't exist (`404`). | An error screen. | Check the IDs, and that they belong to the key's organization. |
+| `.validation` | The request was invalid (`400`), or the workflow has a step the SDK can't run. | An error screen. | Check `apiCode`; fix the input. |
+| `.conflict` | The session's state doesn't allow this (`409`). | An error screen. | Check `apiCode` and `conflict`. |
+| `.insufficientFunds` | Your balance can't cover the check (`402`). | An error screen. | Top up in the Admin Console. |
+| `.antiCheatBlocked` | The anti-cheat check in `DeepIDVVerificationView` returned `block`. | — | End the signup. See [iGaming](/integrate/sdks/ios/headless/igaming). |
+
+## API error codes
+
+`apiCode` is set when the server explains a refusal. It's an open set: compare against these constants and keep a `default` branch.
+
+| `APIErrorCode` | Raw value | Meaning |
+|---|---|---|
+| `.validationError` | `VALIDATION_ERROR` | The request body was invalid. |
+| `.workflowInactive` | `WORKFLOW_INACTIVE` | The workflow is turned off. |
+| `.unsupportedWorkflowSteps` | `UNSUPPORTED_WORKFLOW_STEPS` | The workflow has steps this API can't run. |
+| `.invalidUploadKey` | `INVALID_UPLOAD_KEY` | An upload key doesn't belong to this session. |
+| `.invalidMedia` | `INVALID_MEDIA` | A photo couldn't be used (format or content). |
+| `.uploadSlotNotRequired` | `UPLOAD_SLOT_NOT_REQUIRED` | A photo was sent for a slot the step doesn't need. |
+| `.insufficientFunds` | `INSUFFICIENT_FUNDS` | The balance can't cover the check. |
+| `.forbidden` | `FORBIDDEN` | The key can't do this. |
+| `.organizationNotFound` | `ORGANIZATION_NOT_FOUND` | No organization for this key. |
+| `.workflowNotFound` | `WORKFLOW_NOT_FOUND` | The workflow doesn't exist for this organization. |
+| `.sessionNotFound` | `SESSION_NOT_FOUND` | The session doesn't exist for this organization. |
+| `.executionStateNotFound` | `EXECUTION_STATE_NOT_FOUND` | The session has no workflow state. |
+| `.stepNotFound` | `STEP_NOT_FOUND` | The step isn't in this workflow. |
+| `.sessionTerminal` | `SESSION_TERMINAL` | The session is finished. |
+| `.sessionAlreadyStarted` | `SESSION_ALREADY_STARTED` | The session was already started; resume it instead. |
+| `.noActiveStep` | `NO_ACTIVE_STEP` | The session has no current step. |
+| `.stepOutOfOrder` | `STEP_OUT_OF_ORDER` | This step isn't the current one. |
+| `.stepNotSubmittable` | `STEP_NOT_SUBMITTABLE` | The step can't take a submission now. |
+| `.stepConflict` | `STEP_CONFLICT` | Another submission for this step is in progress. |
+| `.livenessNotStarted` | `LIVENESS_NOT_STARTED` | Liveness wasn't started before completion. |
+| `.livenessResultNotReady` | `LIVENESS_RESULT_NOT_READY` | The liveness score isn't ready yet. |
+| `.livenessUploadIncomplete` | `LIVENESS_UPLOAD_INCOMPLETE` | Not all liveness frames arrived. |
+| `.stepNotRunnable` | `STEP_NOT_RUNNABLE` | The step can't run in this session. |
+| `.internalError` | `INTERNAL_ERROR` | A server error. |
+
+## Retries the SDK already does
+
+- `429` and `5xx` responses are retried up to `maxRetries` times with exponential backoff, honoring `Retry-After` (capped at 60 seconds).
+- Camera and capture errors are never retried automatically.
+- In workflows, **Try again** on an error screen continues from the current step.

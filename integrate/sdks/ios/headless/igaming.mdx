@@ -1,0 +1,71 @@
+---
+title: iGaming checks
+description: "Anti-cheat face deduplication and self-exclusion, VPN detection and IP jurisdiction checks from the iOS SDK."
+---
+
+Three checks for gaming and betting apps, each run against a verification session your backend created on a workflow with the matching step (`anti-cheat`, `vpn-detection`, `ip-jurisdiction`).
+
+| Check | Method | Answers |
+|---|---|---|
+| Anti-cheat | `checkAntiCheat(sessionID:image:deviceFingerprint:)` | Has this face signed up before? Is it self-excluded? Is it linked to other accounts? Enrolls the face on first sight. |
+| VPN | `checkVPN(sessionID:ipAddress:)` | Is the user behind a VPN, proxy or Tor? |
+| Jurisdiction | `checkIPJurisdiction(sessionID:ipAddress:)` | Is this IP in a place where you may serve them? |
+
+API reference: [Anti-cheat](/api-reference/igaming/anti-cheat), [VPN detection](/api-reference/igaming/vpn-detection), [IP jurisdiction](/api-reference/igaming/ip-jurisdiction).
+
+## Anti-cheat
+
+```swift
+let result = try await client.checkAntiCheat(
+    sessionID: sessionID,
+    image: .data(selfieJPEG),
+    deviceFingerprint: DeviceFingerprint.current()   // optional
+)
+switch result.action {
+case .block:        endSignup()
+case .manualReview: holdForReview()
+default:            continueSignup()
+}
+```
+
+### `AntiCheatResult`
+
+| Property | Values |
+|---|---|
+| `verdict` | `.duplicate`, `.unique`, `.unavailable`, `.selfExclusion`, `.unknown(String)` |
+| `action` | `.allow`, `.flag`, `.manualReview`, `.block`, `.unknown(String)` |
+| `isDuplicate`, `isBlocked` | Convenience flags. |
+
+### With a view: `AntiCheatCheckView`
+
+`AntiCheatCheckView(client:sessionID:deviceFingerprint:onResult:)` takes a face photo with the SDK's camera, runs the check, and returns `AntiCheatResult`. It shows **This face is already registered** on a duplicate.
+
+### In the drop-in view
+
+Pass `igamingSessionID:` to [`DeepIDVVerificationView`](/integrate/sdks/ios/drop-in-verification) to run anti-cheat on the selfie it already took, before identity verification. A `block` ends the flow with `.failure`, kind `.antiCheatBlocked`. Any other verdict arrives in `result.antiCheat`.
+
+### Device fingerprint
+
+`DeviceFingerprint.current()` is a random ID created once and kept in the keychain. It survives reinstalls, needs no permission, and isn't derived from hardware or personal data. It's a linkage signal, not security. If you send it, declare a device ID used for fraud prevention in your app's privacy manifest. The SDK never sends it unless you pass it.
+
+## VPN and jurisdiction
+
+```swift
+let vpn = try await client.checkVPN(sessionID: sessionID, ipAddress: publicIP)
+let place = try await client.checkIPJurisdiction(sessionID: sessionID, ipAddress: publicIP)
+```
+
+A phone can't reliably know its own public IP address. Get it from your backend (the address your server sees for the request) and pass it in. If you send it from the app, declare it in your privacy manifest.
+
+### `IPCheckResult`
+
+| Property | Meaning |
+|---|---|
+| `verdict` | `.hit`, `.clear`, `.unavailable`, `.unknown(String)` |
+| `action` | The workflow's action, as a string. |
+| `evidence` | Free-form details, `[String: String]`. |
+| `escalation` | `decision`, `type`, `reason`, when the workflow sends a hit to manual handling instead of blocking. |
+
+## Fail-soft
+
+All three checks are fail-soft. Bad input, a finished session, a workflow without the step, or a server error come back as a normal result with `verdict == .unavailable` and `action == .allow`, never a thrown error. The only thrown failure is a session that doesn't exist (`.notFound`). Decide your own policy for `.unavailable`.

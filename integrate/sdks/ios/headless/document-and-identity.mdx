@@ -1,0 +1,78 @@
+---
+title: Document scan and identity verify
+description: "Headless iOS SDK methods for images you already have: scanDocument reads an ID, verifyIdentity reads it and matches the face to a selfie."
+---
+
+The headless methods take images your app already has and return the analysis. No camera, no screens.
+
+<Info>
+  These calls stand alone: they don't create a workflow session or a reviewable session in the Admin Console. For onboarding, prefer a [workflow](/integrate/sdks/ios/workflows/run-a-workflow).
+</Info>
+
+## Images: `FileInput`
+
+| Case | Example |
+|---|---|
+| `.data(Data)` | `.data(jpegData)` |
+| `.fileURL(URL)` | `.fileURL(photoURL)` |
+| `.base64(String)` | Raw base64 or a `data:` URL |
+
+Images must be JPEG or PNG, at most 15 MiB. The SDK uploads each one through a presigned URL before it calls the API.
+
+## `scanDocument`
+
+Reads the fields on an ID.
+
+```swift
+let scan = try await client.scanDocument(
+    front: .fileURL(frontURL),
+    back: .fileURL(backURL),        // optional: omit for passports and single-sided IDs
+    type: .driversLicense           // or .idCard, .passport, .auto
+)
+print(scan.fullName, scan.documentNumber, scan.expirationDate)
+print("confidence (0–1):", scan.confidence)
+```
+
+- `type: .auto` lets deepidv classify the document. It's accepted only here, not by the capture views.
+- Only the front is read. A back image is uploaded and its key returned, but not read separately.
+- Returns [`DocumentScanResult`](/integrate/sdks/ios/document-capture#documentscanresult). Its `confidence` is **0 to 1**.
+
+## `verifyIdentity`
+
+Reads the ID, detects the face on it and in the selfie, and compares them.
+
+```swift
+let result = try await client.verifyIdentity(
+    documentFront: .data(frontJPEG),
+    documentBack: nil,              // optional
+    selfie: .data(selfieJPEG),
+    type: .passport
+)
+if result.verified {
+    print("match (0–100):", result.faceMatch.confidence, "threshold:", result.faceMatch.threshold)
+}
+```
+
+### `IdentityVerifyResult`
+
+| Property | Type | Meaning |
+|---|---|---|
+| `verified` | `Bool` | The overall outcome. |
+| `document` | `Document` | The fields read, with `confidence` (0 to 100). |
+| `faceDetection` | `FaceDetection` | `faceDetected`, `confidence` (0 to 100). |
+| `faceMatch` | `FaceMatch` | `isMatch`, `confidence` and `threshold` (0 to 100). |
+| `overallConfidence` | `Double` | 0 to 100. |
+| `documentFrontKey`, `documentBackKey`, `selfieKey` | `String`, `String?`, `String` | Keys of the uploaded images. |
+
+<Warning>
+  Confidence scales differ: `DocumentScanResult.confidence` is 0 to 1, every confidence on `IdentityVerifyResult` is 0 to 100. The SDK passes them through unchanged.
+</Warning>
+
+## Errors
+
+Both methods throw `DeepIDVError`. The common kinds: `.validation` (image format or size, or a bad type), `.insufficientFunds`, `.rateLimit`, `.network`, `.timeout`. See [Errors](/integrate/sdks/ios/reference/errors).
+
+## Getting the images
+
+- Use [`SelfieCaptureView`](/integrate/sdks/ios/selfie) for the selfie and pass its `FileInput` straight in.
+- For a full capture flow with retries, use [`DeepIDVVerificationView`](/integrate/sdks/ios/drop-in-verification), which calls `verifyIdentity` for you.

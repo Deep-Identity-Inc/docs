@@ -1,0 +1,47 @@
+---
+title: Security and API keys
+description: "Keep your deepidv API key off the device. Run the iOS SDK through your own backend, and treat the SDK's result as a UI signal, not the decision."
+---
+
+## Never ship your API key in the app
+
+Your deepidv API key can create sessions, read verification results and spend your balance. Anything inside an app (a string, a plist, an obfuscated value) can be extracted by anyone who downloads it.
+
+Run the SDK through your own backend instead:
+
+1. The app sends the SDK's requests to your backend, signed with **your app's own** user token.
+2. Your backend checks the user, checks that the request is for one of their sessions, adds your deepidv API key, and forwards it to deepidv.
+
+This is [proxy mode](/integrate/sdks/ios/proxy-mode). It needs no SDK changes: you set `baseURL` to your backend and pass your user token as `apiKey`.
+
+```swift
+let client = DeepIDVClient(config: DeepIDVConfig(
+    apiKey: userToken,                                    // not your deepidv key
+    baseURL: URL(string: "https://api.example.com/deepidv")!
+))
+```
+
+<Note>
+  Short-lived session tokens, issued by your backend for one session, are planned. When they ship, they'll be the simplest way to run the SDK without a key on the device. Proxy mode keeps working.
+</Note>
+
+## Don't trust `onResult` for the decision
+
+Code on a user's device can be changed by that user. Use the SDK's result to decide what to show next, never to grant access.
+
+| Use | Source |
+|-----|--------|
+| Close the verification screen, show "we're reviewing your details" | `onResult` |
+| Unlock an account, approve a payment, mark a user verified | [Webhooks](/webhooks/overview) or [Retrieve session](/api-reference/sessions/retrieve-session), on your backend |
+
+A session can also change after the app is done with it. A manual reviewer can approve or reject it in the Admin Console, for example. See [Results and the decision](/integrate/sdks/ios/workflows/results).
+
+## Create sessions on your backend
+
+You can let `DeepIDVWorkflowView` create a session from the app, but then the app needs to send the user's name and email to the API. Creating the session on your backend keeps that step on the server, ties the session to a signed-in user, and lets your proxy reject requests for anyone else's session. See [Sessions from your backend](/integrate/sdks/ios/workflows/run-a-workflow#sessions-from-your-backend).
+
+## What the SDK does for you
+
+- The API key (or token) you pass is sent only in the `x-api-key` header, over HTTPS. It's redacted in every error and description the SDK produces.
+- Photos upload over HTTPS to short-lived presigned URLs. They're never written to the photo library.
+- Requests that fail with `429` or a `5xx` are retried with exponential backoff. Requests that fail for any other reason are not retried automatically.
