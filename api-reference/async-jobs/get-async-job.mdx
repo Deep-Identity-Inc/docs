@@ -19,7 +19,7 @@ A job moves through these states:
 | `pending`    | No       | —           | Queued, not yet picked up                       |
 | `processing` | No       | —           | Actively running                                |
 | `ready`      | Yes      | `result`    | Completed successfully — result is available    |
-| `failed`     | Yes      | `error`     | Failed — `error` describes what went wrong      |
+| `failed`     | Yes      | `error`     | Failed — `error` describes what went wrong. For adverse media, a failed job means the screening didn't run, not that the applicant is clear |
 
 <Note>
   Poll on a backoff interval (e.g. every 2–5 seconds) until `status` is `ready`
