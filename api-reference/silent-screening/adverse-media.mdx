@@ -161,3 +161,11 @@ Each entry in `findings` has the following shape:
 | `articleDate` | string \| null | Publication date of the source, if known                     |
 | `confidence`  | number         | Match confidence `0–1`                                       |
 | `confirmedBy` | array          | Source types that corroborate the finding (e.g. `news`, `court-records`) |
+## When the scan can't finish
+
+If the news searches all fail, or the article analysis fails, and nothing was found, the job ends with `status` `failed` instead of returning a `LOW` result. `error` explains why, for example `Adverse media check could not be completed: all news searches failed.`
+
+A failed job means the applicant was **not** screened. Don't treat it as clear: start a new check later.
+
+In a workflow session, the `ADVERSE_MEDIA` step reports this as the retryable failure `ADVERSE_MEDIA_CHECK_UNAVAILABLE`.
+

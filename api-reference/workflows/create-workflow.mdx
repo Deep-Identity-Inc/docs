@@ -38,13 +38,31 @@ Currently supported steps: `ID_VERIFICATION`, `FACE_LIVENESS`, `AGE_ESTIMATION`,
 |---------|-------------|
 | `ID_VERIFICATION` | Government ID scanning and validation |
 | `FACE_LIVENESS` | Active anti-spoofing liveness detection |
+| `FACE_LIVENESS_CONSENT_SETTINGS` | Collect applicant consent before the face-liveness capture |
 | `AGE_ESTIMATION` | Biometric age estimation |
+| `DEEPFAKE_DETECTION` | Analyze a guided media capture for liveness and synthetic-media risk |
+| `DEEP_AGE` | Verify that an applicant meets the age requirement in a hosted flow |
+| `ADDRESS_VERIFICATION` | Verify address knowledge through the hosted DeepAddy flow |
+| `TITLE_SEARCH` | Retrieve US property-title and ownership information for an address |
 | `PEP_SANCTIONS` | Politically exposed persons & sanctions screening |
 | `ADVERSE_MEDIA` | Negative press and media mention detection |
 | `IP_JURISDICTION` | iGaming: block/allow by the applicant's resolved country + datacenter-IP handling |
 | `VPN_DETECTION` | iGaming: detect VPN / Tor / datacenter (anonymizer) connections |
 | `INJECTION_DETECTION` | iGaming: detect injected media, virtual cameras, and emulators |
 | `ANTI_CHEAT` | iGaming: biometric duplicate detection, multi-accounting linkage, and self-exclusion |
+| `CUSTOM_PROMPT` | Ask the applicant to capture one photo for each configured instruction |
+| `CONSENT` | Present configured terms and record the applicant's acceptance or decline |
+| `BANK_STATEMENT_UPLOAD` | Collect and analyze bank statements through the hosted applicant flow |
+| `AI_BANK_STATEMENT_ANALYSIS` | Acknowledge the analysis queued by an earlier bank-statement upload step |
+| `DOCUMENT_UPLOAD` | Collect configured required and optional documents from the applicant |
+| `WHITE_LABEL` | Apply the organization's configured branding to the workflow session |
+| `PHONE_TRUST_CHECK` | Check recent SIM changes and call forwarding for the session phone |
+| `CARRIER_AGE_GATE` | Ask the carrier to confirm that the session phone subscriber is at least 18 |
+| `PHONE_OWNERSHIP_MATCH` | Compare the session applicant name with the carrier subscriber record |
+| `PHONE_VERIFICATION` | Verify the applicant by comparing a spoken phrase during a phone call |
+| `E_SIGNATURE` | Collect legally binding electronic signatures with an existing DeepSign template. Hosted workflows only: it can't be run through the Workflow Runner API |
+
+Steps without a section under [Step Configuration](#step-configuration) take their defaults when you omit `config`. The [OpenAPI spec](/api-reference/openapi-spec) lists every setting each step accepts.
 
 ### Step Configuration
 
@@ -361,7 +379,7 @@ Returns the full workflow record. The response uses the same format as [Retrieve
 | `workflow.organization_id` | string | Your organization ID |
 | `workflow.created_at` | string | ISO 8601 creation timestamp |
 | `workflow.updated_at` | string | ISO 8601 last-updated timestamp |
-| `workflow.steps` | array | Ordered list of steps with full resolved configuration |
+| `workflow.steps` | array | Ordered list of steps with full resolved configuration, in the same flat format as the request. Settings you didn't send are returned with their defaults |
 | `workflow.failure_settings` | object | Retry limit stored on the workflow |
 | `workflow.failure_settings.active` | boolean | Whether the retry limit is enforced |
 | `workflow.failure_settings.max_attempts` | integer \| null | Failed attempts allowed before the session fails |
@@ -387,64 +405,54 @@ Returns the full workflow record. The response uses the same format as [Retrieve
     "updated_at": "2026-03-31T14:00:00.000Z",
     "steps": [
       {
-        "id": "id-verification",
+        "id": "ID_VERIFICATION",
         "config": {
-          "age_restriction_settings": {
-            "age_restriction_mode": "slider",
-            "country_category_minimum_age": null,
-            "minimum_age": { "lower": 21, "upper": 51 }
-          },
-          "expiry_date_settings": { "expiry_date": 3 },
-          "face_scan_settings": { "face_front_photo_only": false },
-          "id_scan_face_settings": { "require_front_only": false },
-          "id_scan_settings": {
-            "require_secondary_id": false,
-            "require_tertiary_id": false
-          },
-          "valid_id_types_settings": {
-            "valid_id_types": {
-              "driver_license_ca": true,
-              "driver_license_us": true,
-              "passport_ca": true,
-              "passport_us": true
-            }
-          },
-          "valid_states_settings": {
-            "valid_states": { "AL": true, "AK": true, "AZ": true, "...": "all US + CA" }
-          },
-          "fraud_analysis_settings": {
-            "enable_fraud_analysis": true
-          },
-          "fraud_analysis_escalation": {
-            "escalation_type": "nfc-passport",
-            "escalation_risk_threshold": 75
-          }
+          "age_restriction_mode": "slider",
+          "minimum_age": 21,
+          "maximum_age": 100,
+          "country_category_restrictions": [],
+          "enable_fraud_analysis": false,
+          "escalation_type": "nfc-passport",
+          "escalation_risk_threshold": 75,
+          "require_secondary_id": false,
+          "require_tertiary_id": false,
+          "require_front_only": false,
+          "face_front_photo_only": true,
+          "expiry_date_years": 3,
+          "accept_all_countries": true,
+          "valid_countries": {},
+          "valid_states": { "AB": true, "BC": true, "MB": true, "...": "all US states and Canadian provinces" },
+          "id_confidence_threshold_enabled": false,
+          "id_confidence_threshold": 80,
+          "valid_id_types": { "driver-license-ca": true, "passport-ca": true, "pr-card-ca": true, "military-id-ca": true, "...": "35 ID types in total" },
+          "valid_id_types_by_country": {},
+          "reverify_by_attestation_enabled": false,
+          "reverify_min_confidence": 95
         }
       },
       {
-        "id": "face-liveness",
+        "id": "FACE_LIVENESS",
+        "config": { "preferred_liveness_method": "FaceMovementChallenge", "confidence_threshold": 85 }
+      },
+      {
+        "id": "AGE_ESTIMATION",
         "config": {
-          "face_liveness_confidence_settings": { "confidence_threshold": 85 },
-          "face_liveness_settings": { "preferred_liveness_method": "FaceMovementChallenge" }
+          "age_restriction_mode": "slider",
+          "minimum_age": 18,
+          "maximum_age": 100,
+          "country_category_restrictions": []
         }
       },
       {
-        "id": "age-estimation",
-        "config": {
-          "age_restriction_settings": {
-            "age_restriction_mode": "slider",
-            "country_category_minimum_age": null,
-            "minimum_age": { "lower": 18, "upper": 100 }
-          }
-        }
+        "id": "PEP_SANCTIONS",
+        "config": {}
       },
-      { "id": "pep-sanctions", "config": {} },
-      { "id": "adverse-media", "config": {} }
+      {
+        "id": "ADVERSE_MEDIA",
+        "config": {}
+      }
     ],
-    "failure_settings": {
-      "active": true,
-      "max_attempts": 5
-    }
+    "failure_settings": { "active": true, "max_attempts": 5 }
   }
 }
 ```

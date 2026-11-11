@@ -35,11 +35,23 @@ Both camelCase and snake_case parameter names are accepted. If both are provided
 | Parameter | Alias | Type | Required | Description |
 |---|---|---|---|---|
 | `email` | — | string | Yes | Email address of the person completing the session |
-| `first_name` | `firstName` | string | Yes | First name of the person completing the session |
-| `last_name` | `lastName` | string | Yes | Last name of the person completing the session |
+| `first_name` | `firstName` | string | No  | First name of the person completing the session. Optional, see [Applicant names](#applicant-names) |
+| `last_name` | `lastName` | string | No  | Last name of the person completing the session. Optional, see [Applicant names](#applicant-names) |
 | `phone` | — | string | No | Phone number in E.164 format, e.g. `+14155552671`. Required when the workflow has a step that uses the applicant's phone and the applicant has no valid phone on file. See [Phone number](#phone-number) |
 | `external_id` | `externalId` | string | No | Your own identifier for this session, echoed back on retrieval |
 | `expires_in_hours` | `expiresInHours` | integer | No | Overrides the workflow's default session expiry. `1`-`8760` |
+
+### Applicant names
+
+`first_name` and `last_name` are optional. Sending only one of them is fine, for applicants with a single name.
+
+If you send neither (or both are blank), the session is created without names:
+
+- The session and its webhooks carry `names_provided: false`.
+- The names are read from the applicant's ID document, and the name-matches-ID check is skipped.
+- The workflow must include an ID verification step. It can't include a step that matches on the name (`DEEP_AGE`, `CREDIT_CHECK`, `PHONE_OWNERSHIP_MATCH` or an identity-number lookup), and it can't have an `E_SIGNATURE`, `PEP_SANCTIONS`, `BACKGROUND_CHECK` or `ADDRESS_VERIFICATION` step before the ID verification step.
+
+Otherwise the create returns `400` with `code` `NAMES_REQUIRED_NO_ID_STEP` (the workflow has no ID verification step) or `NAMES_REQUIRED_FOR_STEP` (with `steps` listing the steps that need the name).
 
 ### Phone number
 
@@ -168,7 +180,7 @@ Each step's `requirements` shape depends on its type. The two most common are:
 
 | Status | Description |
 |---|---|
-| `400` | Invalid request body, the workflow contains a step type not supported by the Workflow Runner API (`code` `UNSUPPORTED_WORKFLOW_STEPS`, response includes `invalid_steps`), the workflow is not `active`, or the workflow needs the applicant's phone and none was sent or is on file (`code` `PHONE_REQUIRED`, with `steps`) |
+| `400` | Invalid request body, the workflow contains a step type not supported by the Workflow Runner API (`code` `UNSUPPORTED_WORKFLOW_STEPS`, response includes `invalid_steps`), the workflow is not `active`, the workflow needs the applicant's phone and none was sent or is on file (`code` `PHONE_REQUIRED`, with `steps`), or no names were sent but the workflow needs them (`code` `NAMES_REQUIRED_NO_ID_STEP` or `NAMES_REQUIRED_FOR_STEP`, see [Applicant names](#applicant-names)) |
 | `401` | Invalid or missing API key |
 | `402` | Insufficient funds to run this workflow |
 | `403` | The workflow belongs to a different organization |
