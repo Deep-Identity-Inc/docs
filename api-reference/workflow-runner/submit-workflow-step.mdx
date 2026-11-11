@@ -37,6 +37,17 @@ The request body depends on `step_id`:
 | `FACE_LIVENESS` | [FACE_LIVENESS submission](#face_liveness) |
 | `PHONE_VERIFICATION` | [PHONE_VERIFICATION submission](#phone_verification) |
 | `IP_JURISDICTION`, `VPN_DETECTION`, `INJECTION_DETECTION`, `ANTI_CHEAT` | [iGaming step submissions](#igaming-steps) |
+| `CONSENT`, `FACE_LIVENESS_CONSENT_SETTINGS`, `WHITE_LABEL` | [Consent and presentation steps](#consent-and-presentation-steps) |
+| `AGE_ESTIMATION` | [AGE_ESTIMATION](#age_estimation) |
+| `PEP_SANCTIONS` | [PEP_SANCTIONS](#pep_sanctions) |
+| `ADVERSE_MEDIA` | [ADVERSE_MEDIA](#adverse_media) |
+| `TITLE_SEARCH` | [TITLE_SEARCH](#title_search) |
+| `CUSTOM_PROMPT`, `DOCUMENT_UPLOAD` | [CUSTOM_PROMPT and DOCUMENT_UPLOAD](#custom_prompt-and-document_upload) |
+| `DEEPFAKE_DETECTION` | [DEEPFAKE_DETECTION](#deepfake_detection) |
+| `DEEP_AGE`, `ADDRESS_VERIFICATION`, `BANK_STATEMENT_UPLOAD` | [Hosted steps](#hosted-steps-deep_age-address_verification-bank_statement_upload) |
+| `PHONE_TRUST_CHECK`, `CARRIER_AGE_GATE`, `PHONE_OWNERSHIP_MATCH`, `AI_BANK_STATEMENT_ANALYSIS` | [Server-side steps](#server-side-steps) |
+
+New to the runner? Start with the [Workflow Runner overview](/api-reference/workflow-runner/overview).
 
 ## Step submission schemas
 
@@ -250,9 +261,271 @@ curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d7
   -d '{ "ip_address": "102.88.25.10" }'
 ```
 
+### Consent and presentation steps
+
+These steps record the applicant's answer to something you showed them.
+
+| `step_id` | Body | Result field |
+|---|---|---|
+| `CONSENT` | `{ "accepted": true, "legal_name": "John Doe" }`. `legal_name` is required when `accepted` is `true`. Add `signature_upload` (an upload `file_key`) when the step's requirements say `signature_required: true` | `consent` |
+| `FACE_LIVENESS_CONSENT_SETTINGS` | Same as `CONSENT` when its requirements say `consent_required: true`. Otherwise send `{}` | `consent` |
+| `WHITE_LABEL` | `{ "acknowledged": true }` | `presentation` |
+
+Declining (`"accepted": false`) fails the step and the session with `CONSENT_DECLINED` (`user_action` `NONE`, not retryable).
+
+```json Response (CONSENT accepted)
+{
+  "step_id": "CONSENT",
+  "step_status": "COMPLETED",
+  "failure_reason": null,
+  "failure": null,
+  "session_failure": null,
+  "current_step": 6,
+  "attempts_remaining": 3,
+  "session_status": "PENDING",
+  "session_progress": "STARTED",
+  "consent": { "accepted": true }
+}
+```
+
+### AGE_ESTIMATION
+
+Upload a selfie to the `selfie_front` slot with [Create Session Uploads](/api-reference/workflow-runner/create-session-uploads), then submit its `file_key`:
+
+```json Request
+{ "uploads": { "selfie_front": "<file_key>" } }
+```
+
+The result is in `age_estimation`. `within_configured_range` compares the estimated age with the step's `minimum_age` and `maximum_age`:
+
+```json Response
+{
+  "step_id": "AGE_ESTIMATION",
+  "step_status": "COMPLETED",
+  "current_step": 2,
+  "session_status": "PENDING",
+  "age_estimation": {
+    "face_detected": true,
+    "estimated_age": 47,
+    "age_range": { "low": 43, "high": 51 },
+    "within_configured_range": true,
+    "gender": "male",
+    "gender_confidence": 0.98
+  }
+}
+```
+
+If no face is found, the step fails with `AGE_ESTIMATION_NO_FACE` and can be retried with a new selfie.
+
+### PEP_SANCTIONS
+
+```json Request
+{ "first_name": "John", "last_name": "Doe", "date_of_birth": "1966-09-05" }
+```
+
+`email` is optional. The result is in `pep_sanctions`: possible PEP matches, sanctions matches, entries that are both, and the lists that were searched. Each match has a `confidence` from 0 to 1, so review low-confidence name matches rather than treating them as hits.
+
+```json Response
+{
+  "step_id": "PEP_SANCTIONS",
+  "step_status": "COMPLETED",
+  "current_step": 3,
+  "session_status": "PENDING",
+  "pep_sanctions": {
+    "total_matches": 1,
+    "peps": [
+      {
+        "name": "Jon Doe",
+        "country": "Canada",
+        "date_of_birth": "1954-10-18",
+        "confidence": 0.182,
+        "datasets": ["wd_peps"]
+      }
+    ],
+    "sanctions": [],
+    "both": [],
+    "searched_sources": ["Canadian Sanctions List", "OpenSanctions", "US Sanctions List", "ann_pep_positions", "wd_peps"]
+  }
+}
+```
+
+### ADVERSE_MEDIA
+
+Adverse media is asynchronous. Send `start` with the person to screen, then poll with `complete`:
+
+```json start
+{ "action": "start", "first_name": "John", "last_name": "Doe", "date_of_birth": "1966-09-05", "country": "CA" }
+```
+
+```json complete
+{ "action": "complete" }
+```
+
+`email` and `country` (ISO 3166-1 alpha-2) are optional. While the scan is running, `complete` returns `409` with `code` `STEP_NOT_READY` and `failure_reason` `ADVERSE_MEDIA_RESULT_NOT_READY`. That doesn't use an attempt: wait a few seconds and send `complete` again. A scan usually takes one to three minutes.
+
+When it's ready, the result is in `adverse_media.result`, in the same shape as the [standalone adverse media check](/api-reference/silent-screening/adverse-media#result-shape) with snake_case keys:
+
+```json Response (ready)
+{
+  "step_id": "ADVERSE_MEDIA",
+  "step_status": "COMPLETED",
+  "current_step": 1,
+  "session_status": "PENDING",
+  "adverse_media": {
+    "job_id": "bed78f37-e535-4bee-81e1-ef39e631a6a2",
+    "status": "ready",
+    "result": {
+      "risk_level": "LOW",
+      "risk_score": 0,
+      "total_hits": 0,
+      "summary": "No confirmed adverse media findings.",
+      "findings": [],
+      "exposures_by_category": {
+        "financial_crime": { "hits": 0, "articles": [] },
+        "...": "one entry per category"
+      }
+    }
+  }
+}
+```
+
+If the scan can't finish, the step fails with the retryable `ADVERSE_MEDIA_CHECK_UNAVAILABLE`. That means the applicant wasn't screened, not that they're clear. See [When the scan can't finish](/api-reference/silent-screening/adverse-media#when-the-scan-cant-finish).
+
+### TITLE_SEARCH
+
+```json Request
+{ "address": "1600 Pennsylvania Ave NW, Washington, DC 20500" }
+```
+
+The result is in `title_search`. When an address matches more than one property, `status` is `multiple_properties` and the step still completes. Send the full address, including the unit number, to get a single property.
+
+```json Response
+{
+  "step_id": "TITLE_SEARCH",
+  "step_status": "COMPLETED",
+  "current_step": null,
+  "session_status": "SUBMITTED",
+  "title_search": {
+    "status": "multiple_properties",
+    "message": "Multiple properties found at this address. A unit number is required.",
+    "available_units": [],
+    "properties": [{ "owner": "UNITED STATES OF AMERICA", "apartment_or_unit": "" }]
+  }
+}
+```
+
+### CUSTOM_PROMPT and DOCUMENT_UPLOAD
+
+Both steps take uploaded files keyed by the slots in their requirements:
+
+- `CUSTOM_PROMPT` has one slot per configured prompt: `custom-prompts-list_0`, `custom-prompts-list_1`, and so on. Each prompt's `text` is in `requirements.prompts`.
+- `DOCUMENT_UPLOAD` has one slot per configured document, named by the document's `id` (for example `proof_of_address`).
+
+Request upload URLs for those slots with [Create Session Uploads](/api-reference/workflow-runner/create-session-uploads), upload the files, then submit the keys:
+
+```json Request (CUSTOM_PROMPT)
+{ "uploads": { "custom-prompts-list_0": "<file_key>" } }
+```
+
+```json Request (DOCUMENT_UPLOAD)
+{ "uploads": { "proof_of_address": "<file_key>" } }
+```
+
+The response reports `custom_prompt.captured` or `document_upload.uploaded`, the number of files recorded.
+
+### DEEPFAKE_DETECTION
+
+1. Send `start`. Set `include_audio` to `true` if you'll also capture the spoken challenge word.
+
+   ```json
+   { "action": "start", "include_audio": false }
+   ```
+
+   The response's `deepfake_detection` has the `challenge_word`, an `upload_urls` entry for each frame (`frame_0` to `frame_5`) and the matching `upload_keys`. Upload each frame to its URL.
+
+2. Send `complete` with the capture's timing, one `frame_meta` entry per captured action, and the upload keys as `s3_keys`:
+
+   ```json
+   {
+     "action": "complete",
+     "scan_duration_ms": 9200,
+     "frame_meta": [
+       {
+         "action_id": "a0",
+         "action": "hold-still",
+         "timestamp": 0,
+         "yaw": 0,
+         "pitch": 0,
+         "roll": 0,
+         "left_eye_openness": 0.9,
+         "right_eye_openness": 0.9,
+         "face_detected": true
+       }
+     ],
+     "s3_keys": { "frame_0": "<upload_key>", "frame_1": "<upload_key>", "...": "through frame_5" }
+   }
+   ```
+
+   `action` is one of `hold-still`, `blink`, `turn-left`, `turn-right` or `speak-prompt`. Add `audio_clip` (and optionally `video_clip`) to `s3_keys` when you captured them.
+
+The verdict is in `deepfake_detection`: `passed`, `verdict`, `risk_score`, `trust_verdict` and `failure_reasons` (plain-language reasons you can show the applicant). A capture judged synthetic fails the step and the session with `DEEPFAKE_DETECTED`. The `details` object is diagnostic and may change, so don't build logic on it.
+
+### Hosted steps: DEEP_AGE, ADDRESS_VERIFICATION, BANK_STATEMENT_UPLOAD
+
+These steps run in a deepidv-hosted page:
+
+1. Send `{ "action": "start" }`. The response contains the page `url` in the step's result field (`deep_age`, `address_verification` or `bank_statement`).
+2. Send the applicant to that `url`.
+3. After they finish, send `{ "action": "complete" }`. Until then, `complete` returns `409` `STEP_NOT_READY` without using an attempt.
+
+```json Response (start, DEEP_AGE)
+{
+  "step_id": "DEEP_AGE",
+  "step_status": "IN_PROGRESS",
+  "current_step": 0,
+  "session_status": "PENDING",
+  "deep_age": {
+    "id": "eb6af6b0-a599-5d82-ad6c-a8ce0fd5b572",
+    "method": "quiz",
+    "url": "https://verify.deepidv.com/age/eb6af6b0-a599-5d82-ad6c-a8ce0fd5b572",
+    "replayed": false
+  }
+}
+```
+
+For `DEEP_AGE` and `BANK_STATEMENT_UPLOAD`, sending `start` again returns the same page with `replayed: true` instead of creating a new one.
+
+### Server-side steps
+
+`PHONE_TRUST_CHECK`, `CARRIER_AGE_GATE`, `PHONE_OWNERSHIP_MATCH` and `AI_BANK_STATEMENT_ANALYSIS` take an empty body:
+
+```json Request
+{}
+```
+
+The phone steps use the phone and name already on the session, so create the session with a `phone`. `AI_BANK_STATEMENT_ANALYSIS` acknowledges the analysis that the preceding `BANK_STATEMENT_UPLOAD` started.
+
+Each phone step returns its result under `phone_trust_check`, `carrier_age_gate` or `phone_ownership_match`, with the same fields as the standalone [Carrier intelligence](/api-reference/carrier-intelligence/overview) checks. Carrier data isn't available in every country: an `outcome` (or risk) of `NO_DATA` means the carrier couldn't answer, not that the check failed.
+
+```json Response (CARRIER_AGE_GATE)
+{
+  "step_id": "CARRIER_AGE_GATE",
+  "step_status": "COMPLETED",
+  "current_step": 2,
+  "session_status": "PENDING",
+  "carrier_age_gate": {
+    "outcome": "NO_DATA",
+    "age_verified": "NO_DATA",
+    "required_age": 18,
+    "status_message": "No commands available in country [US] - Commands [age_verification] not available in [US]",
+    "checked_at": "2026-11-11T08:35:43.922Z"
+  }
+}
+```
+
 ## Response
 
-The response is a common envelope for every step type. FACE_LIVENESS additionally includes a `liveness` object, PHONE_VERIFICATION a `phone_verification` object, and each iGaming step its result field (see [iGaming steps](#igaming-steps)).
+The response is a common envelope for every step type, plus one result field for the step that ran: `liveness`, `phone_verification`, `consent`, `age_estimation`, `pep_sanctions`, `adverse_media`, `title_search`, `custom_prompt`, `document_upload`, `deepfake_detection`, `deep_age`, `address_verification`, `bank_statement`, `presentation`, the phone check results, or the iGaming results. The step sections above show each one.
 
 <Note>
   Every key in the response, including step result objects, is snake_case. The one exception is `liveness.script` on the custom-provider FACE_LIVENESS `start` response, which keeps its camelCase keys (`challengeType`, `durationMs`, `steps[].atMs`). See [FACE_LIVENESS results](#face_liveness-results).

@@ -73,11 +73,11 @@ Each step accepts optional configuration. If omitted, sensible defaults are appl
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `minimum_age` | integer | `18` | Minimum accepted age |
-| `maximum_age` | integer | `51` | Maximum accepted age |
+| `maximum_age` | integer | `100` | Maximum accepted age |
 | `expiry_date_years` | integer | `2` | Minimum time the ID must stay valid past the verification date. A mode, not a number of years: `0` = off (no minimum-validity check), `1` = 30 days, `2` = 60 days, `3` = 180 days, `4` = 365 days |
 | `require_secondary_id` | boolean | `false` | Require a second form of ID |
 | `require_tertiary_id` | boolean | `false` | Require a third form of ID |
-| `face_front_photo_only` | boolean | `false` | Only capture front-facing photo |
+| `face_front_photo_only` | boolean | `true` | Only capture front-facing photo |
 | `require_front_only` | boolean | `false` | Only scan front of ID |
 | `enable_fraud_analysis` | boolean | `false` | Enable synchronous fraud analysis on submitted IDs. Automatically enabled when `escalation_type` is not `none` |
 | `escalation_type` | string | `"none"` | Escalation method when fraud risk is high. One of `none`, `nfc-passport`. Implicitly enables `enable_fraud_analysis` |
