@@ -56,7 +56,7 @@ Whichever limit is reached first applies. Over 500 records returns `400` with co
 | `client_txn_id`      | string  | Yes      | Your unique identifier for this transaction. Max 128 characters. Re-posting the same id **replaces** that record in full — any omitted field is cleared, so always send the complete transaction, not just the changed fields. Previous values are kept in the revision history. |
 | `subject_user_id`    | string  | Yes      | Your identifier for the customer this transaction belongs to.                                                   |
 | `timestamp`        | string  | Yes      | When the transaction occurred (ISO 8601).                                                                       |
-| `direction`        | string  | Yes      | `inbound`, `outbound`, or `internal`.                                                                           |
+| `direction`        | string  | Yes      | `inbound`, `outbound`, or `internal` — **relative to the monitored subject, not to your institution.** See below. |
 | `amount`           | object  | Yes      | `{ value, currency }`. `value` must be a JSON number, not a string.                                             |
 | `type`             | string  | Yes      | `card`, `wire`, `eft`, `ach`, `crypto`, `cash`, `internal_transfer`, or `other`.                                 |
 | `normalized_amount` | object  | No       | `{ value, currency, fx_rate }` in your base currency. See below.                                                  |
@@ -74,6 +74,40 @@ Whichever limit is reached first applies. Over 500 records returns `400` with co
 </Note>
 
 Currency codes are ISO 4217 and country codes ISO 3166-1 alpha-2. A well-formed but unrecognized code is rejected rather than stored, since bad reference data produces false alerts later.
+
+#### `direction`
+
+**Direction is relative to the monitored subject — not to your institution.**
+
+| Value      | Meaning                                                                                  |
+| ---------- | ---------------------------------------------------------------------------------------- |
+| `inbound`  | Funds arriving at the subject.                                                             |
+| `outbound` | Funds leaving the subject.                                                                 |
+| `internal` | Funds moving between accounts the same subject controls, with no external counterparty.    |
+
+<Warning>
+  **If you get this backwards, nothing will tell you.** `direction` is taken as given — it is never inferred, and there is nothing else in the record to check it against, so accuracy is yours to guarantee.
+
+  Label records relative to your own institution and every `inbound` and `outbound` is inverted. A rule set to watch outgoing transfers then examines precisely the half of the book you meant to exclude. No error is raised, no warning is returned, and the control silently monitors nothing.
+
+  Mislabelled direction **cannot be repaired after ingest**, so this is worth confirming against a handful of known transactions before your first production batch rather than after.
+</Warning>
+
+There is no `any` value. `any` exists only in dashboard rule configuration, where it means a rule matches all three directions; sending it on a transaction is rejected with `FIELD_INVALID` on `direction`, and rejects **that record only**.
+
+<Note>
+  **`internal` is excluded from rapid pass-through detection on both legs.** That rule looks for an external in-then-out pair, and counting internal legs would fire on ordinary book transfers.
+
+  The consequence lands on the label rather than the rule: if you record a customer's own account-to-account movements as `inbound` and `outbound` instead of `internal`, you will manufacture pass-through alerts that describe nothing but money moving within that customer's own accounts.
+</Note>
+
+<Note>
+  **`direction: "internal"` and `type: "internal_transfer"` are different fields and are set independently.**
+
+  `direction` says **who** the money moved between, and the rules read it. `type` says **how** it moved — the rail — and is descriptive only: **no rule reads `type`.**
+
+  Neither implies the other. A transfer between two of the same subject's accounts settled over ACH is `direction: "internal"` with `type: "ach"`. A payment to a third party moved on your own internal ledger is `type: "internal_transfer"` with `direction: "outbound"`. Setting one does not set the other, and setting `type` alone will not exclude a record from pass-through detection.
+</Note>
 
 #### `geography` fields
 
