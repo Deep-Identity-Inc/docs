@@ -1029,6 +1029,9 @@ components:
       properties:
         verified:
           type: boolean
+          description: true when the document was readable, a face was detected, and it
+            matched the selfie. Does NOT check expiry, authenticity or fraud;
+            see document.isExpired.
         document:
           $ref: "#/components/schemas/IdentityVerifyDocument"
         faceDetection:
@@ -1048,7 +1051,8 @@ components:
         - faceMatch
         - overallConfidence
       description: Combined result of document scan, face detection, and face
-        comparison run in one server call.
+        comparison run in one server call. Field names in this response are
+        camelCase (legacy naming, kept for compatibility).
     IdentityVerifyDocument:
       type: object
       properties:
@@ -1070,6 +1074,13 @@ components:
           type: string
         expirationDate:
           type: string
+        isExpired:
+          type:
+            - boolean
+            - "null"
+          description: true when expirationDate is before today (UTC calendar date), false
+            when it is today or later, null when the expiration date is missing
+            or could not be parsed.
         issuingCountry:
           type: string
         address:
@@ -1089,6 +1100,7 @@ components:
         - nationality
         - documentNumber
         - expirationDate
+        - isExpired
         - issuingCountry
         - confidence
       description: Subset of the document-scan response embedded in the verify result.
@@ -1159,6 +1171,10 @@ components:
           type: string
         expires_at:
           type: string
+          format: date-time
+          description: Only present when the session has an expiry (`expires_in_hours` or
+            the workflow's session-expiry setting); absent means the link
+            doesn't expire.
         links:
           type: array
           items:
@@ -1182,6 +1198,63 @@ components:
         - rel
         - href
       description: HATEOAS-style link to a related resource.
+    CreateSessionErrorResponse:
+      anyOf:
+        - $ref: "#/components/schemas/SimpleErrorResponse"
+        - $ref: "#/components/schemas/ValidationErrorResponse"
+        - $ref: "#/components/schemas/NamesRequiredErrorResponse"
+        - $ref: "#/components/schemas/PhoneRequiredErrorResponse"
+      description: Validation failures carry `message` + `hints`; a name-less create
+        on a workflow that needs names carries `error`, `code` and, for
+        NAMES_REQUIRED_FOR_STEP, `steps`; a phone-less create on a workflow with
+        a phone step carries `error`, `code` PHONE_REQUIRED and `steps`; other
+        failures carry a single `error` string.
+    NamesRequiredErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          enum:
+            - NAMES_REQUIRED_NO_ID_STEP
+            - NAMES_REQUIRED_FOR_STEP
+        steps:
+          type: array
+          items:
+            type: string
+          description: "With NAMES_REQUIRED_FOR_STEP: the workflow step ids (API form)
+            that need the applicant's name."
+      required:
+        - error
+        - code
+      description: Returned when a session is created without applicant names but its
+        workflow cannot run without them.
+    PhoneRequiredErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: A phone number is required for this workflow.
+        code:
+          type: string
+          enum:
+            - PHONE_REQUIRED
+        steps:
+          type: array
+          items:
+            type: string
+          description: The workflow step ids (API form) that need the applicant's phone.
+          example:
+            - PHONE_VERIFICATION
+      required:
+        - error
+        - code
+        - steps
+      description: "Returned when a session is created without a phone (and the
+        applicant has none on file) but its workflow has a step that uses the
+        applicant's phone: PHONE_VERIFICATION, PHONE_TRUST_CHECK,
+        CARRIER_AGE_GATE or PHONE_OWNERSHIP_MATCH."
     CreateSessionRequest:
       type: object
       properties:
@@ -1191,14 +1264,40 @@ components:
         firstName:
           type: string
           example: Jane
+          description: "Optional. Sending only one of first_name / last_name is fine
+            (single-name applicants). When both are omitted (or blank) the
+            session is created without names: the session record and webhooks
+            carry `names_provided: false`, the names are read from the
+            applicant's ID document, the name-matches-ID check is skipped, and
+            the workflow must include an ID verification step, no name-matched
+            steps (DEEP_AGE, CREDIT_CHECK, PHONE_OWNERSHIP_MATCH,
+            identity-number lookups), and no E_SIGNATURE, PEP_SANCTIONS,
+            BACKGROUND_CHECK or ADDRESS_VERIFICATION step before the ID
+            verification step. Otherwise the create returns 400 with `code`
+            NAMES_REQUIRED_NO_ID_STEP or NAMES_REQUIRED_FOR_STEP."
         lastName:
           type: string
           example: Doe
+          description: "Optional. Sending only one of first_name / last_name is fine
+            (single-name applicants). When both are omitted (or blank) the
+            session is created without names: the session record and webhooks
+            carry `names_provided: false`, the names are read from the
+            applicant's ID document, the name-matches-ID check is skipped, and
+            the workflow must include an ID verification step, no name-matched
+            steps (DEEP_AGE, CREDIT_CHECK, PHONE_OWNERSHIP_MATCH,
+            identity-number lookups), and no E_SIGNATURE, PEP_SANCTIONS,
+            BACKGROUND_CHECK or ADDRESS_VERIFICATION step before the ID
+            verification step. Otherwise the create returns 400 with `code`
+            NAMES_REQUIRED_NO_ID_STEP or NAMES_REQUIRED_FOR_STEP."
         phone:
           type: string
           pattern: ^\+[1-9]\d{9,14}$
           example: "+15192223333"
-          description: Phone number in E.164 format.
+          description: "Phone number in E.164 format. Optional, unless the workflow has a
+            step that uses the applicant's phone (PHONE_VERIFICATION,
+            PHONE_TRUST_CHECK, CARRIER_AGE_GATE, PHONE_OWNERSHIP_MATCH) and the
+            applicant has no phone on file: then the create is refused with 400
+            and `code` PHONE_REQUIRED."
         externalId:
           type: string
           description: Caller-supplied identifier echoed back on responses and queryable
@@ -1226,9 +1325,6 @@ components:
             year). Overrides any workflow-level expiry.
       required:
         - email
-        - firstName
-        - lastName
-        - phone
       description: Body for creating an IDV/verification session. Snake_case keys are
         also accepted.
     ListSessionsResponse:
@@ -1314,6 +1410,13 @@ components:
             FACE_MISMATCH, LIVENESS_FACE_MISMATCH, LIVENESS_FAILED,
             DOCUMENT_EXPIRED, AGE_OUT_OF_RANGE and DOCUMENT_TYPE_NOT_ACCEPTED
             reject; the others send the session to manual review.
+        names_provided:
+          type: boolean
+          enum:
+            - false
+          description: "false when the session was created without first_name/last_name
+            (DIDV-961): the applicant's names are read from the ID and the
+            name-matches-ID check is skipped. Omitted otherwise."
         type:
           type: string
         session_progress:
@@ -1382,6 +1485,9 @@ components:
         user:
           type: object
           additionalProperties: {}
+          description: "The applicant. `first_name` / `last_name` are null when not known
+            yet: a session created without names (see `names_provided`) gets
+            them from the applicant's ID."
         sender_user:
           type: object
           additionalProperties: {}
@@ -1421,6 +1527,10 @@ components:
           type: string
           description: S3 object key under the sessions upload bucket. Echo this key in
             the step submission `uploads` map.
+        slot:
+          type: string
+          description: Logical slot to use as the key in the step submission.
+          example: employment_letter
         upload_type:
           type: string
           enum:
@@ -1431,12 +1541,19 @@ components:
             - tertiary_id_front
             - tertiary_id_back
             - selfie_front
+            - id_front_extra_1
+            - id_front_extra_2
+            - secondary_id_front_extra_1
+            - secondary_id_front_extra_2
+            - tertiary_id_front_extra_1
+            - tertiary_id_front_extra_2
+          description: Echoed for legacy `upload_type` requests. Omitted for dynamic slots.
         upload_url:
           type: string
           description: S3 presigned PUT URL. Send the file as the request body.
       required:
         - file_key
-        - upload_type
+        - slot
         - upload_url
     WorkflowRunnerErrorResponse:
       type: object
@@ -1469,6 +1586,9 @@ components:
                 - EXECUTION_STATE_NOT_FOUND
                 - STEP_NOT_FOUND
                 - SESSION_TERMINAL
+                - ID_CAPTURE_NOT_ENABLED
+                - ID_CAPTURE_RATE_LIMITED
+                - ID_CAPTURE_CLASSIFIER_UNAVAILABLE
                 - SESSION_ALREADY_STARTED
                 - NO_ACTIVE_STEP
                 - STEP_OUT_OF_ORDER
@@ -1479,6 +1599,10 @@ components:
                 - LIVENESS_UPLOAD_INCOMPLETE
                 - STEP_NOT_READY
                 - STEP_NOT_RUNNABLE
+                - NAMES_REQUIRED_NO_ID_STEP
+                - NAMES_REQUIRED_FOR_STEP
+                - PHONE_REQUIRED
+                - PHONE_VERIFICATION_UNAVAILABLE
                 - INTERNAL_ERROR
             - type: string
           description: "Machine-readable reason the request was refused. One of:
@@ -1486,13 +1610,17 @@ components:
             INVALID_UPLOAD_KEY, INVALID_MEDIA, UPLOAD_SLOT_NOT_REQUIRED,
             INSUFFICIENT_FUNDS, FORBIDDEN, ORGANIZATION_NOT_FOUND,
             WORKFLOW_NOT_FOUND, SESSION_NOT_FOUND, EXECUTION_STATE_NOT_FOUND,
-            STEP_NOT_FOUND, SESSION_TERMINAL, SESSION_ALREADY_STARTED,
-            NO_ACTIVE_STEP, STEP_OUT_OF_ORDER, STEP_NOT_SUBMITTABLE,
-            STEP_CONFLICT, LIVENESS_NOT_STARTED, LIVENESS_RESULT_NOT_READY,
-            LIVENESS_UPLOAD_INCOMPLETE, STEP_NOT_READY, STEP_NOT_RUNNABLE,
-            INTERNAL_ERROR. Clients must tolerate values outside this list, and
-            its absence: authentication failures raised before the request
-            reaches the runner carry no code or a different one."
+            STEP_NOT_FOUND, SESSION_TERMINAL, ID_CAPTURE_NOT_ENABLED,
+            ID_CAPTURE_RATE_LIMITED, ID_CAPTURE_CLASSIFIER_UNAVAILABLE,
+            SESSION_ALREADY_STARTED, NO_ACTIVE_STEP, STEP_OUT_OF_ORDER,
+            STEP_NOT_SUBMITTABLE, STEP_CONFLICT, LIVENESS_NOT_STARTED,
+            LIVENESS_RESULT_NOT_READY, LIVENESS_UPLOAD_INCOMPLETE,
+            STEP_NOT_READY, STEP_NOT_RUNNABLE, NAMES_REQUIRED_NO_ID_STEP,
+            NAMES_REQUIRED_FOR_STEP, PHONE_REQUIRED,
+            PHONE_VERIFICATION_UNAVAILABLE, INTERNAL_ERROR. Clients must
+            tolerate values outside this list, and its absence: authentication
+            failures raised before the request reaches the runner carry no code
+            or a different one."
           example: STEP_OUT_OF_ORDER
         current_step:
           type:
@@ -1509,6 +1637,13 @@ components:
         failure_reason:
           type: string
           description: Legacy reason string on retryable 409 responses. Frozen; use `code`.
+        steps:
+          type: array
+          items:
+            type: string
+          description: "With NAMES_REQUIRED_FOR_STEP: the workflow step ids (API form)
+            that need the applicant's name. With PHONE_REQUIRED on session
+            create: the step ids that need the applicant's phone."
         invalid_steps:
           type: array
           items:
@@ -1530,14 +1665,20 @@ components:
       required:
         - files
     SessionUploadFile:
+      anyOf:
+        - $ref: "#/components/schemas/LegacySessionUploadFile"
+        - $ref: "#/components/schemas/DynamicSessionUploadFile"
+      description: File to upload. Provide either the legacy `upload_type` field or
+        the current workflow requirement's dynamic `slot`, never both.
+    LegacySessionUploadFile:
       type: object
       properties:
         file_name:
           type: string
           minLength: 1
           example: front.jpg
-          description: Original file name. Its extension is used when building the S3
-            object key (`{timestamp}-{upload_type}.{ext}`).
+          description: Original file name. Its extension is used when building the
+            session-scoped S3 object key.
         content_type:
           type: string
           minLength: 1
@@ -1554,12 +1695,116 @@ components:
             - tertiary_id_front
             - tertiary_id_back
             - selfie_front
-          description: Hosted-flow Uploads slot this file will occupy on the session record.
+            - id_front_extra_1
+            - id_front_extra_2
+            - secondary_id_front_extra_1
+            - secondary_id_front_extra_2
+            - tertiary_id_front_extra_1
+            - tertiary_id_front_extra_2
+          description: Legacy ID/selfie upload slot. Use `slot` for config-driven workflow
+            uploads.
           example: id_front
       required:
         - file_name
         - content_type
         - upload_type
+      additionalProperties: false
+    DynamicSessionUploadFile:
+      type: object
+      properties:
+        file_name:
+          type: string
+          minLength: 1
+          example: front.jpg
+          description: Original file name. Its extension is used when building the
+            session-scoped S3 object key.
+        content_type:
+          type: string
+          minLength: 1
+          example: image/jpeg
+          description: MIME type of the file. Signed into the presigned URL — the PUT must
+            send the same Content-Type header.
+        slot:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Logical upload slot returned in the current workflow step's
+            requirements, such as `custom-prompts-list_0`, `signature_upload`,
+            or a configured document id.
+          example: employment_letter
+      required:
+        - file_name
+        - content_type
+        - slot
+      additionalProperties: false
+    IdCaptureDetectResponse:
+      type: object
+      properties:
+        present:
+          type: boolean
+          description: Whether a document is in the frame.
+        box:
+          type:
+            - array
+            - "null"
+          items:
+            type: number
+          description: The document's box, normalized 0-1.
+        document_type:
+          type:
+            - object
+            - "null"
+          properties:
+            id:
+              type:
+                - string
+                - "null"
+            confidence:
+              type: number
+            top3:
+              type: array
+              items:
+                type: array
+                prefixItems:
+                  - type: string
+                  - type: number
+          required:
+            - id
+            - confidence
+            - top3
+          additionalProperties: {}
+        model_version:
+          type: string
+      required:
+        - present
+      additionalProperties: {}
+    IdCaptureDetectRequest:
+      type: object
+      properties:
+        image_b64:
+          type: string
+          minLength: 1
+          maxLength: 2800000
+          pattern: ^[A-Za-z0-9+/]+={0,2}$
+          description: "The frame, a JPEG, base64-encoded. No data: prefix."
+        scan_id:
+          type: string
+          pattern: ^[A-Za-z0-9-]{8,64}$
+          description: Groups the frames of one capture.
+          example: sess-1-k3j9x2
+        frame:
+          type: integer
+          minimum: 0
+          maximum: 100000
+          description: The frame's index within the scan.
+        method:
+          type: string
+          pattern: ^[a-z_]{1,32}$
+          description: The document group being scanned, e.g. dl.
+      required:
+        - image_b64
+        - scan_id
+      additionalProperties: false
     ListWorkflowsResponse:
       type: object
       properties:
@@ -1585,12 +1830,36 @@ components:
           description: Step ids in API form (UPPER_SNAKE).
         created_at:
           type: string
+        failure_settings:
+          $ref: "#/components/schemas/WorkflowFailureSettings"
       required:
         - id
         - name
         - status
         - steps
         - created_at
+        - failure_settings
+    WorkflowFailureSettings:
+      type:
+        - object
+        - "null"
+      properties:
+        active:
+          type: boolean
+          description: Whether the retry cap is enforced.
+        max_attempts:
+          type:
+            - integer
+            - "null"
+          description: Failed attempts allowed before the session fails.
+      required:
+        - active
+        - max_attempts
+      description: Retry cap stored on the workflow. When active and an applicant
+        reaches max_attempts failed attempts, the session fails. null means no
+        cap is set (typically older workflows); applicants can retry without
+        limit. Workflows created through the API default to on, 3 attempts.
+        Existing workflows can be changed in Backoffice.
     GetWorkflowResponse:
       type: object
       properties:
@@ -1617,6 +1886,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkflowStepResponse"
+        failure_settings:
+          $ref: "#/components/schemas/WorkflowFailureSettings"
       required:
         - id
         - name
@@ -1625,12 +1896,14 @@ components:
         - created_at
         - updated_at
         - steps
+        - failure_settings
     WorkflowStepResponse:
       type: object
       properties:
         id:
           type: string
-          description: Workflow step identifier (db format, e.g. id-verification).
+          description: Workflow step identifier in API form (UPPER_SNAKE, e.g.
+            ID_VERIFICATION).
         config:
           type: object
           additionalProperties: {}
@@ -1722,7 +1995,12 @@ components:
                       expiry_date_years:
                         type: integer
                         minimum: 0
-                        maximum: 10
+                        maximum: 4
+                        default: 2
+                        description: "Minimum time the ID must stay valid past the verification date. A
+                          mode, not a number of years: 0 = off (no
+                          minimum-validity check), 1 = 30 days, 2 = 60 days, 3 =
+                          180 days, 4 = 365 days. Defaults to 2 when omitted."
                       require_secondary_id:
                         type: boolean
                       require_tertiary_id:
@@ -1830,6 +2108,22 @@ components:
                   id:
                     type: string
                     enum:
+                      - FACE_LIVENESS_CONSENT_SETTINGS
+                  config:
+                    type: object
+                    properties:
+                      face_liveness:
+                        type: boolean
+                      require_signature:
+                        type: boolean
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
                       - AGE_ESTIMATION
                   config:
                     type: object
@@ -1895,6 +2189,177 @@ components:
                   id:
                     type: string
                     enum:
+                      - DEEPFAKE_DETECTION
+                  config:
+                    type: object
+                    properties:
+                      mesh_visuals:
+                        type: string
+                        enum:
+                          - 3d-ar-mesh
+                          - no-mesh
+                      use_custom_word:
+                        type: boolean
+                      challenge_word:
+                        type: string
+                        maxLength: 100
+                      confidence_threshold:
+                        type: number
+                        minimum: 0
+                        maximum: 100
+                      bfp_enabled:
+                        type: boolean
+                      device_integrity_enabled:
+                        type: boolean
+                      block_emulators:
+                        type: boolean
+                      block_headless_browsers:
+                        type: boolean
+                      soft_signal_sensitivity:
+                        type: number
+                        minimum: 0
+                        maximum: 1
+                      media_source_enabled:
+                        type: boolean
+                      block_virtual_cameras:
+                        type: boolean
+                      enable_challenge_response:
+                        type: boolean
+                      frame_timing_sensitivity:
+                        type: number
+                        minimum: 0.1
+                        maximum: 2
+                      challenge_pass_threshold:
+                        type: string
+                        enum:
+                          - 2-of-3
+                          - 3-of-3
+                      environment_enabled:
+                        type: boolean
+                      edge_consistency_weight:
+                        type: number
+                        minimum: 0
+                        maximum: 100
+                      lighting_coherence_weight:
+                        type: number
+                        minimum: 0
+                        maximum: 100
+                      compression_artifact_weight:
+                        type: number
+                        minimum: 0
+                        maximum: 100
+                      analysis_frequency:
+                        type: string
+                        enum:
+                          - every-frame
+                          - every-3rd
+                          - every-5th
+                          - every-10th
+                      verdict_thresholds:
+                        type: array
+                        prefixItems:
+                          - type: number
+                            minimum: 0
+                            maximum: 100
+                          - type: number
+                            minimum: 0
+                            maximum: 100
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - DEEP_AGE
+                  config:
+                    type: object
+                    properties:
+                      method:
+                        type: string
+                        enum:
+                          - quiz
+                          - credit-card
+                          - parent-connect
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - ADDRESS_VERIFICATION
+                  config:
+                    type: object
+                    properties:
+                      num_questions:
+                        type: integer
+                        minimum: 3
+                        maximum: 10
+                      enable_address_escalation:
+                        type: boolean
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - TITLE_SEARCH
+                  config:
+                    type: object
+                    properties:
+                      country:
+                        type: string
+                        enum:
+                          - usa
+                      enhanced_title_search:
+                        type: boolean
+                      location_info_fields:
+                        type: object
+                        properties:
+                          subdivision:
+                            type: boolean
+                          latitude:
+                            type: boolean
+                          longitude:
+                            type: boolean
+                          county_fips:
+                            type: boolean
+                          township_range_section:
+                            type: boolean
+                          municipality_township:
+                            type: boolean
+                          census_tract:
+                            type: boolean
+                          census_block:
+                            type: boolean
+                          tract_number:
+                            type: boolean
+                          legal_book_page:
+                            type: boolean
+                          legal_lot:
+                            type: boolean
+                          legal_block:
+                            type: boolean
+                          map_reference_one:
+                            type: boolean
+                          map_reference_two:
+                            type: boolean
+                          neighborhood_name:
+                            type: boolean
+                        additionalProperties: false
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
                       - PEP_SANCTIONS
                 required:
                   - id
@@ -1919,10 +2384,16 @@ components:
                         type: array
                         items:
                           type: string
+                        description: At least one of allowed_jurisdictions / blocked_jurisdictions must
+                          be non-empty; a step with both lists empty would allow
+                          every country and is rejected (400).
                       blocked_jurisdictions:
                         type: array
                         items:
                           type: string
+                        description: At least one of allowed_jurisdictions / blocked_jurisdictions must
+                          be non-empty; a step with both lists empty would allow
+                          every country and is rejected (400).
                       out_of_jurisdiction_action:
                         type: string
                         enum:
@@ -1988,6 +2459,24 @@ components:
                           - flag
                           - step-up
                           - allow
+                      relay_enabled:
+                        type: boolean
+                        description: Detect Apple iCloud Private Relay egress IPs as their own type
+                          (RELAY). New configs default to true. Configs stored
+                          before this setting existed keep relay detection off,
+                          and updating other fields keeps it off; set
+                          relay_enabled to turn it on.
+                      relay_action:
+                        type: string
+                        enum:
+                          - block
+                          - flag
+                          - step-up
+                          - allow
+                        description: Action on an iCloud Private Relay IP. New configs default to flag.
+                          Configs stored before this setting existed use their
+                          datacenter_action, and updating other fields keeps
+                          that.
                       trusted_ip_list:
                         anyOf:
                           - type: string
@@ -2120,14 +2609,326 @@ components:
                     additionalProperties: false
                 required:
                   - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - CUSTOM_PROMPT
+                  config:
+                    type: object
+                    properties:
+                      prompts:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            text:
+                              type: string
+                          required:
+                            - text
+                          additionalProperties: false
+                        minItems: 1
+                    required:
+                      - prompts
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - CONSENT
+                  config:
+                    type: object
+                    properties:
+                      consent_text:
+                        type: string
+                      require_signature:
+                        type: boolean
+                    required:
+                      - consent_text
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - BANK_STATEMENT_UPLOAD
+                  config:
+                    type: object
+                    properties:
+                      account_type:
+                        type: string
+                        enum:
+                          - checking
+                          - savings
+                      statement_period:
+                        type: string
+                        enum:
+                          - "3"
+                          - "6"
+                          - "12"
+                      country:
+                        type: string
+                        enum:
+                          - canada
+                          - usa
+                      analysis_types:
+                        type: object
+                        properties:
+                          transaction_categorization:
+                            type: boolean
+                          net_worth_assessment:
+                            type: boolean
+                          mortgage_qualification_report:
+                            type: boolean
+                          tenant_financial_screening:
+                            type: boolean
+                          fraud_anomaly_detection:
+                            type: boolean
+                        additionalProperties: false
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - AI_BANK_STATEMENT_ANALYSIS
+                  config:
+                    type: object
+                    properties: {}
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - DOCUMENT_UPLOAD
+                  config:
+                    type: object
+                    properties:
+                      documents:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                              pattern: ^[A-Za-z0-9_-]+$
+                            description:
+                              type: string
+                              minLength: 1
+                            optional:
+                              type: boolean
+                            extractions:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  prompt:
+                                    type: string
+                                    minLength: 1
+                                  parameter:
+                                    type: string
+                                    pattern: ^[A-Za-z0-9_]+$
+                                required:
+                                  - prompt
+                                  - parameter
+                                additionalProperties: false
+                          required:
+                            - id
+                            - description
+                          additionalProperties: false
+                        minItems: 1
+                      minimum_optional_uploads:
+                        type: integer
+                        minimum: 0
+                      enable_document_risk_analysis:
+                        type: boolean
+                      document_risk_threshold:
+                        type: integer
+                        minimum: 0
+                        maximum: 100
+                    required:
+                      - documents
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - WHITE_LABEL
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - PHONE_TRUST_CHECK
+                  config:
+                    type: object
+                    properties:
+                      sensitivity:
+                        type: string
+                        enum:
+                          - low
+                          - medium
+                          - high
+                      action_on_trip:
+                        type: string
+                        enum:
+                          - flag
+                          - step_up
+                        description: Action persisted by the Backoffice phone-intelligence builder.
+                          Phone steps use `step_up` rather than the generic
+                          enforcement value `step-up`.
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - CARRIER_AGE_GATE
+                  config:
+                    type: object
+                    properties:
+                      minimum_age:
+                        type: number
+                        enum:
+                          - 18
+                        description: The carrier-backed gate currently supports age 18 only; other ages
+                          are rejected rather than treated as equivalent.
+                      action_on_trip:
+                        type: string
+                        enum:
+                          - flag
+                          - step_up
+                        description: Action persisted by the Backoffice phone-intelligence builder.
+                          Phone steps use `step_up` rather than the generic
+                          enforcement value `step-up`.
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - PHONE_OWNERSHIP_MATCH
+                  config:
+                    type: object
+                    properties:
+                      strictness:
+                        type: string
+                        enum:
+                          - relaxed
+                          - medium
+                          - strict
+                      action_on_trip:
+                        type: string
+                        enum:
+                          - flag
+                          - step_up
+                        description: Action persisted by the Backoffice phone-intelligence builder.
+                          Phone steps use `step_up` rather than the generic
+                          enforcement value `step-up`.
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - PHONE_VERIFICATION
+                  config:
+                    type: object
+                    properties:
+                      verification_prompt:
+                        type: string
+                        minLength: 1
+                        maxLength: 60
+                    additionalProperties: false
+                required:
+                  - id
+              - type: object
+                properties:
+                  id:
+                    type: string
+                    enum:
+                      - E_SIGNATURE
+                  config:
+                    type: object
+                    properties:
+                      template_id:
+                        type: string
+                        minLength: 1
+                      template_name:
+                        type: string
+                      template_signer_count:
+                        anyOf:
+                          - type: number
+                            enum:
+                              - 1
+                          - type: number
+                            enum:
+                              - 2
+                      include_sender_as_signer:
+                        type: boolean
+                      sender_role:
+                        type: string
+                        minLength: 1
+                      allow_typed_signature:
+                        type: boolean
+                    required:
+                      - template_id
+                      - template_signer_count
+                    additionalProperties: false
+                required:
+                  - id
+                  - config
           minItems: 1
           maxItems: 10
           description: Ordered list of unique workflow steps. Max 10 steps; each id may
             appear at most once.
+        failure_settings:
+          $ref: "#/components/schemas/WorkflowFailureSettingsRequest"
       required:
         - name
         - steps
       description: Body for creating a workflow.
+    WorkflowFailureSettingsRequest:
+      type: object
+      properties:
+        active:
+          type: boolean
+          description: Whether the retry cap is enforced. When false, applicants can retry
+            without limit.
+        max_attempts:
+          type: integer
+          minimum: 1
+          maximum: 10
+          description: Failed attempts allowed before the session fails (1-10). Required
+            when active is true; defaults to 3 when active is false.
+          example: 3
+      required:
+        - active
+      additionalProperties: false
+      description: "Retry cap for the workflow. Omit to use the default: on, 3
+        attempts. When an applicant reaches the cap, the session fails."
     UpdateWorkflowStepConfigResponse:
       type: object
       properties:
@@ -2201,6 +3002,14 @@ components:
       anyOf:
         - $ref: "#/components/schemas/IdVerificationRequirements"
         - $ref: "#/components/schemas/FaceLivenessRequirements"
+        - $ref: "#/components/schemas/AgeEstimationRequirements"
+        - $ref: "#/components/schemas/ScreeningRequirements"
+        - $ref: "#/components/schemas/SessionPhoneScreeningRequirements"
+        - $ref: "#/components/schemas/PhoneVerificationRequirements"
+        - $ref: "#/components/schemas/BackgroundCheckRequirements"
+        - $ref: "#/components/schemas/AiBankStatementAnalysisRequirements"
+        - $ref: "#/components/schemas/CreditCheckRequirements"
+        - $ref: "#/components/schemas/KybRequirements"
       description: Client-facing capture requirements derived from the workflow step
         config. The shape depends on the step type.
     IdVerificationRequirements:
@@ -2278,6 +3087,255 @@ components:
       required:
         - challenge_type
         - confidence_threshold
+    AgeEstimationRequirements:
+      type: object
+      properties:
+        upload_slots:
+          type: array
+          prefixItems:
+            - type: string
+              enum:
+                - selfie_front
+        minimum_age:
+          type: number
+        maximum_age:
+          type: number
+      required:
+        - upload_slots
+        - minimum_age
+        - maximum_age
+    ScreeningRequirements:
+      type: object
+      properties:
+        identity_fields:
+          type: array
+          prefixItems:
+            - type: string
+              enum:
+                - first_name
+            - type: string
+              enum:
+                - last_name
+            - type: string
+              enum:
+                - date_of_birth
+        optional_fields:
+          type: array
+          items:
+            type: string
+        actions:
+          type: array
+          prefixItems:
+            - type: string
+              enum:
+                - start
+            - type: string
+              enum:
+                - complete
+      required:
+        - identity_fields
+        - optional_fields
+    SessionPhoneScreeningRequirements:
+      type: object
+      properties:
+        session_fields:
+          type: array
+          items:
+            type: string
+            enum:
+              - phone
+              - first_name
+              - last_name
+        submission_fields:
+          type: array
+          prefixItems: []
+      required:
+        - session_fields
+        - submission_fields
+      description: Server-side phone screening requirements. Values are read from the
+        workflow session, so the step submission body is empty.
+    PhoneVerificationRequirements:
+      type: object
+      properties:
+        actions:
+          type: array
+          prefixItems:
+            - type: string
+              enum:
+                - start
+            - type: string
+              enum:
+                - complete
+        session_fields:
+          type: array
+          prefixItems:
+            - type: string
+              enum:
+                - phone
+        asynchronous:
+          type: boolean
+          enum:
+            - true
+        poll_interval_seconds:
+          type: number
+          enum:
+            - 5
+      required:
+        - actions
+        - session_fields
+        - asynchronous
+        - poll_interval_seconds
+    BackgroundCheckRequirements:
+      type: object
+      properties:
+        actions:
+          type: array
+          prefixItems:
+            - type: string
+              enum:
+                - start
+            - type: string
+              enum:
+                - complete
+        hosted_flow:
+          type: boolean
+          enum:
+            - true
+        country:
+          type: string
+          enum:
+            - canada
+        prerequisite_steps:
+          type: array
+          prefixItems:
+            - type: string
+              enum:
+                - ID_VERIFICATION
+        asynchronous:
+          type: boolean
+          enum:
+            - true
+      required:
+        - actions
+        - hosted_flow
+        - country
+        - prerequisite_steps
+        - asynchronous
+      description: Hosted asynchronous Canadian background check. ID verification must
+        complete first.
+    AiBankStatementAnalysisRequirements:
+      type: object
+      properties:
+        prerequisite_steps:
+          type: array
+          prefixItems:
+            - type: string
+              enum:
+                - BANK_STATEMENT_UPLOAD
+        submission_fields:
+          type: array
+          prefixItems: []
+        asynchronous:
+          type: boolean
+          enum:
+            - true
+      required:
+        - prerequisite_steps
+        - submission_fields
+        - asynchronous
+      description: Server-auto analysis acknowledgement. A bank-statement upload must
+        complete first.
+    CreditCheckRequirements:
+      type: object
+      properties:
+        prerequisite_steps:
+          type: array
+          prefixItems:
+            - type: string
+              enum:
+                - ID_VERIFICATION
+        input_fields:
+          type: array
+          prefixItems:
+            - type: string
+              enum:
+                - address
+            - type: string
+              enum:
+                - date_of_birth
+            - type: string
+              enum:
+                - sin
+            - type: string
+              enum:
+                - consent
+        inquiry_type:
+          type: string
+          enum:
+            - soft
+            - hard
+        country:
+          type: string
+          enum:
+            - canada
+        consent_required:
+          type: boolean
+          enum:
+            - true
+        asynchronous:
+          type: boolean
+          enum:
+            - true
+      required:
+        - prerequisite_steps
+        - input_fields
+        - inquiry_type
+        - country
+        - consent_required
+        - asynchronous
+      description: Canadian consumer-credit input and consent requirements. ID
+        verification must complete first.
+    KybRequirements:
+      type: object
+      properties:
+        input_sections:
+          type: array
+          prefixItems:
+            - type: string
+              enum:
+                - business
+            - type: string
+              enum:
+                - registered_address
+            - type: string
+              enum:
+                - beneficial_owners
+            - type: string
+              enum:
+                - officers
+            - type: string
+              enum:
+                - documents
+        documents:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              optional:
+                type: boolean
+            required:
+              - id
+              - optional
+        asynchronous:
+          type: boolean
+          enum:
+            - true
+      required:
+        - input_sections
+        - documents
+        - asynchronous
     CreateWorkflowSessionRequest:
       type: object
       properties:
@@ -2287,18 +3345,41 @@ components:
           example: user@example.com
         first_name:
           type: string
-          minLength: 1
           example: Jane
+          description: "Optional. Sending only one of first_name / last_name is fine
+            (single-name applicants). When both are omitted (or blank) the
+            session is created without names: the session record and webhooks
+            carry `names_provided: false`, the names are read from the
+            applicant's ID document, the name-matches-ID check is skipped, and
+            the workflow must include an ID verification step, no name-matched
+            steps (DEEP_AGE, CREDIT_CHECK, PHONE_OWNERSHIP_MATCH,
+            identity-number lookups), and no E_SIGNATURE, PEP_SANCTIONS,
+            BACKGROUND_CHECK or ADDRESS_VERIFICATION step before the ID
+            verification step. Otherwise the create returns 400 with `code`
+            NAMES_REQUIRED_NO_ID_STEP or NAMES_REQUIRED_FOR_STEP."
         last_name:
           type: string
-          minLength: 1
           example: Doe
+          description: "Optional. Sending only one of first_name / last_name is fine
+            (single-name applicants). When both are omitted (or blank) the
+            session is created without names: the session record and webhooks
+            carry `names_provided: false`, the names are read from the
+            applicant's ID document, the name-matches-ID check is skipped, and
+            the workflow must include an ID verification step, no name-matched
+            steps (DEEP_AGE, CREDIT_CHECK, PHONE_OWNERSHIP_MATCH,
+            identity-number lookups), and no E_SIGNATURE, PEP_SANCTIONS,
+            BACKGROUND_CHECK or ADDRESS_VERIFICATION step before the ID
+            verification step. Otherwise the create returns 400 with `code`
+            NAMES_REQUIRED_NO_ID_STEP or NAMES_REQUIRED_FOR_STEP."
         phone:
           type: string
           pattern: ^\+[1-9]\d{9,14}$
           example: "+15192223333"
-          description: Phone number in E.164 format. Required when the workflow includes a
-            phone verification step.
+          description: "Phone number in E.164 format. Optional, unless the workflow has a
+            step that uses the applicant's phone (PHONE_VERIFICATION,
+            PHONE_TRUST_CHECK, CARRIER_AGE_GATE, PHONE_OWNERSHIP_MATCH) and the
+            applicant has no phone on file: then the create is refused with 400
+            and `code` PHONE_REQUIRED."
         external_id:
           type: string
           description: Caller-supplied identifier echoed back on responses and queryable
@@ -2311,8 +3392,6 @@ components:
             year). Overrides workflow settings.sessionExpiry.
       required:
         - email
-        - first_name
-        - last_name
       description: Body for creating a headless workflow session (no invite, no hosted
         URL). Snake_case and camelCase keys are accepted at runtime.
     GetSessionWorkflowResponse:
@@ -2431,9 +3510,37 @@ components:
             - SELFIE_ID_FACE_MISMATCH
             - LIVENESS_ID_MISMATCH
             - LIVENESS_FAILED
+            - DEEPFAKE_DETECTED
+            - DEEPFAKE_CHECK_UNAVAILABLE
+            - INJECTION_DETECTED
+            - INJECTION_CHECK_UNAVAILABLE
+            - ANTI_CHEAT_BLOCKED
+            - ANTI_CHEAT_CHECK_UNAVAILABLE
+            - VPN_DETECTED
+            - VPN_CHECK_UNAVAILABLE
+            - IP_JURISDICTION_BLOCKED
+            - IP_JURISDICTION_CHECK_UNAVAILABLE
+            - AGE_NOT_VERIFIED
+            - CONSENT_DECLINED
+            - ADVERSE_MEDIA_CHECK_UNAVAILABLE
+            - ADDRESS_NOT_VERIFIED
+            - BACKGROUND_CHECK_RECORD_MATCH
+            - BACKGROUND_CHECK_UNAVAILABLE
+            - PHONE_CALL_FAILED
+            - PHONE_VERIFICATION_FAILED
+            - PHONE_TRUST_CHECK_UNAVAILABLE
+            - CARRIER_AGE_GATE_UNAVAILABLE
+            - PHONE_OWNERSHIP_MATCH_UNAVAILABLE
+            - PROOF_CALL_FAILED
+            - PROOF_CALL_CANCELLED
+            - PROOF_CALL_UNAVAILABLE
+            - TITLE_SEARCH_UNAVAILABLE
+            - CREDIT_CHECK_CONSENT_NOT_SAVED
             - UNKNOWN
-          description: Stable, machine-readable cause of the failure. New values may be
-            added; clients must tolerate values they do not know.
+          description: Stable, machine-readable cause of the failure. `UNKNOWN` only for a
+            failure the server cannot classify; the step's `failure_reason`
+            still carries the raw reason. New values may be added; clients must
+            tolerate values they do not know.
           example: SELFIE_ID_FACE_MISMATCH
         category:
           type: string
@@ -2442,9 +3549,14 @@ components:
             - SELFIE
             - FACE_MATCH
             - LIVENESS
+            - RISK
+            - COMPLIANCE
             - OTHER
-          description: Coarse grouping of the cause. New values may be added; clients must
-            tolerate values they do not know.
+          description: Coarse grouping of the cause. `RISK` covers fraud and tampering
+            signals (deepfake, injection, anti-cheat, VPN); `COMPLIANCE` covers
+            regulatory gates and screening (IP jurisdiction, age, consent,
+            adverse media, address, background check). New values may be added;
+            clients must tolerate values they do not know.
           example: FACE_MATCH
         user_action:
           type: string
@@ -2588,6 +3700,42 @@ components:
           description: FACE_LIVENESS-only payload. `start` returns streaming credentials;
             `complete` returns the pass/fail result. Omitted for
             ID_VERIFICATION.
+        phone_trust_check:
+          $ref: "#/components/schemas/RunnerPhoneTrustResponse"
+        carrier_age_gate:
+          $ref: "#/components/schemas/RunnerCarrierAgeGateResponse"
+        phone_ownership_match:
+          $ref: "#/components/schemas/RunnerPhoneOwnershipResponse"
+        ai_bank_statement_analysis:
+          type: object
+          properties:
+            bank_statement_id:
+              type: string
+            status:
+              type: string
+              enum:
+                - QUEUED
+          required:
+            - bank_statement_id
+            - status
+          description: AI_BANK_STATEMENT_ANALYSIS-only queued analysis acknowledgement.
+        phone_verification:
+          type: object
+          properties:
+            status:
+              type: string
+              description: Normalized call state, such as pending, in-progress, or completed.
+            passed:
+              type: boolean
+              description: Present after completion; true when the spoken phrase matched.
+            reused:
+              type: boolean
+              description: Present on start; true when an existing in-progress call was
+                reused.
+          required:
+            - status
+          description: PHONE_VERIFICATION-only call state. Start returns the operation
+            state; complete adds pass/fail.
       required:
         - step_id
         - step_status
@@ -2599,7 +3747,7 @@ components:
         - session_status
         - session_progress
       description: Step submission result envelope. All runnable steps share the
-        common fields; FACE_LIVENESS additionally returns a `liveness` object.
+        common fields and may add a step-specific result object.
     FaceLivenessStartResult:
       type: object
       properties:
@@ -2643,14 +3791,18 @@ components:
       properties:
         status:
           type: string
-          description: Normalized Rekognition liveness status (e.g. SUCCEEDED, FAILED).
+          enum:
+            - SUCCEEDED
+            - FAILED
+          description: "Outcome of this attempt: SUCCEEDED when the step passed, FAILED
+            for any failed attempt (the liveness check failed, or the liveness
+            face did not match the ID)."
           example: SUCCEEDED
         confidence:
-          type:
-            - number
-            - "null"
-          description: Liveness confidence score when available; null when Rekognition
-            omits it.
+          type: number
+          description: Liveness confidence score (0-100). Present only on a pass. Omitted
+            on a failed attempt so the score can't be used to tune a spoof
+            against the threshold.
           example: 93.1
         passed:
           type: boolean
@@ -2658,17 +3810,332 @@ components:
             configured threshold.
       required:
         - status
-        - confidence
         - passed
+    RunnerPhoneTrustResponse:
+      type: object
+      properties:
+        tripped:
+          type: boolean
+          description: True when the signals below exceed the chosen sensitivity. The
+            check never blocks; act on this in your own flow.
+        trip_reasons:
+          type: array
+          items:
+            type: string
+            enum:
+              - SIM_SWAP_HIGH_RISK
+              - SIM_SWAP_MEDIUM_RISK
+              - CALL_FORWARDING_ACTIVE
+        sim_swapped_risk:
+          type: string
+          enum:
+            - NO_DATA
+            - LOW_RISK
+            - MEDIUM_RISK
+            - HIGH_RISK
+            - ERROR
+          description: "HIGH_RISK = SIM changed in the last 72 hours; MEDIUM_RISK = in the
+            last 30 days; LOW_RISK = no recent change; NO_DATA = the carrier
+            holds no servable data (normal where the carrier route is not live).
+            ERROR: the phone data provider rejected the request; the check did
+            not run and is not billed."
+        sim_changed_date:
+          type: string
+          format: date-time
+          description: When the carrier last recorded a SIM change, if reported.
+        forwarding_risk:
+          type: string
+          enum:
+            - NO_DATA
+            - NO_RISK
+            - HIGH_RISK
+            - ERROR
+          description: "HIGH_RISK = unconditional call forwarding is active on the line.
+            ERROR: the phone data provider rejected the request; the check did
+            not run and is not billed."
+        sensitivity:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+        status_message:
+          type: string
+          example: Response from one supplier
+        checked_at:
+          type: string
+          format: date-time
+        correlation_id:
+          type: string
+          description: Provider correlation id — quote it in support requests.
+        session_id:
+          type: string
+          description: Present when the result was attached to a verification session via
+            `sessionId`.
+      required:
+        - tripped
+        - trip_reasons
+        - sim_swapped_risk
+        - forwarding_risk
+        - sensitivity
+        - status_message
+        - checked_at
+      description: PHONE_TRUST_CHECK-only carrier risk result.
+    RunnerCarrierAgeGateResponse:
+      type: object
+      properties:
+        outcome:
+          type: string
+          enum:
+            - PASS
+            - FAIL
+            - NO_DATA
+            - ERROR
+          description: "PASS = the carrier confirms the subscriber is at least
+            `requiredAge`; FAIL = the carrier reports they are under it; NO_DATA
+            = the carrier holds no servable data for this number (normal where
+            the carrier route is not live). ERROR: the phone data provider
+            rejected the request; the check did not run and is not billed."
+        age_verified:
+          type: string
+          enum:
+            - VERIFIED
+            - NOT_VERIFIED
+            - NO_DATA
+            - ERROR
+          description: "The carrier's raw age answer behind `outcome`. ERROR: the phone
+            data provider rejected the request; the check did not run and is not
+            billed."
+        required_age:
+          type: integer
+          example: 18
+        carrier_threshold:
+          type: integer
+          description: The age threshold the carrier applied, when reported.
+        status_message:
+          type: string
+          example: Response from one supplier
+        checked_at:
+          type: string
+          format: date-time
+        correlation_id:
+          type: string
+          description: Provider correlation id — quote it in support requests.
+        session_id:
+          type: string
+          description: Present when the result was attached to a verification session via
+            `sessionId`.
+      required:
+        - outcome
+        - age_verified
+        - required_age
+        - status_message
+        - checked_at
+      description: CARRIER_AGE_GATE-only carrier age result.
+    RunnerPhoneOwnershipResponse:
+      type: object
+      properties:
+        outcome:
+          type: string
+          enum:
+            - MATCH
+            - NO_MATCH
+            - NO_DATA
+            - ERROR
+          description: "MATCH = carrier name score ≥ threshold; NO_MATCH = below it;
+            NO_DATA = the carrier holds no servable subscriber data for this
+            number (normal where the carrier route is not live). ERROR: the
+            phone data provider rejected the request; the check did not run and
+            is not billed."
+        name_score:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        first_name_score:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        last_name_score:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        dob_score:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        address_score:
+          type: integer
+          minimum: -1
+          maximum: 100
+          description: -1 = carrier holds no data, 0 = held but no match, 1–99 partial,
+            100 exact.
+        strictness:
+          type: string
+          enum:
+            - relaxed
+            - medium
+            - strict
+        threshold:
+          type: integer
+          example: 70
+        status_message:
+          type: string
+          example: Response from one supplier
+        checked_at:
+          type: string
+          format: date-time
+        correlation_id:
+          type: string
+          description: Provider correlation id — quote it in support requests.
+        session_id:
+          type: string
+          description: Present when the result was attached to a verification session via
+            `sessionId`.
+      required:
+        - outcome
+        - strictness
+        - threshold
+        - status_message
+        - checked_at
+      description: PHONE_OWNERSHIP_MATCH-only subscriber-name match result.
     WorkflowStepSubmission:
       anyOf:
         - $ref: "#/components/schemas/IdVerificationStepSubmission"
         - $ref: "#/components/schemas/FaceLivenessStepSubmission"
-      description: Submission body for a workflow step. The accepted shape depends on
-        the step type and on the step's stored config — e.g. an ID verification
-        step with require-secondary-id requires secondary upload slots.
-        Front-vs-back capture for ID verification is decided per declared
-        document type (passports are front-only).
+        - $ref: "#/components/schemas/ConsentStepSubmission"
+        - type: object
+          properties: {}
+          additionalProperties: false
+        - $ref: "#/components/schemas/AgeEstimationStepSubmission"
+        - type: object
+          properties:
+            action:
+              type: string
+              enum:
+                - start
+            include_audio:
+              type: boolean
+          required:
+            - action
+          additionalProperties: false
+        - type: object
+          properties:
+            action:
+              type: string
+              enum:
+                - complete
+            scan_duration_ms:
+              type: number
+              minimum: 0
+            frame_meta:
+              type: array
+              items:
+                type: object
+                properties:
+                  action_id:
+                    type: string
+                    minLength: 1
+                  action:
+                    type: string
+                    enum:
+                      - hold-still
+                      - blink
+                      - turn-left
+                      - turn-right
+                      - speak-prompt
+                  timestamp:
+                    type: number
+                  yaw:
+                    type: number
+                  pitch:
+                    type: number
+                  roll:
+                    type: number
+                  left_eye_openness:
+                    type: number
+                  right_eye_openness:
+                    type: number
+                  face_detected:
+                    type: boolean
+                required:
+                  - action_id
+                  - action
+                  - timestamp
+                  - yaw
+                  - pitch
+                  - roll
+                  - left_eye_openness
+                  - right_eye_openness
+                  - face_detected
+                additionalProperties: false
+            s3_keys:
+              type: object
+              properties:
+                frame_0:
+                  type: string
+                  minLength: 1
+                frame_1:
+                  type: string
+                  minLength: 1
+                frame_2:
+                  type: string
+                  minLength: 1
+                frame_3:
+                  type: string
+                  minLength: 1
+                frame_4:
+                  type: string
+                  minLength: 1
+                frame_5:
+                  type: string
+                  minLength: 1
+                audio_clip:
+                  type: string
+                  minLength: 1
+                video_clip:
+                  type: string
+                  minLength: 1
+              required:
+                - frame_0
+                - frame_1
+                - frame_2
+                - frame_3
+                - frame_4
+                - frame_5
+              additionalProperties: false
+          required:
+            - action
+            - scan_duration_ms
+            - frame_meta
+            - s3_keys
+          additionalProperties: false
+        - $ref: "#/components/schemas/HostedWorkflowStepSubmission"
+        - $ref: "#/components/schemas/TitleSearchStepSubmission"
+        - $ref: "#/components/schemas/PepSanctionsStepSubmission"
+        - $ref: "#/components/schemas/AdverseMediaStepSubmission"
+        - $ref: "#/components/schemas/IpCheckStepSubmission"
+        - $ref: "#/components/schemas/InjectionDetectionStepSubmission"
+        - $ref: "#/components/schemas/AntiCheatStepSubmission"
+        - $ref: "#/components/schemas/CustomPromptStepSubmission"
+        - $ref: "#/components/schemas/ConsentStepSubmission"
+        - $ref: "#/components/schemas/BankStatementUploadStepSubmission"
+        - $ref: "#/components/schemas/AiBankStatementAnalysisStepSubmission"
+        - $ref: "#/components/schemas/DocumentUploadStepSubmission"
+        - $ref: "#/components/schemas/PresentationAcknowledgementStepSubmission"
+        - $ref: "#/components/schemas/SessionPhoneScreeningStepSubmission"
+        - $ref: "#/components/schemas/PhoneVerificationStepSubmission"
+      description: Submission body for the current workflow step. Use the shape for
+        the step_id in the request path and the requirements returned by the
+        workflow runner. Multi-phase steps use their action field;
+        config-dependent upload slots and requirements are enforced at runtime.
     IdVerificationStepSubmission:
       type: object
       properties:
@@ -2703,9 +4170,101 @@ components:
           required:
             - id_front
             - selfie_front
+        capture_classification:
+          $ref: "#/components/schemas/CaptureClassification"
+        extra_frame_uploads:
+          $ref: "#/components/schemas/ExtraFrameUploads"
       required:
         - document_type
         - uploads
+    CaptureClassification:
+      type: object
+      properties:
+        primary:
+          $ref: "#/components/schemas/CaptureTierClassification"
+        secondary:
+          $ref: "#/components/schemas/CaptureTierClassification"
+        tertiary:
+          $ref: "#/components/schemas/CaptureTierClassification"
+      description: Optional. The document class the SDK's classifier confirmed for
+        each front while scanning. Malformed tiers are ignored.
+    CaptureTierClassification:
+      type: object
+      properties:
+        document_type:
+          type: string
+          pattern: ^[a-z0-9_]{2,64}$
+        trust:
+          type: string
+          enum:
+            - api
+            - strong_vote
+            - margin_vote
+            - weak_vote
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        top3:
+          type: array
+          items:
+            type: array
+            prefixItems:
+              - type: string
+                maxLength: 64
+              - type: number
+                minimum: 0
+                maximum: 1
+          maxItems: 3
+        votes:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        capture_mode:
+          type: string
+          enum:
+            - auto
+            - manual
+        model_version:
+          type:
+            - string
+            - "null"
+          maxLength: 64
+        capture_rotation:
+          anyOf:
+            - type: number
+              enum:
+                - 0
+            - type: number
+              enum:
+                - 90
+            - type: number
+              enum:
+                - 180
+            - type: number
+              enum:
+                - 270
+      required:
+        - document_type
+        - trust
+        - confidence
+        - top3
+        - votes
+        - capture_mode
+    ExtraFrameUploads:
+      type: object
+      properties:
+        id_front_extra_1: &a2
+          type: string
+          minLength: 1
+        id_front_extra_2: *a2
+        secondary_id_front_extra_1: *a2
+        secondary_id_front_extra_2: *a2
+        tertiary_id_front_extra_1: *a2
+        tertiary_id_front_extra_2: *a2
+      description: Optional. Keys of up to two extra frames per front, uploaded with
+        the *_extra_* upload types. Read only to fill fields the main photo left
+        blank, then deleted. Never stored on the session.
     FaceLivenessStepSubmission:
       type: object
       properties:
@@ -2735,6 +4294,236 @@ components:
           example: video/mp4
       required:
         - action
+    ConsentStepSubmission:
+      type: object
+      properties:
+        accepted:
+          type: boolean
+        legal_name:
+          type: string
+          minLength: 1
+          description: Required when accepted is true.
+        signature_upload:
+          type: string
+          minLength: 1
+          description: Session-owned signature upload key. Required on acceptance when the
+            workflow config requires a signature.
+      required:
+        - accepted
+      additionalProperties: false
+    AgeEstimationStepSubmission:
+      type: object
+      properties:
+        uploads:
+          type: object
+          properties:
+            selfie_front:
+              type: string
+              minLength: 1
+          required:
+            - selfie_front
+          additionalProperties: false
+      required:
+        - uploads
+      additionalProperties: false
+      description: Session-owned selfie upload used for facial age estimation.
+    HostedWorkflowStepSubmission:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+            - start
+            - complete
+      required:
+        - action
+      additionalProperties: false
+    TitleSearchStepSubmission:
+      type: object
+      properties:
+        address:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required:
+        - address
+      additionalProperties: false
+    PepSanctionsStepSubmission:
+      type: object
+      properties:
+        email:
+          type: string
+        first_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        last_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        date_of_birth:
+          type: string
+          format: date
+      required:
+        - first_name
+        - last_name
+        - date_of_birth
+      additionalProperties: false
+    AdverseMediaStepSubmission:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+            - start
+            - complete
+        email:
+          type: string
+        first_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        last_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        date_of_birth:
+          type: string
+          format: date
+        country:
+          type: string
+          pattern: ^[A-Z]{2}$/i
+      required:
+        - action
+      description: Use start with the screening identity, then poll with complete
+        until the asynchronous check is ready.
+    IpCheckStepSubmission:
+      type: object
+      properties:
+        ip_address:
+          type: string
+          minLength: 1
+          description: A syntactically valid IPv4 or IPv6 address. IPv4-mapped IPv6
+            (::ffff:a.b.c.d) is evaluated as IPv4.
+      required:
+        - ip_address
+      additionalProperties: false
+    InjectionDetectionStepSubmission:
+      type: object
+      properties:
+        device_integrity:
+          $ref: "#/components/schemas/WorkflowInjectionSignal"
+        media_source:
+          $ref: "#/components/schemas/WorkflowInjectionSignal"
+        frame_timing:
+          $ref: "#/components/schemas/WorkflowInjectionSignal"
+      additionalProperties: false
+      description: Injection signals. At least one of device_integrity or media_source
+        is required; frame_timing alone is not decision-bearing.
+    WorkflowInjectionSignal:
+      type: object
+      properties:
+        pass:
+          type: boolean
+        score:
+          type: number
+          minimum: 0
+          maximum: 100
+        signals:
+          type: array
+          items:
+            type: string
+          default: []
+      required:
+        - pass
+        - score
+      additionalProperties: false
+    AntiCheatStepSubmission:
+      type: object
+      properties:
+        image:
+          type: string
+          minLength: 1
+        device_fingerprint:
+          type: string
+      required:
+        - image
+      additionalProperties: false
+    CustomPromptStepSubmission:
+      type: object
+      properties:
+        uploads:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+          description: Session-owned upload keys keyed by the slots returned in
+            requirements, for example custom-prompts-list_0.
+      required:
+        - uploads
+      additionalProperties: false
+    BankStatementUploadStepSubmission:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+            - start
+            - complete
+      required:
+        - action
+      additionalProperties: false
+      description: Start the hosted bank-statement request, then submit complete after
+        the applicant finishes it.
+    AiBankStatementAnalysisStepSubmission:
+      type: object
+      properties: {}
+      additionalProperties: false
+      description: Empty body. The analysis pipeline is started by the preceding
+        bank-statement upload.
+    DocumentUploadStepSubmission:
+      type: object
+      properties:
+        uploads:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+          description: Session-owned upload keys keyed by document slot returned in
+            requirements.
+      required:
+        - uploads
+      additionalProperties: false
+    PresentationAcknowledgementStepSubmission:
+      type: object
+      properties:
+        acknowledged:
+          type: boolean
+          enum:
+            - true
+      required:
+        - acknowledged
+      additionalProperties: false
+    SessionPhoneScreeningStepSubmission:
+      type: object
+      properties: {}
+      additionalProperties: false
+      description: Empty body. The runner uses the phone and identity already attached
+        to the workflow session.
+    PhoneVerificationStepSubmission:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+            - start
+            - complete
+          description: Use `start` to place the verification call and `complete` to poll
+            and apply its result.
+          example: start
+      required:
+        - action
+      additionalProperties: false
     CreateBankStatementResponse:
       type: object
       properties:
@@ -2837,138 +4626,6 @@ components:
         - updatedAt
         - status
         - type
-    CreateCreditTermsResponse:
-      type: object
-      properties:
-        creditTermsId:
-          type: string
-        creditTermsUrl:
-          type: string
-        externalId:
-          type: string
-        links:
-          type: array
-          items: {}
-      required:
-        - creditTermsId
-        - creditTermsUrl
-        - links
-    CreateCreditTermsRequest:
-      type: object
-      properties:
-        firstName:
-          type: string
-          example: Jane
-        lastName:
-          type: string
-          example: Doe
-        businessName:
-          type: string
-          example: Acme Co.
-        businessEmail:
-          type: string
-          example: ap@acme.com
-        businessAddress:
-          type: string
-        requestedCreditAmount:
-          type: number
-          minimum: 0
-          example: 25000
-        requestedCreditPeriod:
-          type: string
-          enum:
-            - "30"
-            - "60"
-            - "90"
-          default: "30"
-          description: Net terms in days requested by the applicant.
-        externalId:
-          type: string
-        sendEmailInvite:
-          type: boolean
-      required:
-        - firstName
-        - lastName
-        - businessName
-        - businessEmail
-        - businessAddress
-        - requestedCreditAmount
-    ListCreditTermsResponse:
-      type: object
-      properties:
-        creditTerms:
-          type: array
-          items:
-            $ref: "#/components/schemas/BankStatementRecord"
-        nextToken:
-          type:
-            - string
-            - "null"
-      required:
-        - creditTerms
-        - nextToken
-    CreateCreditCheckResponse:
-      type: object
-      properties:
-        id:
-          type: string
-        session_url:
-          type: string
-        type:
-          type: string
-          description: Resolved session type — credit-check-hard or credit-check-soft.
-        externalId:
-          type: string
-        links:
-          type: array
-          items:
-            $ref: "#/components/schemas/Link"
-      required:
-        - id
-        - session_url
-        - type
-        - links
-    CreateCreditCheckRequest:
-      type: object
-      properties:
-        email:
-          type: string
-          example: applicant@example.com
-        firstName:
-          type: string
-          example: Jane
-        lastName:
-          type: string
-          example: Doe
-        phone:
-          type: string
-          pattern: ^\+[1-9]\d{9,14}$
-          example: "+15192223333"
-          description: Phone number in E.164 format.
-        externalId:
-          type: string
-        sendEmailInvite:
-          type: boolean
-        sendPhoneInvite:
-          type: boolean
-        redirectUrl:
-          type: string
-          format: uri
-          description: HTTPS URL the applicant is sent to after completing the check.
-        uat:
-          type: boolean
-          description: When true, the session is created for UAT and is not billed.
-            Equifax inquiry is skipped.
-        uatType:
-          type: string
-          description: UAT scenario id. Only meaningful when uat=true.
-      required:
-        - email
-        - firstName
-        - lastName
-        - phone
-      description: Body for creating a hard or soft credit-check session. Snake_case
-        keys are also accepted.
     AuthVerifyResponse:
       type: object
       properties:
@@ -3239,16 +4896,22 @@ components:
             - PASS
             - FAIL
             - NO_DATA
-          description: PASS = the carrier confirms the subscriber is at least
+            - ERROR
+          description: "PASS = the carrier confirms the subscriber is at least
             `requiredAge`; FAIL = the carrier reports they are under it; NO_DATA
             = the carrier holds no servable data for this number (normal where
-            the carrier route is not live).
+            the carrier route is not live). ERROR: the phone data provider
+            rejected the request; the check did not run and is not billed."
         ageVerified:
           type: string
           enum:
             - VERIFIED
             - NOT_VERIFIED
             - NO_DATA
+            - ERROR
+          description: "The carrier's raw age answer behind `outcome`. ERROR: the phone
+            data provider rejected the request; the check did not run and is not
+            billed."
         requiredAge:
           type: integer
           example: 18
@@ -3316,9 +4979,12 @@ components:
             - MATCH
             - NO_MATCH
             - NO_DATA
-          description: MATCH = carrier name score ≥ threshold; NO_MATCH = below it;
+            - ERROR
+          description: "MATCH = carrier name score ≥ threshold; NO_MATCH = below it;
             NO_DATA = the carrier holds no servable subscriber data for this
-            number (normal where the carrier route is not live).
+            number (normal where the carrier route is not live). ERROR: the
+            phone data provider rejected the request; the check did not run and
+            is not billed."
         nameScore:
           type: integer
           minimum: -1
@@ -3459,9 +5125,12 @@ components:
             - LOW_RISK
             - MEDIUM_RISK
             - HIGH_RISK
-          description: HIGH_RISK = SIM changed in the last 72 hours; MEDIUM_RISK = in the
+            - ERROR
+          description: "HIGH_RISK = SIM changed in the last 72 hours; MEDIUM_RISK = in the
             last 30 days; LOW_RISK = no recent change; NO_DATA = the carrier
             holds no servable data (normal where the carrier route is not live).
+            ERROR: the phone data provider rejected the request; the check did
+            not run and is not billed."
         simChangedDate:
           type: string
           format: date-time
@@ -3472,7 +5141,10 @@ components:
             - NO_DATA
             - NO_RISK
             - HIGH_RISK
-          description: HIGH_RISK = unconditional call forwarding is active on the line.
+            - ERROR
+          description: "HIGH_RISK = unconditional call forwarding is active on the line.
+            ERROR: the phone data provider rejected the request; the check did
+            not run and is not billed."
         sensitivity:
           type: string
           enum:
@@ -3870,11 +5542,33 @@ components:
           required:
             - type
             - check
+        evidence:
+          type: object
+          additionalProperties: {}
+          description: Not returned today; reserved. A session whose workflow has no
+            INJECTION_DETECTION step gets 409 `STEP_NOT_CONFIGURED` instead of a
+            verdict.
       required:
         - verdict
         - action
         - confidence
         - escalation
+    IgamingStepNotConfiguredResponse:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - STEP_NOT_CONFIGURED
+        error:
+          type: string
+          example: This session's workflow doesn't include this check. Add the step to the
+            workflow first.
+      required:
+        - code
+        - error
+      description: The session's workflow doesn't include the requested check, so
+        nothing was evaluated or stored. Add the step to the workflow first.
     AnalyzeInjectionRequest:
       type: object
       properties:
@@ -3952,6 +5646,8 @@ components:
         ip_address:
           type: string
           minLength: 1
+          description: A syntactically valid IPv4 or IPv6 address. IPv4-mapped IPv6
+            (::ffff:a.b.c.d) is evaluated as IPv4.
       required:
         - session_id
         - ip_address
@@ -5035,7 +6731,7 @@ paths:
         number, etc.) from a single document image via AWS Textract AnalyzeID.
         Accepts the image as a multipart upload, a base64/base64url-encoded JSON
         string, or an S3 object key from a previously presigned upload.
-      security: &a2
+      security: &a3
         - ApiKeyAuth: []
       requestBody:
         required: true
@@ -5093,7 +6789,7 @@ paths:
       description: "Returns the highest-confidence detected face with its bounding box
         and facial landmarks. When no face is detected, returns `faceDetected:
         false` with `confidence: 0`."
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -5149,7 +6845,7 @@ paths:
       summary: Compare a source face image to a target face image
       description: Returns the similarity between two face images. `isMatch` is true
         when similarity meets the server-side threshold.
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -5205,7 +6901,7 @@ paths:
       summary: Estimate age and gender from a face image
       description: Returns an estimated age, age range, and gender for the
         highest-confidence detected face in the image.
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -5266,7 +6962,7 @@ paths:
         to a verification session (billed as part of that session); omit it to
         run standalone (billed per use). Reference and audit images are never
         persisted or returned.
-      security: *a2
+      security: *a3
       requestBody:
         required: false
         content:
@@ -5329,7 +7025,7 @@ paths:
         overridable threshold, default 80). Reference and audit images are never
         returned. Pass `session_id` to authorize the read against the owning
         verification session.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -5406,7 +7102,7 @@ paths:
         deepfake liveness scan for the given session. The phrase is derived from
         the session's workflow when configured, otherwise a random phrase is
         generated.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -5462,7 +7158,7 @@ paths:
         when `includeAudio` is set, the audio clip) captured during the deepfake
         scan. Returns the upload URLs alongside the S3 object keys to echo back
         to POST /v1/deepfake/analyze.
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -5518,7 +7214,7 @@ paths:
         media and returns a synchronous verdict. The media is downloaded from
         the ephemeral temp bucket and deleted after analysis — nothing is
         persisted. Each S3 key must belong to the calling organization.
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -5579,7 +7275,7 @@ paths:
         comparison between the document portrait and the selfie in a single
         server call. Returns the combined result plus a weighted overall
         confidence score.
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -5633,10 +7329,19 @@ paths:
       tags:
         - Sessions
       summary: Create and send a verification session
-      description: Creates an IDV session for an applicant and (by default) sends an
+      description: "Creates an IDV session for an applicant and (by default) sends an
         email and SMS invite with the verification link. Pass a `workflowId` to
-        run a custom workflow; omit it for legacy IDV.
-      security: *a2
+        run a custom workflow; omit it for legacy IDV. Applicant names are
+        optional: omit both `firstName`/`lastName` (or send them blank) to read
+        them from the applicant's ID; the session then carries `names_provided:
+        false`. A workflow that cannot run without names is refused with 400 and
+        `code` NAMES_REQUIRED_NO_ID_STEP or NAMES_REQUIRED_FOR_STEP (with
+        `steps`). A phone is optional unless the workflow has a step that uses
+        the applicant's phone (PHONE_VERIFICATION, PHONE_TRUST_CHECK,
+        CARRIER_AGE_GATE, PHONE_OWNERSHIP_MATCH): without one sent or on file,
+        the create is refused with 400 and `code` PHONE_REQUIRED (with
+        `steps`)."
+      security: *a3
       requestBody:
         required: true
         content:
@@ -5651,12 +7356,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/CreateSessionResponse"
         "400":
-          description: The request body failed schema validation or contained an
-            unsupported image format.
+          description: The request body failed schema validation, the session was created
+            without applicant names on a workflow that cannot run without them
+            (`code` NAMES_REQUIRED_NO_ID_STEP or NAMES_REQUIRED_FOR_STEP, the
+            latter with `steps`), or without a phone on a workflow with a step
+            that uses the applicant's phone (`code` PHONE_REQUIRED, with
+            `steps`).
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/CreateSessionErrorResponse"
         "401":
           description: API key is invalid.
           content:
@@ -5696,7 +7405,7 @@ paths:
       description: Returns sessions for the caller. Defaults to sessions sent by the
         authenticated user; pass `by_organization=true` to widen the scope or
         `external_id` / `workflow_id` to filter.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: number
@@ -5793,7 +7502,7 @@ paths:
       summary: Fetch a session by id
       description: Returns the session record along with presigned GET URLs for any
         applicant-uploaded assets.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -5846,7 +7555,7 @@ paths:
       summary: Manually set a session's status
       description: Overrides a session's status to VERIFIED or REJECTED. Intended for
         manual review flows.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -5903,14 +7612,14 @@ paths:
       tags:
         - Sessions
       summary: Generate session-scoped presigned upload URLs
-      description: Issues S3 presigned PUT URLs into the sessions upload bucket using
-        the hosted-flow key scheme
-        `{organizationId}/{sessionId}/{timestamp}-{fileName}`. Echo the returned
-        `file_key` values in a subsequent step submission. Unlike `POST
-        /v1/upload/presign`, keys are session-linked so the backoffice can
-        render uploads. Keys are recorded on the session's Uploads map at step
-        submission, not at presign time.
-      security: *a2
+      description: Issues S3 presigned PUT URLs into the sessions upload bucket. Use
+        legacy `upload_type` for ID/selfie captures or the config-driven `slot`
+        returned by the current Runner step's requirements. Dynamic slots are
+        validated against the current step. Echo each returned `file_key` under
+        its `slot` in the step submission. Unlike `POST /v1/upload/presign`,
+        keys are session-linked so the backoffice can render uploads. Keys are
+        recorded on the session at step submission, not at presign time.
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -5985,6 +7694,121 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+  /v1/sessions/{session_id}/id-capture/detect:
+    post:
+      tags:
+        - Sessions
+      summary: Classify one camera frame of an ID document
+      description: "Used by DeepIDV's SDKs while the applicant frames their ID: sends
+        one camera frame (a JPEG, base64) to DeepIDV's document classifier and
+        returns its answer unchanged. Only for organizations with the ID capture
+        classifier enabled, on a session that is not terminal. Nothing is
+        stored. Send one frame at a time; a session sending too fast gets a 429
+        with `Retry-After`. Treat 403, 404 and 409 as \"the classifier is off
+        for this session\" and carry on without it."
+      security: *a3
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: session_id
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdCaptureDetectRequest"
+      responses:
+        "200":
+          description: The classifier's answer for the frame.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdCaptureDetectResponse"
+        "400":
+          description: The path params or request body failed validation, or the request
+            cannot be served as sent. `code` identifies the cause.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "401":
+          description: API key is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "402":
+          description: "The organization cannot fund the request (`code:
+            INSUFFICIENT_FUNDS`). The body is JSON."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "403":
+          description: "Another organization's session (`code: FORBIDDEN`), or the
+            classifier is not enabled for this organization (`code:
+            ID_CAPTURE_NOT_ENABLED`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "404":
+          description: Referenced resource was not found. `code` names which one.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "409":
+          description: "Session is terminal (`code: SESSION_TERMINAL`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "429":
+          description: "Too many frames for this session, or the classifier is busy
+            (`code: ID_CAPTURE_RATE_LIMITED`). Retry after `Retry-After`
+            seconds."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "500":
+          description: "Unexpected server error (`code: INTERNAL_ERROR`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "501":
+          description: "The step cannot be run through the API yet (`code:
+            STEP_NOT_RUNNABLE`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "502":
+          description: "The classifier answered with an error (`code:
+            ID_CAPTURE_CLASSIFIER_UNAVAILABLE`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "503":
+          description: "The classifier's configuration is unavailable (`code:
+            ID_CAPTURE_CLASSIFIER_UNAVAILABLE`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "504":
+          description: "The classifier did not answer in time (`code:
+            ID_CAPTURE_CLASSIFIER_UNAVAILABLE`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
   /v1/idv:
     post:
       tags:
@@ -5993,7 +7817,7 @@ paths:
       description: Deprecated alias for `POST /v1/sessions`. New integrations should
         use `/v1/sessions`.
       deprecated: true
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -6046,7 +7870,7 @@ paths:
       summary: List workflows
       description: Returns all workflows belonging to the calling organization,
         ordered by creation time descending.
-      security: *a2
+      security: *a3
       responses:
         "200":
           description: Workflows for the organization.
@@ -6090,10 +7914,20 @@ paths:
       tags:
         - Workflows
       summary: Create a workflow
-      description: Creates a workflow composed of up to 10 ordered, unique steps. Step
-        ids must be one of ID_VERIFICATION, FACE_LIVENESS, AGE_ESTIMATION,
-        PEP_SANCTIONS, ADVERSE_MEDIA.
-      security: *a2
+      description: "Creates a workflow composed of up to 10 ordered, unique steps.
+        Supported step ids: ID_VERIFICATION, FACE_LIVENESS,
+        FACE_LIVENESS_CONSENT_SETTINGS, AGE_ESTIMATION, DEEPFAKE_DETECTION,
+        DEEP_AGE, ADDRESS_VERIFICATION, TITLE_SEARCH, PEP_SANCTIONS,
+        ADVERSE_MEDIA, IP_JURISDICTION, VPN_DETECTION, INJECTION_DETECTION,
+        ANTI_CHEAT, CUSTOM_PROMPT, CONSENT, BANK_STATEMENT_UPLOAD,
+        AI_BANK_STATEMENT_ANALYSIS, DOCUMENT_UPLOAD, WHITE_LABEL,
+        PHONE_TRUST_CHECK, CARRIER_AGE_GATE, PHONE_OWNERSHIP_MATCH,
+        PHONE_VERIFICATION, E_SIGNATURE. New workflows get a retry cap by
+        default (failure_settings: on, 3 attempts): when an applicant reaches
+        the cap, the session fails. Send failure_settings to choose a different
+        cap (1-10) or turn it off. The cap of an existing workflow can be
+        changed in Backoffice."
+      security: *a3
       requestBody:
         required: true
         content:
@@ -6144,7 +7978,10 @@ paths:
       tags:
         - Workflows
       summary: Fetch a workflow by id
-      security: *a2
+      description: Returns the workflow, its ordered steps and its retry cap
+        (failure_settings; null when no cap is set). Some steps can only be
+        configured in Backoffice and may appear on workflows you retrieve.
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -6198,7 +8035,7 @@ paths:
       description: Partially updates one existing workflow step's configuration.
         Existing modeled settings and unmodeled stored configuration are
         preserved.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -6272,10 +8109,19 @@ paths:
       tags:
         - Workflows
       summary: Create a headless workflow session
-      description: Creates a headless workflow session for SDK-driven execution. No
+      description: "Creates a headless workflow session for SDK-driven execution. No
         invite email/SMS is sent and no hosted session_url is returned.
-        Validates workflow ownership against the calling organization.
-      security: *a2
+        Validates workflow ownership against the calling organization. Applicant
+        names are optional: omit both `first_name`/`last_name` (or send them
+        blank) to read them from the applicant's ID; the session then carries
+        `names_provided: false`. A workflow that cannot run without names is
+        refused with 400 and `code` NAMES_REQUIRED_NO_ID_STEP or
+        NAMES_REQUIRED_FOR_STEP (with `steps`). A phone is optional unless the
+        workflow has a step that uses the applicant's phone (PHONE_VERIFICATION,
+        PHONE_TRUST_CHECK, CARRIER_AGE_GATE, PHONE_OWNERSHIP_MATCH): without one
+        sent or on file, the create is refused with 400 and `code`
+        PHONE_REQUIRED (with `steps`)."
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -6358,7 +8204,7 @@ paths:
         workflow session, including capture requirements for every step. Safe to
         poll; used by the SDK to resume after app kill. Sessions without
         `workflowExecution` (non-SDK / hosted-only) return 404.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -6443,7 +8289,7 @@ paths:
         `workflowExecution` (hosted / invite-lane) return 404. The 200 body is
         the same execution-state envelope as `GET
         /v1/sessions/{session_id}/workflow`."
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -6527,8 +8373,14 @@ paths:
         stored config (required upload slots vary per workflow). FACE_LIVENESS
         is two-phase via `action: start | complete`. Steps must be submitted in
         order; out-of-order or terminal-session submissions return 409. No
-        inline billing — the completed session is stream-billed downstream."
-      security: *a2
+        inline billing — the completed session is stream-billed downstream. A
+        step that uses the applicant's phone (PHONE_VERIFICATION `start`,
+        PHONE_TRUST_CHECK, CARRIER_AGE_GATE, PHONE_OWNERSHIP_MATCH) on a session
+        whose applicant has no phone on file returns 400 `PHONE_REQUIRED`.
+        PHONE_VERIFICATION `start` returns 503 `PHONE_VERIFICATION_UNAVAILABLE`
+        when the phone verification service is temporarily unavailable; the step
+        is unchanged and no attempt is used, so retry the same `start`."
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -6541,6 +8393,28 @@ paths:
             enum:
               - ID_VERIFICATION
               - FACE_LIVENESS
+              - FACE_LIVENESS_CONSENT_SETTINGS
+              - AGE_ESTIMATION
+              - DEEPFAKE_DETECTION
+              - DEEP_AGE
+              - ADDRESS_VERIFICATION
+              - TITLE_SEARCH
+              - PEP_SANCTIONS
+              - ADVERSE_MEDIA
+              - IP_JURISDICTION
+              - VPN_DETECTION
+              - INJECTION_DETECTION
+              - ANTI_CHEAT
+              - CUSTOM_PROMPT
+              - CONSENT
+              - BANK_STATEMENT_UPLOAD
+              - AI_BANK_STATEMENT_ANALYSIS
+              - DOCUMENT_UPLOAD
+              - WHITE_LABEL
+              - PHONE_TRUST_CHECK
+              - CARRIER_AGE_GATE
+              - PHONE_OWNERSHIP_MATCH
+              - PHONE_VERIFICATION
             example: ID_VERIFICATION
             description: "Runnable workflow step id. Case- and separator-insensitive:
               `id_verification` and `id-verification` resolve to the same step."
@@ -6626,6 +8500,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
+        "503":
+          description: "PHONE_VERIFICATION `start` could not reach the phone verification
+            service: it timed out, answered 5xx/429, or was unreachable (`code:
+            PHONE_VERIFICATION_UNAVAILABLE`). Retryable: the step is unchanged
+            and no attempt is used."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRunnerErrorResponse"
   /v1/financial:
     post:
       tags:
@@ -6633,7 +8516,7 @@ paths:
       summary: Create and send a bank statement request
       description: Creates a bank statement request for an applicant. By default sends
         an email and SMS invite linking to the applicant-facing flow.
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -6690,7 +8573,7 @@ paths:
       tags:
         - Financial
       summary: List bank statements
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -6745,7 +8628,7 @@ paths:
       summary: Fetch a bank statement by id
       description: Returns the bank statement record. When the request is completed
         the response includes the parsed statement payload.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -6796,7 +8679,7 @@ paths:
       tags:
         - Financial
       summary: List bank statements by external id
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -6849,441 +8732,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /v1/credit-terms:
-    post:
-      tags:
-        - Credit Terms
-      summary: Create and send a credit terms application request
-      security: *a2
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateCreditTermsRequest"
-      responses:
-        "200":
-          description: Credit terms request created.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CreateCreditTermsResponse"
-        "400":
-          description: The request body failed schema validation or contained an
-            unsupported image format.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: API key is invalid.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "402":
-          description: Organization has insufficient credits and is not subscribed to the
-            service.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: API key is missing, or the referenced resource does not belong to
-            this organization.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Referenced resource was not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: Unexpected server error.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-    get:
-      tags:
-        - Credit Terms
-      summary: List credit terms applications
-      security: *a2
-      parameters:
-        - schema:
-            type: string
-          required: false
-          name: nextToken
-          in: query
-      responses:
-        "200":
-          description: Page of credit terms records.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ListCreditTermsResponse"
-        "400":
-          description: The request body failed schema validation or contained an
-            unsupported image format.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: API key is invalid.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: API key is missing, or the referenced resource does not belong to
-            this organization.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Referenced resource was not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: Unexpected server error.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /v1/credit-terms/{id}:
-    get:
-      tags:
-        - Credit Terms
-      summary: Fetch a credit terms record by id
-      security: *a2
-      parameters:
-        - schema:
-            type: string
-          required: true
-          name: id
-          in: path
-      responses:
-        "200":
-          description: Credit terms record.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BankStatementRecord"
-        "400":
-          description: The request body failed schema validation or contained an
-            unsupported image format.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: API key is invalid.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: API key is missing, or the referenced resource does not belong to
-            this organization.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Referenced resource was not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: Unexpected server error.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /v1/credit-terms/externalId/{externalId}:
-    get:
-      tags:
-        - Credit Terms
-      summary: List credit terms records by external id
-      security: *a2
-      parameters:
-        - schema:
-            type: string
-          required: true
-          name: externalId
-          in: path
-        - schema:
-            type: string
-          required: false
-          name: nextToken
-          in: query
-      responses:
-        "200":
-          description: Page of credit terms records matching the external id.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ListCreditTermsResponse"
-        "400":
-          description: The request body failed schema validation or contained an
-            unsupported image format.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: API key is invalid.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: API key is missing, or the referenced resource does not belong to
-            this organization.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Referenced resource was not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: Unexpected server error.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /v1/credit-check/hard:
-    post:
-      tags:
-        - Credit Check
-      summary: Create and send a hard credit check session
-      description: Creates a session of type credit-check-hard. Equifax hard inquiry
-        runs once the applicant completes the flow.
-      security: *a2
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateCreditCheckRequest"
-      responses:
-        "200":
-          description: Credit-check session created.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CreateCreditCheckResponse"
-        "400":
-          description: The request body failed schema validation or contained an
-            unsupported image format.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: API key is invalid.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "402":
-          description: Organization has insufficient credits.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: API key is missing, or the referenced resource does not belong to
-            this organization.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Referenced resource was not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: Unexpected server error.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /v1/credit-check/soft:
-    post:
-      tags:
-        - Credit Check
-      summary: Create and send a soft credit check session
-      description: Creates a session of type credit-check-soft. Equifax soft inquiry
-        runs once the applicant completes the flow.
-      security: *a2
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateCreditCheckRequest"
-      responses:
-        "200":
-          description: Credit-check session created.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CreateCreditCheckResponse"
-        "400":
-          description: The request body failed schema validation or contained an
-            unsupported image format.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: API key is invalid.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "402":
-          description: Organization has insufficient credits.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: API key is missing, or the referenced resource does not belong to
-            this organization.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Referenced resource was not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: Unexpected server error.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /v1/credit-checks:
-    get:
-      tags:
-        - Credit Checks
-      summary: List credit checks (preview)
-      description: Returns 501 — Credit Checks read API is not yet generally
-        available. Use a sandbox API key to preview test responses.
-      security: *a2
-      responses:
-        "400":
-          description: The request body failed schema validation or contained an
-            unsupported image format.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: API key is invalid.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: API key is missing, or the referenced resource does not belong to
-            this organization.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Referenced resource was not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: Unexpected server error.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "501":
-          description: Credit Checks read API is not yet generally available. Use a
-            sandbox API key to preview test responses.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /v1/credit-checks/{id}:
-    get:
-      tags:
-        - Credit Checks
-      summary: Fetch a credit check by id (preview)
-      description: Returns 501 — Credit Checks read API is not yet generally
-        available. Use a sandbox API key to preview test responses.
-      security: *a2
-      parameters:
-        - schema:
-            type: string
-          required: true
-          name: id
-          in: path
-      responses:
-        "400":
-          description: The request body failed schema validation or contained an
-            unsupported image format.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: API key is invalid.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: API key is missing, or the referenced resource does not belong to
-            this organization.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Referenced resource was not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: Unexpected server error.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "501":
-          description: Credit Checks read API is not yet generally available. Use a
-            sandbox API key to preview test responses.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
   /v1/auth/verify:
     get:
       tags:
@@ -7292,7 +8740,7 @@ paths:
       description: Connection-test endpoint. Validates the API key in the `x-api-key`
         header and returns the organization it belongs to. Used by integrations
         (e.g. Zapier) to confirm a key is valid before running other calls.
-      security: *a2
+      security: *a3
       responses:
         "200":
           description: API key is valid and the organization is active.
@@ -7333,7 +8781,7 @@ paths:
       summary: List OAuth clients
       description: Returns the single derived OAuth client bound to the caller's API
         key. There is no separate per-client registration.
-      security: *a2
+      security: *a3
       responses:
         "200":
           description: OAuth client list (always exactly one entry).
@@ -7379,7 +8827,7 @@ paths:
       summary: Create an OAuth client (unsupported)
       description: Always returns 410. OAuth clients are derived from the caller's API
         key and cannot be created separately.
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -7432,7 +8880,7 @@ paths:
       summary: Rotate an OAuth client secret (unsupported)
       description: Always returns 410. Rotate the bound API key in the deepidv
         dashboard instead.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -7485,7 +8933,7 @@ paths:
       summary: Revoke an OAuth client (unsupported)
       description: Always returns 410. Revoke the bound API key in the deepidv
         dashboard instead.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -7540,7 +8988,7 @@ paths:
         sanctions lists (local lists + OpenSanctions). Returns normalized
         matches grouped into peps, sanctions, and both, deduped by (name,
         dataset) with a confidence score (0–1, higher = better).
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -7604,7 +9052,7 @@ paths:
         `analysis_data.phone_checks.age_gate`, `phone` defaults to the session
         applicant's number, and no second charge is taken when the session's
         workflow already includes the carrier age gate step."
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -7678,7 +9126,7 @@ paths:
         `analysis_data.phone_checks.ownership`, `phone` and the name default to
         the session applicant, and no second charge is taken when the session's
         workflow already includes the phone ownership step.
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -7753,7 +9201,7 @@ paths:
         there is preserved), `phone` defaults to the session applicant's number,
         and no second charge is taken when the session's workflow already
         includes the phone trust step."
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -7815,7 +9263,7 @@ paths:
         records, and watchlist databases. Returns 202 with a jobId; poll GET
         /v1/async-jobs/{jobId} for the result. Supply an optional
         Idempotency-Key header to safely retry without duplicating work.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -7891,7 +9339,7 @@ paths:
         multiple_properties, unsupported_region, or not_found). Supply an
         optional Idempotency-Key header to safely retry without duplicating
         work."
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -7964,7 +9412,7 @@ paths:
       description: "Returns the current state of an async job. The response is a
         discriminated union on `status`: pending and processing carry no
         payload; ready includes `result`; failed includes `error`."
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -8021,7 +9469,7 @@ paths:
       description: Creates a branding profile for the calling organization. Optionally
         attach a logo by passing the `fileKey` from POST
         /v1/profiles/logo-upload-url as `logoUrl`.
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -8072,7 +9520,7 @@ paths:
         - Profiles
       summary: List branding profiles
       description: Returns all branding profiles belonging to the calling organization.
-      security: *a2
+      security: *a3
       responses:
         "200":
           description: Profiles for the organization.
@@ -8119,7 +9567,7 @@ paths:
       summary: Fetch a branding profile by id
       description: Returns a single branding profile. The profile must belong to the
         calling organization.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -8174,7 +9622,7 @@ paths:
         Flow: (1) call this endpoint to get `{ uploadUrl, fileKey }`, (2) PUT
         the image binary to `uploadUrl` with the matching Content-Type header,
         (3) pass `fileKey` as `logoUrl` when creating the profile."
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -8229,7 +9677,7 @@ paths:
         binaries (e.g. images for document scan, face detect, etc.) directly to
         S3, then pass the returned `fileKey` to downstream endpoints in place of
         the binary payload.
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -8284,7 +9732,7 @@ paths:
         against the session's injection-detection step configuration and returns
         a verdict and enforcement action. When the resolved action is `block`,
         the session is marked failed.
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -8324,6 +9772,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "The session's workflow has no INJECTION_DETECTION step, or the
+            session has no workflow (`code: STEP_NOT_CONFIGURED`). Nothing is
+            evaluated or stored. Add the step to the workflow first."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IgamingStepNotConfiguredResponse"
         "500":
           description: Unexpected server error.
           content:
@@ -8340,7 +9796,7 @@ paths:
         vpn-detection step configuration, and returns a verdict and enforcement
         action. When the resolved action is `block`, the session is marked
         failed. Non-IPv4 input returns `UNAVAILABLE`.
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -8380,6 +9836,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "The session's workflow has no VPN_DETECTION step, or the session
+            has no workflow (`code: STEP_NOT_CONFIGURED`). Nothing is evaluated
+            or stored. Add the step to the workflow first."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IgamingStepNotConfiguredResponse"
         "500":
           description: Unexpected server error.
           content:
@@ -8397,7 +9861,7 @@ paths:
         returning a verdict and enforcement action. When the resolved action is
         `block`, the session is marked failed. Non-IPv4 input returns
         `UNAVAILABLE`.
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -8437,6 +9901,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "The session's workflow has no IP_JURISDICTION step, or the session
+            has no workflow (`code: STEP_NOT_CONFIGURED`). Nothing is evaluated
+            or stored. Add the step to the workflow first."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IgamingStepNotConfiguredResponse"
         "500":
           description: Unexpected server error.
           content:
@@ -8454,7 +9926,7 @@ paths:
         the face into the org's dedup collection on first sight. When the
         resolved action is `block`, the session is marked failed. Response is
         redacted to verdict/action.
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -8494,6 +9966,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "The session's workflow has no ANTI_CHEAT step, or the session has
+            no workflow (`code: STEP_NOT_CONFIGURED`). Nothing is evaluated or
+            stored. Add the step to the workflow first."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IgamingStepNotConfiguredResponse"
         "500":
           description: Unexpected server error.
           content:
@@ -8510,7 +9990,7 @@ paths:
         entries already represented by a linked identity are de-duplicated.
         Defensively bounded by `limit` (default 200, max 1000); `truncated` is
         true when the registry exceeded the limit.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: integer
@@ -8569,7 +10049,7 @@ paths:
         `already_excluded`, not an error. A future anti-cheat run whose
         extracted document number matches a registered entry blocks with verdict
         SELF_EXCLUSION.
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -8624,7 +10104,7 @@ paths:
         session (added via a face exclusion that carried a document number),
         that session's face exclusion is cleared too. Idempotent — removing an
         absent number returns `removed: false`."
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -8680,7 +10160,7 @@ paths:
         analyze call) as self-excluded, so a future applicant whose face matches
         it blocks with verdict SELF_EXCLUSION. If the session has no enrolled
         face, returns `excluded: false, reason: no_enrolled_face`."
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -8733,7 +10213,7 @@ paths:
       summary: Clear the self-exclusion flag on a session's enrolled face
       description: "Clears the self-exclusion flag on a session's enrolled face.
         Returns `unexcluded: false` when the session has no enrolled face."
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -8790,7 +10270,7 @@ paths:
         DUPLICATE session, which never enrolled its own face, returns
         deleted:false). Idempotent — no enrollment returns deleted:false. Use
         for GDPR/data-deletion or to reset an enrollment.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -8848,7 +10328,7 @@ paths:
         identity exclusion in the same call. Returns what was excluded; reports
         'nothing to exclude' when the session has neither an enrolled face nor a
         document number."
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -8910,7 +10390,7 @@ paths:
         so always inspect `results` for `warnings` and `errors`. Both snake_case
         and camelCase request keys are accepted; `metadata` keys are never
         converted.'
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -8978,7 +10458,7 @@ paths:
         given bot. Idempotent: re-adding an existing subject returns 200 with
         the existing enrolment rather than resetting its cadence, and
         reactivates a previously removed one."
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -9056,7 +10536,7 @@ paths:
         consent flow will honour — a request that omits them offers the parent
         no boundaries to choose. They are rejected for the other two methods,
         which have no parent to present them to.
-      security: *a2
+      security: *a3
       requestBody:
         content:
           application/json:
@@ -9207,7 +10687,7 @@ paths:
         is set a page can come back short — or even empty — while `next_token`
         is still non-null. Always keep paging until `next_token` is null; do not
         stop because a page's `parent_connect_requests` array is short or empty.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: integer
@@ -9288,7 +10768,7 @@ paths:
         `status` reaches `CONSENT_GIVEN` once a verified parent has consented;
         `child_attestation_id` appears shortly after, when the attestation has
         been minted.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -9351,7 +10831,7 @@ paths:
         revision 1, so a parent's later lawful edit makes that hash stop
         describing the current set. When the flag is false, treat this response
         — not the attestation — as the source of truth.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -9407,7 +10887,7 @@ paths:
         email in your organization, on a workflow whose ID-verification step has
         re-verification enabled. The user must have a verified session under the
         same workflow.
-      security: *a2
+      security: *a3
       requestBody:
         required: true
         content:
@@ -9473,7 +10953,7 @@ paths:
         from the workflow's face-liveness step (FaceMovementChallenge by
         default). Every call issues a new script and discards any earlier
         attempt on the session."
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -9536,7 +11016,7 @@ paths:
         frames (image/jpeg), timeline (application/json) and optional replay
         clip. The URLs are valid for 15 minutes. Calling this again re-mints
         URLs for the same keys.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
@@ -9607,7 +11087,7 @@ paths:
         platform's verified faces, confirms an approved session in this
         organization and workflow, and records a retry or terminal decision. The
         result is returned synchronously.
-      security: *a2
+      security: *a3
       parameters:
         - schema:
             type: string
