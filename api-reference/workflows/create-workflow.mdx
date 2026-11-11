@@ -361,7 +361,7 @@ Returns the full workflow record. The response uses the same format as [Retrieve
 | `workflow.organization_id` | string | Your organization ID |
 | `workflow.created_at` | string | ISO 8601 creation timestamp |
 | `workflow.updated_at` | string | ISO 8601 last-updated timestamp |
-| `workflow.steps` | array | Ordered list of steps with full resolved configuration |
+| `workflow.steps` | array | Ordered list of steps with full resolved configuration, in the same flat format as the request. Settings you didn't send are returned with their defaults |
 | `workflow.failure_settings` | object | Retry limit stored on the workflow |
 | `workflow.failure_settings.active` | boolean | Whether the retry limit is enforced |
 | `workflow.failure_settings.max_attempts` | integer \| null | Failed attempts allowed before the session fails |
@@ -387,64 +387,54 @@ Returns the full workflow record. The response uses the same format as [Retrieve
     "updated_at": "2026-03-31T14:00:00.000Z",
     "steps": [
       {
-        "id": "id-verification",
+        "id": "ID_VERIFICATION",
         "config": {
-          "age_restriction_settings": {
-            "age_restriction_mode": "slider",
-            "country_category_minimum_age": null,
-            "minimum_age": { "lower": 21, "upper": 51 }
-          },
-          "expiry_date_settings": { "expiry_date": 3 },
-          "face_scan_settings": { "face_front_photo_only": false },
-          "id_scan_face_settings": { "require_front_only": false },
-          "id_scan_settings": {
-            "require_secondary_id": false,
-            "require_tertiary_id": false
-          },
-          "valid_id_types_settings": {
-            "valid_id_types": {
-              "driver_license_ca": true,
-              "driver_license_us": true,
-              "passport_ca": true,
-              "passport_us": true
-            }
-          },
-          "valid_states_settings": {
-            "valid_states": { "AL": true, "AK": true, "AZ": true, "...": "all US + CA" }
-          },
-          "fraud_analysis_settings": {
-            "enable_fraud_analysis": true
-          },
-          "fraud_analysis_escalation": {
-            "escalation_type": "nfc-passport",
-            "escalation_risk_threshold": 75
-          }
+          "age_restriction_mode": "slider",
+          "minimum_age": 21,
+          "maximum_age": 100,
+          "country_category_restrictions": [],
+          "enable_fraud_analysis": false,
+          "escalation_type": "nfc-passport",
+          "escalation_risk_threshold": 75,
+          "require_secondary_id": false,
+          "require_tertiary_id": false,
+          "require_front_only": false,
+          "face_front_photo_only": true,
+          "expiry_date_years": 3,
+          "accept_all_countries": true,
+          "valid_countries": {},
+          "valid_states": { "AB": true, "BC": true, "MB": true, "...": "all US states and Canadian provinces" },
+          "id_confidence_threshold_enabled": false,
+          "id_confidence_threshold": 80,
+          "valid_id_types": { "driver-license-ca": true, "passport-ca": true, "pr-card-ca": true, "military-id-ca": true, "...": "35 ID types in total" },
+          "valid_id_types_by_country": {},
+          "reverify_by_attestation_enabled": false,
+          "reverify_min_confidence": 95
         }
       },
       {
-        "id": "face-liveness",
+        "id": "FACE_LIVENESS",
+        "config": { "preferred_liveness_method": "FaceMovementChallenge", "confidence_threshold": 85 }
+      },
+      {
+        "id": "AGE_ESTIMATION",
         "config": {
-          "face_liveness_confidence_settings": { "confidence_threshold": 85 },
-          "face_liveness_settings": { "preferred_liveness_method": "FaceMovementChallenge" }
+          "age_restriction_mode": "slider",
+          "minimum_age": 18,
+          "maximum_age": 100,
+          "country_category_restrictions": []
         }
       },
       {
-        "id": "age-estimation",
-        "config": {
-          "age_restriction_settings": {
-            "age_restriction_mode": "slider",
-            "country_category_minimum_age": null,
-            "minimum_age": { "lower": 18, "upper": 100 }
-          }
-        }
+        "id": "PEP_SANCTIONS",
+        "config": {}
       },
-      { "id": "pep-sanctions", "config": {} },
-      { "id": "adverse-media", "config": {} }
+      {
+        "id": "ADVERSE_MEDIA",
+        "config": {}
+      }
     ],
-    "failure_settings": {
-      "active": true,
-      "max_attempts": 5
-    }
+    "failure_settings": { "active": true, "max_attempts": 5 }
   }
 }
 ```
