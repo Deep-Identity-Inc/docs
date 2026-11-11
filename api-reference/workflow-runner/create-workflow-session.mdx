@@ -11,7 +11,7 @@ POST /v1/workflows/{workflow_id}/sessions
 Creates a new session scoped to a workflow and returns the ordered list of steps the session must complete, along with each step's requirements. Unlike [Create Session](/api-reference/sessions/create-session), this endpoint does not send an invite email or SMS and does not return a hosted `session_url` — it's designed for headless integrations (mobile/web SDKs) that drive the session directly through [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step).
 
 <Info>
-  Only workflows whose steps are all `ID_VERIFICATION` and/or `FACE_LIVENESS` can be run through this API today. See [Available steps](#available-steps) below.
+  Only workflows whose steps are all runnable through the API can be run through this endpoint. See [Available steps](#available-steps) below.
 </Info>
 
 ## Request
@@ -35,11 +35,34 @@ Both camelCase and snake_case parameter names are accepted. If both are provided
 | Parameter | Alias | Type | Required | Description |
 |---|---|---|---|---|
 | `email` | — | string | Yes | Email address of the person completing the session |
-| `first_name` | `firstName` | string | Yes | First name of the person completing the session |
-| `last_name` | `lastName` | string | Yes | Last name of the person completing the session |
-| `phone` | — | string | No | Phone number in E.164 format, e.g. `+14155552671`. Required if the workflow includes a phone verification step |
+| `first_name` | `firstName` | string | No  | First name of the person completing the session. Optional, see [Applicant names](#applicant-names) |
+| `last_name` | `lastName` | string | No  | Last name of the person completing the session. Optional, see [Applicant names](#applicant-names) |
+| `phone` | — | string | No | Phone number in E.164 format, e.g. `+14155552671`. Required when the workflow has a step that uses the applicant's phone and the applicant has no valid phone on file. See [Phone number](#phone-number) |
 | `external_id` | `externalId` | string | No | Your own identifier for this session, echoed back on retrieval |
 | `expires_in_hours` | `expiresInHours` | integer | No | Overrides the workflow's default session expiry. `1`-`8760` |
+
+### Applicant names
+
+`first_name` and `last_name` are optional. Sending only one of them is fine, for applicants with a single name.
+
+If you send neither (or both are blank), the session is created without names:
+
+- The session and its webhooks carry `names_provided: false`.
+- The names are read from the applicant's ID document, and the name-matches-ID check is skipped.
+- The workflow must include an ID verification step. It can't include a step that matches on the name (`DEEP_AGE`, `CREDIT_CHECK`, `PHONE_OWNERSHIP_MATCH` or an identity-number lookup), and it can't have an `E_SIGNATURE`, `PEP_SANCTIONS`, `BACKGROUND_CHECK` or `ADDRESS_VERIFICATION` step before the ID verification step.
+
+Otherwise the create returns `400` with `code` `NAMES_REQUIRED_NO_ID_STEP` (the workflow has no ID verification step) or `NAMES_REQUIRED_FOR_STEP` (with `steps` listing the steps that need the name).
+
+### Phone number
+
+A workflow with a step that uses the applicant's phone (`PHONE_VERIFICATION`, `PHONE_TRUST_CHECK`, `CARRIER_AGE_GATE`, or `PHONE_OWNERSHIP_MATCH`) needs a valid phone for the applicant. Otherwise `phone` is optional.
+
+- A phone counts as on file only if it's a valid E.164 number.
+- If the applicant already has a valid phone on file, that phone is kept, even if you send a different one.
+- If the applicant's phone on file is missing or invalid, the `phone` you send fills it.
+- If there's no valid phone on file and you don't send one, the create returns `400` with `code` `PHONE_REQUIRED` and `steps` listing the steps that need the phone.
+
+A ProofCall step doesn't need the applicant's phone: it calls the references sent with its own submission.
 
 ### Example request
 
@@ -121,7 +144,13 @@ session = response.json()
 
 ### Available steps
 
-Only these two step types can be run through the Workflow Runner API. A workflow containing any other step type is rejected — see [Error responses](#error-responses).
+These step types can be run through the Workflow Runner API:
+
+`ID_VERIFICATION`, `FACE_LIVENESS`, `FACE_LIVENESS_CONSENT_SETTINGS`, `AGE_ESTIMATION`, `DEEPFAKE_DETECTION`, `DEEP_AGE`, `ADDRESS_VERIFICATION`, `TITLE_SEARCH`, `PEP_SANCTIONS`, `ADVERSE_MEDIA`, `IP_JURISDICTION`, `VPN_DETECTION`, `INJECTION_DETECTION`, `ANTI_CHEAT`, `CUSTOM_PROMPT`, `CONSENT`, `BANK_STATEMENT_UPLOAD`, `AI_BANK_STATEMENT_ANALYSIS`, `DOCUMENT_UPLOAD`, `WHITE_LABEL`, `PHONE_TRUST_CHECK`, `CARRIER_AGE_GATE`, `PHONE_OWNERSHIP_MATCH`, `PHONE_VERIFICATION`
+
+A workflow containing any other step type, such as `E_SIGNATURE` or a step that can only be configured in the Admin Console, is rejected at session create with `400` and `code` `UNSUPPORTED_WORKFLOW_STEPS`; `invalid_steps` lists the offending steps. See [Error responses](#error-responses).
+
+Each step's `requirements` shape depends on its type. The two most common are:
 
 | `step_id` | Requirements shape |
 |---|---|
@@ -151,7 +180,7 @@ Only these two step types can be run through the Workflow Runner API. A workflow
 
 | Status | Description |
 |---|---|
-| `400` | Invalid request body, or the workflow contains a step type not supported by the Workflow Runner API (response includes `invalid_steps`), or the workflow is not `active` |
+| `400` | Invalid request body, the workflow contains a step type not supported by the Workflow Runner API (`code` `UNSUPPORTED_WORKFLOW_STEPS`, response includes `invalid_steps`), the workflow is not `active`, the workflow needs the applicant's phone and none was sent or is on file (`code` `PHONE_REQUIRED`, with `steps`), or no names were sent but the workflow needs them (`code` `NAMES_REQUIRED_NO_ID_STEP` or `NAMES_REQUIRED_FOR_STEP`, see [Applicant names](#applicant-names)) |
 | `401` | Invalid or missing API key |
 | `402` | Insufficient funds to run this workflow |
 | `403` | The workflow belongs to a different organization |
@@ -204,7 +233,16 @@ Only these two step types can be run through the Workflow Runner API. A workflow
 ```json 400 — Unsupported step
 {
   "error": "Invalid workflow step",
-  "invalid_steps": ["pep-sanctions"]
+  "code": "UNSUPPORTED_WORKFLOW_STEPS",
+  "invalid_steps": ["e-signature"]
+}
+```
+
+```json 400 — Phone required
+{
+  "error": "A phone number is required for this workflow.",
+  "code": "PHONE_REQUIRED",
+  "steps": ["PHONE_VERIFICATION"]
 }
 ```
 

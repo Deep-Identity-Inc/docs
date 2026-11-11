@@ -48,7 +48,7 @@ Sandbox API keys are not created automatically. You need to generate one from th
 
 ### GET requests — realistic test data
 
-All `GET` endpoints under `/v1/sessions`, `/v1/financial`, `/v1/workflows`, and `/v1/credit-checks` return realistic dummy data. You control which scenario you get by using **well-known test IDs**.
+All `GET` endpoints under `/v1/sessions`, `/v1/financial`, and `/v1/workflows` return realistic dummy data. You control which scenario you get by using **well-known test IDs**.
 
 ### POST, PATCH, PUT, DELETE — blocked
 
@@ -64,7 +64,7 @@ This is intentional — sandbox mode is for reading and validating response shap
 
 ### Other routes
 
-Endpoints outside of sessions, financial, workflows, and credit-checks (e.g., `/health`) pass through normally. The [iGaming checks](/api-reference/igaming/overview) (`/v1/igaming/*`) have no sandbox fixtures, and because sandbox keys can't create sessions they are effectively unavailable in sandbox — use a live key with a test workflow.
+Endpoints outside of sessions, financial, and workflows (e.g., `/health`) pass through normally. The [iGaming checks](/api-reference/igaming/overview) (`/v1/igaming/*`) have no sandbox fixtures, and because sandbox keys can't create sessions they are effectively unavailable in sandbox — use a live key with a test workflow.
 
 ---
 
@@ -95,20 +95,6 @@ Use these IDs as the `:id` parameter in GET requests to control which scenario y
 | `test_pending` | `PENDING` | No statement data |
 | Any other ID | Random | Varies |
 
-### Credit Checks — `GET /v1/credit-checks/:id`
-
-| Test ID | Type | Score | Score Status | Overall Risk | Insights |
-|---------|------|-------|-------------|-------------|----------|
-| `test_soft_pass` | `SOFT` | `741` | `FAIR` | — | Score only |
-| `test_hard_pass` | `HARD` | `741` | `FAIR` | `LOW` | Full — clean profile, excellent payment history, low utilization |
-| `test_hard_review` | `HARD` | `612` | `POOR` | `MEDIUM` | Full — late payments, high utilization, paid collection |
-| `test_hard_high_risk` | `HARD` | `480` | `HIGH_RISK` | `HIGH` | Full — active consumer proposal, unpaid collections, fraud alert |
-| Any other ID | Random | Varies | Varies | Varies | Varies |
-
-<Tip>
-  Soft credit checks return only the credit score. Hard credit checks include the full AI-powered insights analysis with risk assessment, category breakdowns, and a plain-English summary.
-</Tip>
-
 ### Workflows — `GET /v1/workflows/:id`
 
 | Test ID | Steps |
@@ -127,7 +113,6 @@ List endpoints return multiple records without needing a test ID:
 | `GET /v1/sessions` | 5 sessions (one per status), lightweight analysis data |
 | `GET /v1/financial` | 2 bank statements (one completed, one pending), no statement body |
 | `GET /v1/workflows` | 2 workflows (summary only — id, name, created_at) |
-| `GET /v1/credit-checks` | 4 credit checks (1 soft, 3 hard — varying risk levels) |
 
 All list responses return `next_token: null` (no pagination in sandbox).
 

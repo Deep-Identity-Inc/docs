@@ -30,11 +30,14 @@ Every check reports `NO_DATA` when the carrier holds no servable data for the nu
 
 Treat `NO_DATA` as "no signal", not as a failure, and design your flow so it degrades gracefully.
 
+Every check reports `ERROR` when the phone data provider rejected the request. The check did not run and is not billed. `ERROR` never counts against the applicant either: Phone Trust returns `tripped: false`, and `statusMessage` is `"Phone provider rejected the request"`. Treat it as "no signal".
+
 ## Billing
 
 - **Standalone** calls are billed once per successful call, per check.
 - **Session-attached** calls are billed once per successful call, per check, unless the session's workflow already contains the matching passive step. In that case the check was billed at session creation and the on-demand call is free.
 - A `503` from the carrier provider is never billed. Retry later.
+- A result with `ERROR` (the provider rejected the request) is never billed.
 
 ## Errors
 
@@ -56,4 +59,4 @@ curl -X POST https://api.deepidv.com/v1/screening/phone-trust \
   -d '{ "phone": "+447425604497", "sensitivity": "medium" }'
 ```
 
-If `tripped` is `true`, route the user to a step-up before granting access. If every signal is `NO_DATA`, proceed as normal.
+If `tripped` is `true`, route the user to a step-up before granting access. If every signal is `NO_DATA` or `ERROR`, proceed as normal.

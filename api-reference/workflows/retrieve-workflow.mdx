@@ -69,13 +69,20 @@ response = requests.get(
 | `workflow.created_at` | string | ISO 8601 creation timestamp |
 | `workflow.updated_at` | string | ISO 8601 last-updated timestamp |
 | `workflow.steps` | array | Ordered list of verification steps |
+| `workflow.failure_settings` | object \| null | Retry limit stored on the workflow. `null` means no limit is set (typically older workflows), so applicants can retry without limit |
+| `workflow.failure_settings.active` | boolean | Whether the retry limit is enforced |
+| `workflow.failure_settings.max_attempts` | integer \| null | Failed attempts allowed before the session fails |
 
 ### Step object
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `steps[].id` | string | Step identifier (e.g. `id-verification`, `face-liveness`) |
-| `steps[].config` | object | Step-specific configuration settings |
+| `steps[].id` | string | Step identifier, the same ID you use when creating a workflow (e.g. `ID_VERIFICATION`, `FACE_LIVENESS`) |
+| `steps[].config` | object | Step settings in the same flat format the [Create Workflow](/api-reference/workflows/create-workflow) request uses (e.g. `minimum_age`, `confidence_threshold`) |
+
+Some steps can only be configured in the Admin Console and may appear on workflows you retrieve.
+
+When an applicant reaches `failure_settings.max_attempts` failed attempts, the session fails. To change the retry limit on an existing workflow, use the Admin Console.
 
 <Tip>
   To list sessions associated with a workflow, use the [List Sessions](/api-reference/sessions/list-sessions) endpoint with the `workflow_id` query parameter.
@@ -102,89 +109,68 @@ response = requests.get(
     "updated_at": "2026-03-01T17:30:24.573Z",
     "steps": [
       {
-        "id": "id-verification",
+        "id": "ID_VERIFICATION",
         "config": {
-          "age_restriction_settings": {
-            "minimum_age": { "lower": 18, "upper": 55 }
-          },
-          "expiry_date_settings": { "expiry_date": 1 },
-          "face_scan_settings": { "face_front_photo_only": false },
-          "id_scan_face_settings": { "require_front_only": false },
-          "id_scan_settings": {
-            "require_secondary_id": true,
-            "require_tertiary_id": true
-          },
-          "valid_id_types_settings": {
-            "valid_id_types": {
-              "driver_license_ca": true,
-              "driver_license_us": true,
-              "passport_ca": true,
-              "passport_us": true,
-              "pr_card_ca": true,
-              "pr_card_us": true
-            }
-          },
-          "valid_states_settings": {
-            "valid_states": { "BC": true, "CA": true, "NY": true, "ON": true }
+          "minimum_age": 18,
+          "maximum_age": 55,
+          "require_secondary_id": true,
+          "require_tertiary_id": true,
+          "require_front_only": false,
+          "face_front_photo_only": false,
+          "expiry_date_years": 1,
+          "valid_states": { "BC": true, "CA": true, "NY": true, "ON": true },
+          "valid_id_types": {
+            "driver-license-ca": true,
+            "driver-license-us": true,
+            "passport-ca": true,
+            "passport-us": true,
+            "pr-card-ca": true,
+            "pr-card-us": true
           }
         }
       },
       {
-        "id": "face-liveness",
-        "config": {
-          "face_liveness_confidence_settings": { "confidence_threshold": 70 },
-          "face_liveness_settings": { "preferred_liveness_method": "FaceMovementChallenge" }
-        }
+        "id": "FACE_LIVENESS",
+        "config": { "preferred_liveness_method": "FaceMovementChallenge", "confidence_threshold": 70 }
       },
       {
-        "id": "age-estimation",
-        "config": {
-          "age_estimation_settings": { "minimum_age": 18 }
-        }
+        "id": "AGE_ESTIMATION",
+        "config": { "minimum_age": 18 }
       },
       {
-        "id": "pep-sanctions",
+        "id": "PEP_SANCTIONS",
         "config": {}
       },
       {
-        "id": "adverse-media",
+        "id": "ADVERSE_MEDIA",
         "config": {}
       },
       {
-        "id": "bank-statement-upload",
+        "id": "BANK_STATEMENT_UPLOAD",
+        "config": { "account_type": "checking", "statement_period": "12" }
+      },
+      {
+        "id": "DOCUMENT_UPLOAD",
         "config": {
-          "bank_statement_settings": {
-            "account_type": "checking",
-            "statement_period": "12"
-          }
+          "documents": [
+            { "id": "document1", "description": "Articles of Incorporation" }
+          ]
         }
       },
       {
-        "id": "document-upload",
+        "id": "TITLE_SEARCH",
+        "config": { "country": "usa" }
+      },
+      {
+        "id": "CUSTOM_PROMPT",
         "config": {
-          "document_upload_instructions": {
-            "document_upload_list": {
-              "document1": "Articles of Incorporation"
-            }
-          }
+          "prompts": [
+            { "text": "Hold up 3 fingers" }
+          ]
         }
       },
       {
-        "id": "title-search",
-        "config": {
-          "title_search_settings": { "title_search_country": "usa" }
-        }
-      },
-      {
-        "id": "custom-prompt",
-        "config": {
-          "custom_instructions": {
-            "custom_prompts_list": [{ "text": "Hold up 3 fingers" }]
-          }
-        }
-      },
-      {
-        "id": "custom-form",
+        "id": "CUSTOM_FORM",
         "config": {
           "form_fields": {
             "form_fields_list": {
@@ -198,10 +184,11 @@ response = requests.get(
         }
       },
       {
-        "id": "ai-bank-statement-analysis",
+        "id": "AI_BANK_STATEMENT_ANALYSIS",
         "config": {}
       }
-    ]
+    ],
+    "failure_settings": { "active": true, "max_attempts": 3 }
   }
 }
 ```

@@ -188,6 +188,19 @@ You can also start from a **template** — pre-configured workflows for common u
 
 Manage workflows programmatically through the [Workflows API](/api-reference/workflows/list-workflows).
 
+<Note>
+  Some services, such as credit checks and background checks, can only be added to a workflow in the Admin Console. They aren't available through the API. See [Create workflow](/api-reference/workflows/create-workflow#available-steps) for the steps the API accepts.
+
+  The credit check endpoints (`/v1/credit-check/*`) return `404`:
+
+  ```json
+  {
+    "code": "NOT_AVAILABLE_VIA_API",
+    "error": "Credit checks aren't available through the API. Contact support if you need them."
+  }
+  ```
+</Note>
+
 ---
 
 ## Workflow Templates

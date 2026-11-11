@@ -95,11 +95,11 @@ with open("/path/to/id.jpg", "rb") as doc, open("/path/to/selfie.jpg", "rb") as 
 
 ### 200 — Success
 
-All confidence and threshold values on this response are reported on a **0–100** scale.
+All confidence and threshold values on this response are reported on a **0–100** scale. Field names in this response use camelCase (for example, `overallConfidence`, `isExpired`).
 
 | Field               | Type    | Description                                                                       |
 | ------------------- | ------- | --------------------------------------------------------------------------------- |
-| `verified`          | boolean | Overall pass/fail derived from the three sub-results                              |
+| `verified`          | boolean | `true` when the document was readable, a face was detected in the selfie, and it matched the document photo. See [What `verified` checks](#what-verified-checks) |
 | `document`          | object  | Subset of [`/v1/document/scan`](/api-reference/server-to-server/document-scan) response |
 | `faceDetection`     | object  | Result of [`/v1/face/detect`](/api-reference/server-to-server/face-detect) on the selfie |
 | `faceMatch`         | object  | Comparison between document photo and selfie                                      |
@@ -118,6 +118,7 @@ All confidence and threshold values on this response are reported on a **0–100
 | `nationality`    | string         | Nationality                                          |
 | `documentNumber` | string         | Document number                                      |
 | `expirationDate` | string         | Document expiration date                             |
+| `isExpired`      | boolean \| null | `true` if the expiration date has passed, `false` if the document is still valid (expires today or later, UTC), `null` if the expiration date is missing or unreadable |
 | `issuingCountry` | string         | Issuing country                                      |
 | `address`        | string         | Address (when present)                               |
 | `confidence`     | number (0–100) | Average document-extraction confidence               |
@@ -162,6 +163,7 @@ All confidence and threshold values on this response are reported on a **0–100
     "nationality": "USA",
     "documentNumber": "D1234567",
     "expirationDate": "2030-04-12",
+    "isExpired": false,
     "issuingCountry": "USA",
     "address": "123 MAIN ST, SPRINGFIELD, IL 62701",
     "confidence": 97
@@ -179,6 +181,16 @@ All confidence and threshold values on this response are reported on a **0–100
 }
 ```
 </ResponseExample>
+
+## What `verified` checks
+
+`verified` is `true` when all three of these hold:
+
+- The document was readable.
+- A face was detected in the selfie.
+- The selfie matched the document photo.
+
+`verified` does **not** check document expiry, authenticity, or fraud. A readable, expired document with a matching selfie still returns `verified: true`. Check `document.isExpired` and apply your own policy on top.
 
 ## How `overallConfidence` is calculated
 

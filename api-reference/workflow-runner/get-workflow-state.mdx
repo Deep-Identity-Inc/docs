@@ -62,7 +62,7 @@ state = response.json()
 ## Response
 
 <Note>
-  This response shape is distinct from [Create Workflow Session](/api-reference/workflow-runner/create-workflow-session)'s — it has no `expires_at`, and adds `status`, `session_progress`, and `attempts_remaining`. [Start Workflow](/api-reference/workflow-runner/start-workflow) returns this same shape.
+  This response shape is distinct from [Create Workflow Session](/api-reference/workflow-runner/create-workflow-session)'s — it has no `expires_at`, and adds `status`, `session_progress`, `attempts_remaining`, and `session_failure`. [Start Workflow](/api-reference/workflow-runner/start-workflow) returns this same shape.
 </Note>
 
 ### 200 — Success
@@ -74,18 +74,20 @@ state = response.json()
 | `session_progress` | string | `PENDING`, `STARTED`, or `COMPLETED` |
 | `steps` | array | One [step object](#steps-object) per workflow step |
 | `current_step` | integer \| null | 0-based index of the step to submit next. `null` once the run has finished (all steps completed, or the session became terminal) |
-| `attempts_remaining` | number \| null | Session-wide failure budget remaining. `null` when the workflow has no failure limit configured |
+| `attempts_remaining` | integer \| null | Session-wide failure budget remaining. `null` when the workflow has no failure limit configured |
+| `session_failure` | object \| null | Why the run ended, when the session failed or expired. `null` for every other session status. See [Session failure codes](#session-failure-codes) |
 
 ### `steps[]` object
 
 | Field | Type | Description |
 |---|---|---|
-| `step_id` | string | `ID_VERIFICATION` or `FACE_LIVENESS` |
+| `step_id` | string | The step's identifier in API form, e.g. `ID_VERIFICATION`. One of the [runnable steps](/api-reference/workflow-runner/create-workflow-session#available-steps) |
 | `status` | string | `PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, or `SKIPPED` |
 | `attempts` | integer | Number of times this step has been submitted |
 | `started_at` | string \| null | ISO 8601 timestamp of the first submission, or `null` |
 | `completed_at` | string \| null | ISO 8601 timestamp the step reached a terminal status, or `null` |
-| `failure_reason` | string \| null | Reason the step last failed, or `null`. See [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step#id_verification-failure-reasons) for the full list of values |
+| `failure_reason` | string \| null | Legacy reason the step last failed, or `null`. Kept for existing integrations and no longer extended: use `failure.code` instead |
+| `failure` | object \| null | The step's most recent failed attempt, or `null`. Resets to `null` when a new attempt starts and when the step completes. See [Failure codes](#failure-codes) |
 | `requirements` | object | Same shape as in [Create Workflow Session](/api-reference/workflow-runner/create-workflow-session#available-steps) |
 
 ### Error responses
@@ -113,6 +115,7 @@ state = response.json()
       "started_at": "2026-09-08T14:02:11.000Z",
       "completed_at": "2026-09-08T14:03:47.000Z",
       "failure_reason": null,
+      "failure": null,
       "requirements": {
         "document": {
           "require_front_only": false,
@@ -128,10 +131,18 @@ state = response.json()
     {
       "step_id": "FACE_LIVENESS",
       "status": "PENDING",
-      "attempts": 0,
-      "started_at": null,
+      "attempts": 1,
+      "started_at": "2026-09-08T14:04:02.000Z",
       "completed_at": null,
-      "failure_reason": null,
+      "failure_reason": "FACE_LIVENESS_CHECK_FAILED",
+      "failure": {
+        "code": "LIVENESS_FAILED",
+        "category": "LIVENESS",
+        "user_action": "RETRY_LIVENESS",
+        "retryable": true,
+        "slot": null,
+        "message": "The liveness check did not pass."
+      },
       "requirements": {
         "challenge_type": "FaceMovementChallenge",
         "confidence_threshold": 70
@@ -139,8 +150,124 @@ state = response.json()
     }
   ],
   "current_step": 1,
-  "attempts_remaining": 2
+  "attempts_remaining": 2,
+  "session_failure": null
 }
 ```
 
 </ResponseExample>
+
+## Failure codes
+
+When a step attempt fails a blocking check, the step's `failure` object (here and on [Submit Workflow Step](/api-reference/workflow-runner/submit-workflow-step)) says why and what the applicant can do about it.
+
+| Field | Type | Description |
+|---|---|---|
+| `code` | string | Stable, machine-readable cause. See [Codes](#codes) |
+| `category` | string | Coarse grouping of the cause. See [Categories](#categories) |
+| `user_action` | string | What the applicant should do to fix the cause. See [User actions](#user-actions) |
+| `retryable` | boolean | `true` while the step can still be submitted again (step status `PENDING` or `IN_PROGRESS`). `false` once the step has failed for good: a block that ends the run, or the session's retry limit was reached |
+| `slot` | string \| null | The document the failure applies to when it's document-specific: `PRIMARY`, `SECONDARY`, or `TERTIARY`. `null` otherwise |
+| `message` | string | Developer-facing English description. Don't show it to applicants; write your own copy per `code` or `user_action` |
+
+<Note>
+  New `code`, `category`, and `user_action` values may be added. Handle values you don't recognize, for example by falling back to `retryable` and a generic message.
+</Note>
+
+### User actions
+
+`user_action` says what would fix the cause. Whether another attempt is still allowed is `retryable`, so check both.
+
+| `user_action` | Meaning |
+|---|---|
+| `RETAKE_DOCUMENT` | Capture the same document again |
+| `USE_DIFFERENT_DOCUMENT` | Submit a different, accepted document type |
+| `RETAKE_SELFIE` | Capture the selfie again |
+| `RETRY_LIVENESS` | Run the liveness check again |
+| `RETRY_STEP` | Submit the step again. Used for checks that couldn't run or complete |
+| `NONE` | Nothing the applicant can fix, such as a block that ends the run |
+
+### Categories
+
+| `category` | Covers |
+|---|---|
+| `DOCUMENT` | The ID document couldn't be read or isn't accepted |
+| `SELFIE` | The selfie couldn't be used |
+| `FACE_MATCH` | The selfie or liveness face doesn't match the ID |
+| `LIVENESS` | The liveness check didn't pass |
+| `RISK` | Fraud and tampering signals: deepfake, injection, anti-cheat, VPN |
+| `COMPLIANCE` | Regulatory gates and screening: IP jurisdiction, age, consent, adverse media, address, background check |
+| `OTHER` | Everything else, including phone checks, ProofCall, and title search |
+
+### Codes
+
+| `code` | `category` | `user_action` | Meaning |
+|---|---|---|---|
+| `ID_FACE_NOT_DETECTED` | `DOCUMENT` | `RETAKE_DOCUMENT` | No face was detected on the ID document front |
+| `ID_TEXT_NOT_READABLE` | `DOCUMENT` | `RETAKE_DOCUMENT` | No name could be read from the ID document |
+| `DOCUMENT_TYPE_NOT_ACCEPTED` | `DOCUMENT` | `USE_DIFFERENT_DOCUMENT` | This document type isn't accepted for this workflow |
+| `DOCUMENT_TYPE_UNRECOGNIZED` | `DOCUMENT` | `RETAKE_DOCUMENT` | The document couldn't be recognized as the selected document type |
+| `DOCUMENT_TYPE_LOW_CONFIDENCE` | `DOCUMENT` | `RETAKE_DOCUMENT` | The document type couldn't be recognized with enough confidence |
+| `SELFIE_FACE_NOT_DETECTED` | `SELFIE` | `RETAKE_SELFIE` | No face was detected in the selfie |
+| `SELFIE_MULTIPLE_FACES` | `SELFIE` | `RETAKE_SELFIE` | The selfie contains more than one face and none matched the ID |
+| `SELFIE_ID_FACE_MISMATCH` | `FACE_MATCH` | `RETAKE_SELFIE` | The selfie doesn't match the face on the ID document |
+| `LIVENESS_ID_MISMATCH` | `FACE_MATCH` | `RETAKE_DOCUMENT` on `ID_VERIFICATION`, `RETRY_LIVENESS` on `FACE_LIVENESS` | The face from the liveness check doesn't match the face on the ID document. The step that raised it is the one to retry |
+| `LIVENESS_FAILED` | `LIVENESS` | `RETRY_LIVENESS` | The liveness check didn't pass |
+| `DEEPFAKE_DETECTED` | `RISK` | `NONE` | The deepfake check judged the capture to be synthetic or manipulated |
+| `DEEPFAKE_CHECK_UNAVAILABLE` | `RISK` | `RETRY_STEP` | The deepfake check couldn't be completed |
+| `INJECTION_DETECTED` | `RISK` | `NONE` | The capture was judged to be injected rather than taken live |
+| `INJECTION_CHECK_UNAVAILABLE` | `RISK` | `RETRY_STEP` | The injection check couldn't be completed |
+| `ANTI_CHEAT_BLOCKED` | `RISK` | `NONE` | The anti-cheat check blocked the session |
+| `ANTI_CHEAT_CHECK_UNAVAILABLE` | `RISK` | `RETRY_STEP` | The anti-cheat check couldn't be completed |
+| `VPN_DETECTED` | `RISK` | `NONE` | The IP address was identified as a VPN, proxy, or other anonymizer |
+| `VPN_CHECK_UNAVAILABLE` | `RISK` | `RETRY_STEP` | The VPN check couldn't be completed |
+| `IP_JURISDICTION_BLOCKED` | `COMPLIANCE` | `NONE` | The IP address is in a jurisdiction this workflow doesn't allow |
+| `IP_JURISDICTION_CHECK_UNAVAILABLE` | `COMPLIANCE` | `RETRY_STEP` | The IP jurisdiction check couldn't be completed |
+| `AGE_NOT_VERIFIED` | `COMPLIANCE` | `NONE` | The applicant's age wasn't verified |
+| `CONSENT_DECLINED` | `COMPLIANCE` | `NONE` | The applicant declined consent |
+| `ADVERSE_MEDIA_CHECK_UNAVAILABLE` | `COMPLIANCE` | `RETRY_STEP` | The adverse media screening couldn't be completed |
+| `ADDRESS_NOT_VERIFIED` | `COMPLIANCE` | `NONE` | The applicant's address wasn't verified |
+| `BACKGROUND_CHECK_RECORD_MATCH` | `COMPLIANCE` | `NONE` | The background check returned a confirmed record match |
+| `BACKGROUND_CHECK_UNAVAILABLE` | `COMPLIANCE` | `RETRY_STEP` | The background check couldn't be completed |
+| `PHONE_CALL_FAILED` | `OTHER` | `RETRY_STEP` | The verification call didn't complete: it wasn't answered, went to voicemail, or didn't connect |
+| `PHONE_VERIFICATION_FAILED` | `OTHER` | `RETRY_STEP` | The applicant didn't speak the right phrase on the verification call |
+| `PHONE_TRUST_CHECK_UNAVAILABLE` | `OTHER` | `RETRY_STEP` | The phone trust check couldn't be completed |
+| `CARRIER_AGE_GATE_UNAVAILABLE` | `OTHER` | `RETRY_STEP` | The carrier age gate couldn't be completed |
+| `PHONE_OWNERSHIP_MATCH_UNAVAILABLE` | `OTHER` | `RETRY_STEP` | The phone ownership match couldn't be completed |
+| `PROOF_CALL_FAILED` | `OTHER` | `NONE` | The ProofCall check didn't pass |
+| `PROOF_CALL_CANCELLED` | `OTHER` | `RETRY_STEP` | The ProofCall was cancelled before a verdict |
+| `PROOF_CALL_UNAVAILABLE` | `OTHER` | `RETRY_STEP` | The ProofCall finished without a readable verdict |
+| `TITLE_SEARCH_UNAVAILABLE` | `OTHER` | `RETRY_STEP` | The title search couldn't be completed |
+| `CREDIT_CHECK_CONSENT_NOT_SAVED` | `OTHER` | `RETRY_STEP` | The credit check consent couldn't be saved |
+| `UNKNOWN` | `OTHER` | `RETRY_STEP`, or `NONE` once the step has failed for good | A failure the server can't classify. The step's `failure_reason` still carries the raw reason |
+
+<Info>
+  Background checks and credit checks aren't available through the API, so you won't see the `BACKGROUND_CHECK_*` and `CREDIT_CHECK_*` codes on new runs. They can still appear on stored sessions that ran those steps.
+</Info>
+
+### Session failure codes
+
+When a session fails or expires, `session_failure` says why the run ended:
+
+| Field | Type | Description |
+|---|---|---|
+| `code` | string | `ATTEMPTS_EXHAUSTED` (the retry limit ran out), `STEP_BLOCKED` (a step ended the run outright), or `SESSION_EXPIRED` (the session expired). New values may be added |
+| `step_id` | string \| null | The step that ended the run, or `null` when no step did |
+| `failure` | object \| null | That step's last [failure](#failure-codes), or `null` when it has none |
+
+```json
+{
+  "session_failure": {
+    "code": "ATTEMPTS_EXHAUSTED",
+    "step_id": "FACE_LIVENESS",
+    "failure": {
+      "code": "LIVENESS_FAILED",
+      "category": "LIVENESS",
+      "user_action": "RETRY_LIVENESS",
+      "retryable": false,
+      "slot": null,
+      "message": "The liveness check did not pass."
+    }
+  }
+}
+```

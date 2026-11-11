@@ -17,13 +17,12 @@ Scores signals collected during the applicant's liveness capture for indicators 
   erroring. (`frame_timing` on its own does not count as a signal.)
 </Note>
 
-<Warning>
-  Unlike the other iGaming checks, this endpoint does **not** skip when the
-  session's workflow has no `INJECTION_DETECTION` step. It scores the supplied
-  signals with the default config (`action_on_detection: block`,
-  `automation_handling: block`, `confidence_threshold: 70`) and can fail the
-  session. Only call it on sessions whose workflow includes the step.
-</Warning>
+<Note>
+  Like the other iGaming checks, this endpoint requires the step on the
+  session's workflow. If the workflow has no `INJECTION_DETECTION` step, it
+  returns `409` with code `STEP_NOT_CONFIGURED` and leaves the session
+  unchanged. See [Step not configured](#step-not-configured).
+</Note>
 
 ## Request
 
@@ -146,6 +145,17 @@ response = requests.post(
 | `CLEAR` | Signals passed and the soft score met the threshold — no injection detected |
 | `UNAVAILABLE` | Neither `device_integrity` nor `media_source` was supplied — fails soft to `allow` |
 
+### Step not configured
+
+If the session's workflow doesn't include the `INJECTION_DETECTION` step, or the session has no workflow, the check returns `409` and nothing is evaluated or stored. Add the step to the workflow first.
+
+```json
+{
+  "code": "STEP_NOT_CONFIGURED",
+  "error": "This session's workflow doesn't include this check. Add the step to the workflow first."
+}
+```
+
 ### Error responses
 
 | Status | Description |
@@ -154,6 +164,7 @@ response = requests.post(
 | `401 Unauthorized` | Invalid or revoked API key |
 | `403 Forbidden` | `x-api-key` header missing |
 | `404 Not Found` | Session not found, or not in your org |
+| `409 Conflict` | The session's workflow doesn't include the `INJECTION_DETECTION` step, or the session has no workflow (`code: STEP_NOT_CONFIGURED`). Nothing is evaluated or stored |
 
 <ResponseExample>
 ```json hard hit (example request)

@@ -25,7 +25,7 @@ Steps must be submitted **in order**: the `step_id` in the URL must match the se
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `session_id` | string (uuid) | Yes | The session to submit a step for |
-| `step_id` | string | Yes | `ID_VERIFICATION` or `FACE_LIVENESS` — must match the session's current step |
+| `step_id` | string | Yes | One of the [runnable steps](/api-reference/workflow-runner/create-workflow-session#available-steps), e.g. `ID_VERIFICATION` — must match the session's current step. Case- and separator-insensitive: `id_verification` and `id-verification` also work |
 
 ### Body parameters
 
@@ -35,6 +35,8 @@ The request body depends on `step_id`:
 |---|---|
 | `ID_VERIFICATION` | [ID_VERIFICATION submission](#id_verification) |
 | `FACE_LIVENESS` | [FACE_LIVENESS submission](#face_liveness) |
+| `PHONE_VERIFICATION` | [PHONE_VERIFICATION submission](#phone_verification) |
+| `IP_JURISDICTION`, `VPN_DETECTION`, `INJECTION_DETECTION`, `ANTI_CHEAT` | [iGaming step submissions](#igaming-steps) |
 
 ## Step submission schemas
 
@@ -179,28 +181,108 @@ complete = requests.post(base, headers=headers, json={"action": "complete"}).jso
 
 </CodeGroup>
 
+<Note>
+  With the custom liveness provider, call `upload-url` and upload the captured frames before you call `complete`. Calling `complete` before any frame is uploaded returns `409` with `code` `LIVENESS_UPLOAD_INCOMPLETE`. No attempt is used: upload the frames and call `complete` again.
+</Note>
+
+### PHONE_VERIFICATION
+
+The phone verification step calls the applicant's phone on file and checks the phrase they speak. The body is a discriminated union on `action`, and no other fields are accepted.
+
+| `action` | Fields | Description |
+|---|---|---|
+| `start` | none | Places the verification call. If a call for this step is already in progress, it's reused (`phone_verification.reused: true`) instead of placing a second one |
+| `complete` | none | Reads the call's result and applies it to the step |
+
+The step is asynchronous: its `requirements` include `asynchronous: true` and `poll_interval_seconds: 5`. After `start`, call `complete` every 5 seconds until the step settles.
+
+| What happens | Response | Attempt used |
+|---|---|---|
+| The call is still in progress | `409`, `code` `STEP_NOT_READY`. Keep polling `complete` | No |
+| The applicant spoke the right phrase | `200`, step `COMPLETED`, `phone_verification.passed: true` | No |
+| The applicant spoke the wrong phrase | `200`, step `PENDING`, `failure.code` `PHONE_VERIFICATION_FAILED` | Yes |
+| The call wasn't answered, went to voicemail, or didn't connect | `200`, step `PENDING`, `failure.code` `PHONE_CALL_FAILED` | Yes |
+| You call `complete` again after a failed call | `409`, `code` `STEP_NOT_READY`, `failure_reason` `PHONE_VERIFICATION_NOT_STARTED`, `error` "Start a new phone verification call to try again" | No |
+| The phone verification service times out or is unavailable on `start` | `503`, `code` `PHONE_VERIFICATION_UNAVAILABLE`, `error` "The phone verification service is temporarily unavailable; try again". The step is unchanged | No |
+| The applicant has no valid phone on file on `start` | `400`, `code` `PHONE_REQUIRED` | No |
+
+Both failed outcomes are retryable while the session has attempts left: call `start` to place a new call, then poll `complete` again. Each call counts as at most one failed attempt. After a `503`, retry the same `start` call.
+
+To avoid `PHONE_REQUIRED`, send the applicant's `phone` when you create the session. See [Create Workflow Session](/api-reference/workflow-runner/create-workflow-session#phone-number).
+
+<CodeGroup>
+
+```bash cURL — start
+curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/PHONE_VERIFICATION \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "action": "start" }'
+```
+
+```bash cURL — complete
+curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/PHONE_VERIFICATION \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "action": "complete" }'
+```
+
+</CodeGroup>
+
+### iGaming steps
+
+The four iGaming checks can run as workflow steps through the runner, with the same inputs and verdicts as their [standalone endpoints](/api-reference/igaming/overview). The session's `steps[].requirements` (from [Create Workflow Session](/api-reference/workflow-runner/create-workflow-session)) lists the fields each one needs.
+
+| `step_id` | Body | Result field in the response |
+|---|---|---|
+| `IP_JURISDICTION` | `{ "ip_address": "<applicant IPv4 or IPv6>" }` | `ip_jurisdiction` — same fields as [IP jurisdiction](/api-reference/igaming/ip-jurisdiction), with snake_case keys |
+| `VPN_DETECTION` | `{ "ip_address": "<applicant IPv4 or IPv6>" }` | `vpn_detection` — same fields as [VPN detection](/api-reference/igaming/vpn-detection), with snake_case keys |
+| `INJECTION_DETECTION` | `{ "device_integrity": {...}, "media_source": {...}, "frame_timing": {...} }` (each `{ pass, score, signals }`) | `injection_detection` — same fields as [Injection detection](/api-reference/igaming/injection), with snake_case keys |
+| `ANTI_CHEAT` | `{ "image": "<base64 JPEG/PNG>", "device_fingerprint": "<optional>" }` | `anti_cheat` — same fields as [Anti-cheat](/api-reference/igaming/anti-cheat), with snake_case keys |
+
+The standalone endpoints return some evidence keys in camelCase. Through the runner, every key in these result objects is snake_case.
+
+A `block` action fails the step and the session. Submit the steps one at a time, in the session's step order.
+
+```bash
+curl -X POST https://api.deepidv.com/v1/sessions/80e801af-991b-425c-96fc-f5e07d794253/steps/IP_JURISDICTION \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "ip_address": "102.88.25.10" }'
+```
+
 ## Response
 
-The response is a common envelope for both step types; FACE_LIVENESS additionally includes a `liveness` object.
+The response is a common envelope for every step type. FACE_LIVENESS additionally includes a `liveness` object, PHONE_VERIFICATION a `phone_verification` object, and each iGaming step its result field (see [iGaming steps](#igaming-steps)).
+
+<Note>
+  Every key in the response, including step result objects, is snake_case. The one exception is `liveness.script` on the custom-provider FACE_LIVENESS `start` response, which keeps its camelCase keys (`challengeType`, `durationMs`, `steps[].atMs`). See [FACE_LIVENESS results](#face_liveness-results).
+</Note>
 
 ### 200 — Success
 
 | Field | Type | Present when | Description |
 |---|---|---|---|
-| `step_id` | string | always | `ID_VERIFICATION` or `FACE_LIVENESS` |
+| `step_id` | string | always | The submitted step id |
 | `step_status` | string | always | `PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, or `SKIPPED` |
-| `failure_reason` | string \| null | always | Reason the step failed this attempt, or `null`. See [ID_VERIFICATION failure reasons](#id_verification-failure-reasons) and [FACE_LIVENESS failure reasons](#face_liveness-failure-reasons) |
+| `failure_reason` | string \| null | always | Legacy reason the step failed this attempt, or `null`. Kept for existing integrations and no longer extended: use `failure.code` instead |
+| `failure` | object \| null | always | Why this attempt failed a blocking check, whether the step can be retried (`step_status: PENDING`) or not (`FAILED`). `null` on success and on intermediate transitions such as liveness `start`. See [Failure codes](/api-reference/workflow-runner/get-workflow-state#failure-codes) |
+| `session_failure` | object \| null | always | Why the run ended, when this submission failed the session. `null` otherwise. See [Session failure codes](/api-reference/workflow-runner/get-workflow-state#session-failure-codes) |
 | `current_step` | integer \| null | always | 0-based index of the next step to submit. `null` once the run has finished |
-| `attempts_remaining` | number \| null | always | Session-wide failure budget remaining. `null` when the workflow has no failure limit configured |
+| `attempts_remaining` | integer \| null | always | Session-wide failure budget remaining. `null` when the workflow has no failure limit configured |
 | `session_status` | string | always | Session status: `PENDING`, `SUBMITTED`, `VERIFIED`, `REJECTED`, `VOIDED`, `EXPIRED`, or `FAILED` |
 | `session_progress` | string | always | `PENDING`, `STARTED`, or `COMPLETED` |
 | `liveness` | object | `step_id` is `FACE_LIVENESS` | Shape depends on the submitted `action` — see [FACE_LIVENESS results](#face_liveness-results) |
+| `phone_verification.status` | string | `step_id` is `PHONE_VERIFICATION` | Call state, such as `pending`, `in-progress`, or `completed` |
+| `phone_verification.reused` | boolean | `start` | `true` when an existing in-progress call was reused instead of placing a new one |
+| `phone_verification.passed` | boolean | `complete` | `true` when the applicant spoke the right phrase |
 
 <Note>
   Advisory checks (age, expiry, document validity period, state) never fail an `ID_VERIFICATION` step and are not included in the response — only the blocking checks below can produce a `failure_reason`.
 </Note>
 
 ### ID_VERIFICATION failure reasons
+
+These are the legacy `failure_reason` values. For new integrations, read `failure.code` instead. See [Failure codes](/api-reference/workflow-runner/get-workflow-state#failure-codes).
 
 | `failure_reason` | Meaning |
 |---|---|
@@ -230,35 +312,48 @@ The response is a common envelope for both step types; FACE_LIVENESS additionall
 | `credentials.expiration` | string | ISO 8601 expiry of the credentials (~15 minutes) |
 | `expires_at` | string | ISO 8601 expiry of the liveness session |
 
+With the custom liveness provider, `start` returns `liveness_session_id` and a `script` the capture must follow, instead of `region` and `credentials`. `script` keeps camelCase keys:
+
+| Field | Type | Description |
+|---|---|---|
+| `script.challengeType` | string | `FaceMovementChallenge` or `FaceMovementAndLightChallenge` |
+| `script.durationMs` | number | Length of the challenge in milliseconds |
+| `script.steps[].kind` | string | `color` or `move-closer` |
+| `script.steps[].atMs` | number | When the step starts, in milliseconds from the start of the challenge |
+| `script.steps[].color` | string | Hex color to show, for `color` steps |
+
 **`complete`**
 
 | Field | Type | Description |
 |---|---|---|
-| `status` | string | Normalized Rekognition liveness status, e.g. `SUCCEEDED` or `FAILED` |
-| `confidence` | number \| null | Liveness confidence score (0-100), or `null` when Rekognition didn't return one |
+| `status` | string | Outcome of this attempt: `SUCCEEDED` when the step passed, `FAILED` for any failed attempt (the liveness check failed, or the liveness face didn't match the ID) |
+| `confidence` | number | Liveness confidence score (0-100). Present only on a pass. It's left out of a failed attempt on purpose, so the score can't be used to tune a spoof against the threshold |
 | `passed` | boolean | `true` when `status` is `SUCCEEDED` and `confidence` meets the step's configured threshold |
 
 ### FACE_LIVENESS failure reasons
 
 | `failure_reason` | Meaning |
 |---|---|
-| `FACE_LIVENESS_CHECK_FAILED` | The liveness check completed but did not pass (`passed: false`). Returned in a `200` response, not an error |
+| `FACE_LIVENESS_CHECK_FAILED` | The liveness check completed but did not pass (`passed: false`). Returned in a `200` response, not an error. `failure.code` is `LIVENESS_FAILED` |
 
 <Note>
-  Calling `complete` before `start`, or before Rekognition has finished processing, returns a `409` with `failure_reason` of `FACE_LIVENESS_NOT_STARTED` or `FACE_LIVENESS_RESULT_NOT_READY` — see [Error responses](#error-responses). These are retryable and don't consume an attempt.
+  Calling `complete` before `start`, before Rekognition has finished processing, or (custom provider) before any frame is uploaded returns a `409` with `code` `LIVENESS_NOT_STARTED`, `LIVENESS_RESULT_NOT_READY`, or `LIVENESS_UPLOAD_INCOMPLETE` — see [Error responses](#error-responses). These are retryable and don't consume an attempt.
 </Note>
 
 ### Error responses
 
+Error bodies carry an `error` message and a machine-readable `code`; handle `code` values you don't recognize. Authentication failures rejected before the request reaches the runner may have no `code`. Retryable `409` responses also carry a legacy `failure_reason`.
+
 | Status | Description |
 |---|---|
-| `400` | Invalid `session_id`/`step_id` path parameters, the request body fails the step's schema, or an upload key in the body doesn't belong to this session |
+| `400` | Invalid `session_id`/`step_id` path parameters, the request body fails the step's schema, an upload key in the body doesn't belong to this session, or a step that uses the applicant's phone (PHONE_VERIFICATION `start`, PHONE_TRUST_CHECK, CARRIER_AGE_GATE, PHONE_OWNERSHIP_MATCH) runs on a session whose applicant has no phone on file (`PHONE_REQUIRED`) |
 | `401` | Invalid or missing API key |
 | `403` | The session belongs to a different organization |
-| `404` | Session not found, `step_id` isn't `ID_VERIFICATION`/`FACE_LIVENESS`, the step isn't part of this session's workflow, or no workflow execution state exists for this session |
-| `409` | The session is terminal, the step is out of order or not in a submittable state, a concurrent submission conflict occurred, or (`FACE_LIVENESS` only) `complete` was called before `start` or before the result was ready |
+| `404` | Session not found, `step_id` isn't one of the [runnable steps](/api-reference/workflow-runner/create-workflow-session#available-steps), the step isn't part of this session's workflow, or no workflow execution state exists for this session |
+| `409` | The session is terminal (`SESSION_TERMINAL`), the step is out of order (`STEP_OUT_OF_ORDER`) or not in a submittable state (`STEP_NOT_SUBMITTABLE`), a concurrent submission conflict occurred (`STEP_CONFLICT`), liveness `complete` came before `start`, before the result was ready, or before any upload (`LIVENESS_NOT_STARTED`, `LIVENESS_RESULT_NOT_READY`, `LIVENESS_UPLOAD_INCOMPLETE`), or another step is waiting on state that doesn't exist yet (`STEP_NOT_READY`, for example a phone call still in progress). The not-ready conflicts are retryable and don't use an attempt |
 | `429` | Too many requests |
 | `501` | This step type isn't runnable through the API yet |
+| `503` | PHONE_VERIFICATION `start` couldn't reach the phone verification service (`PHONE_VERIFICATION_UNAVAILABLE`). Retryable: the step is unchanged and no attempt is used |
 
 <ResponseExample>
 
@@ -267,6 +362,8 @@ The response is a common envelope for both step types; FACE_LIVENESS additionall
   "step_id": "ID_VERIFICATION",
   "step_status": "COMPLETED",
   "failure_reason": null,
+  "failure": null,
+  "session_failure": null,
   "current_step": 1,
   "attempts_remaining": 3,
   "session_status": "PENDING",
@@ -279,6 +376,15 @@ The response is a common envelope for both step types; FACE_LIVENESS additionall
   "step_id": "ID_VERIFICATION",
   "step_status": "PENDING",
   "failure_reason": "FACE_MISMATCH",
+  "failure": {
+    "code": "SELFIE_ID_FACE_MISMATCH",
+    "category": "FACE_MATCH",
+    "user_action": "RETAKE_SELFIE",
+    "retryable": true,
+    "slot": "PRIMARY",
+    "message": "The selfie does not match the face on the ID document."
+  },
+  "session_failure": null,
   "current_step": 0,
   "attempts_remaining": 2,
   "session_status": "PENDING",
@@ -291,6 +397,8 @@ The response is a common envelope for both step types; FACE_LIVENESS additionall
   "step_id": "FACE_LIVENESS",
   "step_status": "IN_PROGRESS",
   "failure_reason": null,
+  "failure": null,
+  "session_failure": null,
   "current_step": 1,
   "attempts_remaining": 3,
   "session_status": "PENDING",
@@ -314,6 +422,8 @@ The response is a common envelope for both step types; FACE_LIVENESS additionall
   "step_id": "FACE_LIVENESS",
   "step_status": "COMPLETED",
   "failure_reason": null,
+  "failure": null,
+  "session_failure": null,
   "current_step": null,
   "attempts_remaining": 3,
   "session_status": "VERIFIED",
@@ -326,9 +436,35 @@ The response is a common envelope for both step types; FACE_LIVENESS additionall
 }
 ```
 
+```json 200 — FACE_LIVENESS complete (failed)
+{
+  "step_id": "FACE_LIVENESS",
+  "step_status": "PENDING",
+  "failure_reason": "FACE_LIVENESS_CHECK_FAILED",
+  "failure": {
+    "code": "LIVENESS_FAILED",
+    "category": "LIVENESS",
+    "user_action": "RETRY_LIVENESS",
+    "retryable": true,
+    "slot": null,
+    "message": "The liveness check did not pass."
+  },
+  "session_failure": null,
+  "current_step": 1,
+  "attempts_remaining": 2,
+  "session_status": "PENDING",
+  "session_progress": "STARTED",
+  "liveness": {
+    "status": "FAILED",
+    "passed": false
+  }
+}
+```
+
 ```json 409 — Out of order
 {
   "error": "Workflow step is out of order",
+  "code": "STEP_OUT_OF_ORDER",
   "current_step": 0,
   "step_id": "FACE_LIVENESS"
 }
@@ -337,9 +473,29 @@ The response is a common envelope for both step types; FACE_LIVENESS additionall
 ```json 409 — Liveness not started
 {
   "error": "Face liveness has not been started for this session",
+  "code": "LIVENESS_NOT_STARTED",
   "failure_reason": "FACE_LIVENESS_NOT_STARTED",
   "current_step": 1,
   "step_id": "FACE_LIVENESS"
+}
+```
+
+```json 409 — Phone complete after a failed call
+{
+  "error": "Start a new phone verification call to try again",
+  "code": "STEP_NOT_READY",
+  "failure_reason": "PHONE_VERIFICATION_NOT_STARTED",
+  "current_step": 2,
+  "step_id": "PHONE_VERIFICATION"
+}
+```
+
+```json 503 — Phone service unavailable
+{
+  "error": "The phone verification service is temporarily unavailable; try again",
+  "code": "PHONE_VERIFICATION_UNAVAILABLE",
+  "current_step": 2,
+  "step_id": "PHONE_VERIFICATION"
 }
 ```
 
