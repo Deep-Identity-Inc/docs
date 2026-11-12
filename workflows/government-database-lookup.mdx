@@ -1,0 +1,130 @@
+---
+title: Government Database Lookup
+description: Verify an applicant's national identity number against the official government registry
+---
+
+> Check the number an applicant gives you against the government record it belongs to: confirm it exists, that it's theirs, and (where the registry has a photo) that their face matches.
+
+A government database lookup is an optional part of the **ID Verification** step. When an applicant picks a supported ID type, deepidv asks for their identity number, gets their consent, queries the issuing registry, and compares what comes back with the applicant's details.
+
+You only need this page if your workflow accepts one of the ID types below. Every other workflow behaves exactly as before.
+
+## Supported ID types
+
+| Country | ID type | `id_type` | Registry | Card photo also captured | Registry portrait returned | Fields matched |
+| --- | --- | --- | --- | --- | --- | --- |
+| Nigeria | Bank Verification Number (BVN) | `bvn-ng` | NIBSS | No: number only | Yes | First name, last name, date of birth |
+| Nigeria | National Identification Number (NIN) | `nin-ng` | NIMC | Yes | Yes | First name, last name, date of birth |
+| Mexico | CURP | `curp-mx` | RENAPO | Yes | No | First name, last name |
+
+<Note>
+More countries are coming. The response shape on this page is the same for every ID type, so you won't need to change your integration when we add more.
+</Note>
+
+## How it works
+
+<Steps>
+  <Step title="Enable the ID type in your workflow">
+    In the workflow builder, add **ID Verification** and select the ID type under the country's accepted documents: **Nigeria → BVN** or **Nigeria → National ID (NIN)**, and **Mexico → CURP**.
+  </Step>
+  <Step title="The applicant enters their number">
+    The applicant chooses the ID type and enters their number. For NIN and CURP they also photograph the card, and deepidv can read the number from it. BVN has no physical card, so it's number-only.
+  </Step>
+  <Step title="Consent and lookup">
+    The applicant agrees to the registry check. Then deepidv validates the number's format and queries the registry. If the number is malformed, the registry isn't called and you aren't charged.
+  </Step>
+  <Step title="Match and face compare">
+    deepidv compares the registry record with the applicant's name and, where supported, their date of birth. If a selfie was captured, it's also compared with the registry portrait (BVN, NIN) and with the photographed card (NIN, CURP).
+  </Step>
+  <Step title="Read the result">
+    The result is attached to the session under `analysis_data.identity_lookup_data`. Retrieve it with [Retrieve Session](/api-reference/sessions/retrieve-session).
+  </Step>
+</Steps>
+
+## Reading the result
+
+The verdict is `identity_lookup_data.status`. Use `reason_code` to decide what to do next.
+
+<Warning>
+`status` is the verdict for the lookup, not the session's top-level `status` or `analysis_data.id_matches_selfie`. `id_matches_selfie` only reports whether the faces matched. It can be `true` while the lookup is `NOT_VERIFIED`, for example when the applicant used someone else's number but a selfie that matches the registry photo.
+</Warning>
+
+### `status`
+
+| Value | Meaning |
+| --- | --- |
+| `VERIFIED` | The record exists and matched (or no details were provided to match against; check `reason_code`) |
+| `NOT_VERIFIED` | The registry answered, and the answer is a no |
+| `ERROR` | The check couldn't be completed. Safe to retry |
+
+### `reason_code`
+
+| `reason_code` | `status` | What happened | Suggested action |
+| --- | --- | --- | --- |
+| `MATCH` | `VERIFIED` | Record found, and the applicant's details match | Approve |
+| `MATCH_EXISTENCE_ONLY` | `VERIFIED` | Record found, but no applicant details were available to match | Review: compare `subject` yourself |
+| `NAME_MISMATCH` | `NOT_VERIFIED` | Record found, but the name doesn't match | Review or reject |
+| `DOB_MISMATCH` | `NOT_VERIFIED` | Record found, but the date of birth doesn't match | Review or reject |
+| `RECORD_INACTIVE` | `NOT_VERIFIED` | Record found, but the registry marks it inactive (CURP; see `record_status`) | Reject |
+| `NOT_FOUND` | `NOT_VERIFIED` | No record for this number | Reject or ask the applicant to retry |
+| `INVALID_FORMAT` | `NOT_VERIFIED` | The number isn't in a valid format. The registry wasn't called | Ask the applicant to retry |
+| `ATTEMPT_LIMIT_EXCEEDED` | `NOT_VERIFIED` | The applicant ran out of attempts. No further lookup was made | Review |
+| `UNRECOGNISED_VALIDATION_FIELD` | `NOT_VERIFIED` | The registry's answer couldn't be interpreted | Review |
+| `PROVIDER_UNAVAILABLE` | `ERROR` | The registry couldn't be reached | Retry later |
+| `PROVIDER_ERROR` | `ERROR` | The registry rejected the request | Contact support |
+| `CONSENT_NOT_GIVEN` | `ERROR` | Consent wasn't recorded | Contact support |
+| `INSUFFICIENT_BALANCE` | `ERROR` | Provider-side balance issue | Contact support |
+
+`reason_text` holds a readable explanation of the `reason_code`, suitable for showing to a reviewer.
+
+### Name matching
+
+Names come back from registries in many forms (all caps, middle names, a different word order). A `NAME_MISMATCH` doesn't always mean fraud. For example, a married name or a different spelling (*Mohammed* vs *Muhammad*) will also fail. Compare `subject` against your applicant before rejecting outright.
+
+## Example
+
+A BVN lookup where the number exists but belongs to someone other than the applicant (all values are fictional):
+
+```json
+"identity_lookup_data": {
+  "id_type": "bvn-ng",
+  "provider": "korapay",
+  "provider_reference": "VR-xxxxxxxxxxxxxxxxxxxx",
+  "status": "NOT_VERIFIED",
+  "reason_code": "NAME_MISMATCH",
+  "reason_text": "Identity number exists, but the name does not match the applicant's details.",
+  "id_number_masked": "•••••••4821",
+  "id_number_hash": "3f1c…b9a2",
+  "subject": {
+    "first_name": "CHIDI",
+    "middle_name": "EMEKA",
+    "last_name": "OKONKWO",
+    "date_of_birth": "1990-01-15",
+    "gender": "Male",
+    "nationality": null
+  },
+  "field_validation": {
+    "first_name": { "match": false },
+    "last_name": { "match": false }
+  },
+  "face_match": {
+    "portrait_vs_selfie": { "matched": true, "similarity": 99.1, "reason": null },
+    "card_vs_selfie": null
+  },
+  "watch_listed": null,
+  "checked_at": "2026-11-12T18:07:33.130Z",
+  "billable_attempts": 1
+}
+```
+
+The registry portrait is available as a temporary download link at `resource_links.identity_lookup_photo` on the same session.
+
+See the [full field reference](/api-reference/sessions/retrieve-session#government-database-lookup-data).
+
+## Good to know
+
+- **The full number is never returned.** You get `id_number_masked` (last four digits) and `id_number_hash`. The hash is stable per ID type, so you can use it to spot the same number across sessions.
+- **Date of birth is matched for BVN and NIN only** when the applicant provided one. Check `field_validation` to see which fields were actually compared.
+- **Not every field applies to every ID type.** Fields the registry doesn't provide are `null`. For example, `record_status` is only populated for CURP, and `watch_listed` (`true` / `false` / `null` for unknown) can only be set for BVN.
+- **Attempts are limited.** An applicant gets up to 3 billable attempts per ID. `billable_attempts` shows how many were used, and several failed attempts on one session is worth a reviewer's attention.
+- **Billing.** Each lookup that reaches the registry is billable, whether or not it matches. A number rejected as malformed is free.
