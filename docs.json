@@ -33,7 +33,7 @@
           },
           {
             "group": "Workflows & Verification",
-            "pages": ["workflows/workflows", "workflows/verification-links"]
+            "pages": ["workflows/workflows", "workflows/verification-links", "workflows/government-database-lookup"]
           },
           {
             "group": "Webhooks",

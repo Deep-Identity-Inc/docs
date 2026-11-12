@@ -222,6 +222,7 @@ Reason codes:
 | `injection_detection_data` | object | iGaming injection detection result |
 | `anti_cheat_data` | object | iGaming anti-cheat result — richer than the redacted API response |
 | `phone_checks` | object | Carrier intelligence results (see [Carrier intelligence data](#carrier-intelligence-data)) |
+| `identity_lookup_data` | object | Government database lookup result (BVN, NIN, CURP). Present only when the workflow includes a lookup (see [Government database lookup data](#government-database-lookup-data)) |
 
 ### iGaming check data
 
@@ -247,6 +248,34 @@ A check whose action was `block` also sets the session's top-level `status` to `
 | `phone_checks.ownership` | `status_message`, `name_score`, `first_name_score`, `last_name_score`, `dob_score`, `address_score`, `outcome` (`MATCH` / `NO_MATCH` / `NO_DATA`), `strictness`, `threshold`, `action`, `challenge_source` (`invite-name` for the passive step, `api` for a standalone call), `tripped`, `trip_reasons[]`, `checked_at`, `correlation_id` |
 
 Carrier checks never change the session's top-level `status` on their own.
+
+### Government database lookup data
+
+Present only when the workflow's ID Verification step accepts a [government database lookup](/workflows/government-database-lookup) ID type (`bvn-ng`, `nin-ng`, `curp-mx`) and the applicant chose one. If the applicant submitted a second or third ID that also uses a lookup, those results appear in `secondary_identity_lookup_data` and `tertiary_identity_lookup_data`, with the same shape.
+
+<Accordion title="identity_lookup_data fields">
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | string | **The lookup verdict.** `VERIFIED`, `NOT_VERIFIED`, or `ERROR` (retryable) |
+| `reason_code` | string | Why. See [reason codes](/workflows/government-database-lookup#reason_code) |
+| `reason_text` | string | Readable explanation of `reason_code` |
+| `id_type` | string | `bvn-ng`, `nin-ng`, or `curp-mx` |
+| `provider` | string | Data provider that ran the lookup |
+| `provider_reference` | string | Provider's reference for this lookup. Quote it to support. `null` if the registry was not reached |
+| `id_number_masked` | string | The number with all but the last four characters masked. `null` if the number was malformed |
+| `id_number_hash` | string | Stable salted SHA-256 of the number, for spotting reuse across sessions. `null` if the number was malformed |
+| `subject` | object | The registry's record: `first_name`, `middle_name`, `last_name`, `paternal_surname`, `maternal_surname`, `date_of_birth`, `gender`, `nationality`, `place_of_birth`, `place_of_birth_code`, `citizenship`, `country_of_birth`. Fields the registry doesn't provide are `null`. `null` if no record was returned |
+| `field_validation` | object | Per-field match result, e.g. `{ "first_name": { "match": true } }`. Only fields that were compared appear. `null` if no comparison ran |
+| `record_status` | object | Registry status of the record (CURP only): `code`, `description`, `active`, `evidence_document`, `evidence_document_code`, `registration_year`, `registration_place`. All `null` for BVN and NIN |
+| `watch_listed` | boolean | BVN watchlist flag. `null` means unknown or not applicable. Doesn't affect `status` |
+| `face_match` | object | `portrait_vs_selfie` (selfie vs registry portrait; BVN and NIN) and `card_vs_selfie` (selfie vs photographed card; NIN and CURP). Each is `{ matched, similarity, reason }` or `null` if not run. `null` if no selfie was captured |
+| `checked_at` | string | When the lookup ran |
+| `billable_attempts` | number | Lookups billed on this ID so far |
+
+The registry portrait (BVN and NIN) is available as a temporary download link at `resource_links.identity_lookup_photo`.
+
+</Accordion>
 
 ### `id_analysis_data` object
 
