@@ -7,6 +7,8 @@ description: Verify an applicant's national identity number against the official
 
 A government database lookup is an optional part of the **ID Verification** step. When an applicant picks a supported ID type, deepidv asks for their identity number, gets their consent, queries the issuing registry, and compares what comes back with the applicant's details.
 
+If your backend collects the ID number and consent, use [Identity Lookup](/api-reference/identity-lookup/overview) to receive the registry result directly.
+
 You only need this page if your workflow accepts one of the ID types below. Every other workflow behaves exactly as before.
 
 ## Supported ID types

@@ -1,0 +1,31 @@
+---
+title: Errors and rate limits
+description: Handle Identity Lookup errors, retry limits, and idempotent requests
+---
+
+| HTTP status | Meaning and next step |
+| --- | --- |
+| `400` | Correct the request. Check the ID format, consent, image, and threshold. Supply at most one selfie input. |
+| `401` | Check the `x-api-key` header and use a valid organization key. |
+| `402` | Check your organization's token balance before retrying. |
+| `403` | `identity_lookup_not_enabled` means your organization or region lacks access. `id_type_not_enabled` means live lookup is unavailable for that type. An upload key also needs to belong to your organization. |
+| `422` | You used the same `Idempotency-Key` with a different body. Restore the original body to retry or start a new attempt with a new key. |
+| `429` | A rate limit was reached. Wait for `Retry-After` before retrying. |
+| `502` | The provider returned an error or timed out. Retry with bounded backoff. |
+| `503` | Lookup is temporarily unavailable. Retry with bounded backoff. |
+
+## Rate limits
+
+| Scope | Per second | Per minute | Per hour |
+| --- | ---: | ---: | ---: |
+| Your organization, by default | 2 | 30 | 300 |
+| All organizations, by default | 10 | 150 | 1,500 |
+| Same ID number within your organization | — | 3 | 10 |
+
+The response body identifies the limit reached, for example `org_per_second`. On a `429`, read the `Retry-After` header in seconds and wait before trying again. Space concurrent lookups so they stay within the limits.
+
+## Retry with an idempotency key
+
+Send an optional `Idempotency-Key` header to deduplicate retries within your organization for 24 hours. Retry with the same key and the same body. A replay returns the original lookup ID and outcome, including `number.last4`, `matches`, and `face_match`, plus `replayed: true`. Sensitive record fields are omitted from replays. A different request body with the same key returns `422`.
+
+Use a new key for a new lookup attempt, for example after the applicant corrects the BVN or submits a replacement selfie.

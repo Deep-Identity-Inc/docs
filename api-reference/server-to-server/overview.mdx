@@ -17,7 +17,9 @@ Five endpoints are available under the `/v1` prefix:
 | `POST /v1/face/estimate-age` | Estimate the age range from a single face image |
 | `POST /v1/identity/verify` | Run document scan + face detect + face compare in a single call |
 
-All five endpoints share the same auth, image-input model, and error format described below.
+These five endpoints share the authentication, image inputs, and error format described below.
+
+For government registry checks using an ID number, see [Identity Lookup](/api-reference/identity-lookup/overview). It uses a JSON request and can compare a selfie with the registry portrait when one is available.
 
 ## Authentication
 
