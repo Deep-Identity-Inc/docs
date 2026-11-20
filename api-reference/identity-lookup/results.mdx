@@ -12,7 +12,7 @@ description: Interpret registry status, returned fields, name and date matching,
 
 Use `id` to identify the lookup and `created_at` for its timestamp. If you supplied `external_id`, the response echoes it so you can link the result to your own record.
 
-`number.last4` contains the last four characters, and `number.verified` indicates whether the registry found the number when that field is returned. If you need the full number, set `return_full_number: true` for the initial request. Look for `replayed: true` on an [idempotent replay](/api-reference/identity-lookup/errors#retry-with-an-idempotency-key), which may contain a reduced record.
+`number.last4` contains the last four characters, and `number.verified` indicates whether the registry found the number when that field is returned. If you need the full number, set `return_full_number: true` for the initial request. An [idempotent replay](/api-reference/identity-lookup/errors#retry-with-an-idempotency-key) sets `replayed: true` and omits the registry record.
 
 ## Record fields
 

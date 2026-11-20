@@ -6727,6 +6727,7 @@ components:
     IdentityLookupRequest:
       type: object
       required: [id_type, number, consent]
+      additionalProperties: false
       not:
         required: [selfie_base64, selfie_upload_key]
       properties:
@@ -6735,6 +6736,7 @@ components:
         number:
           type: string
           minLength: 1
+          maxLength: 128
           description: >-
             Identity number as a string, including leading zeros.
             BVN and NIN use 11 digits. Ghana Card uses GHA-#########-#.
@@ -6746,24 +6748,29 @@ components:
           description: The holder gave consent to query the registry.
         first_name:
           type: string
+          maxLength: 256
           description: First name to compare with the registry record.
         middle_name:
           type: string
+          maxLength: 256
           description: Middle name to compare with the registry record.
         last_name:
           type: string
+          maxLength: 256
           description: Last name to compare with the registry record.
         date_of_birth:
           type: string
+          maxLength: 40
           description: Date of birth to compare. Use YYYY-MM-DD.
           example: "1990-01-01"
         selfie_base64:
           type: string
           minLength: 1
-          description: Selfie as raw base64 or an image data URI. Send only one selfie input.
+          description: JPEG or PNG selfie up to 5 MB as raw base64 or an image data URI. Send only one selfie input.
         selfie_upload_key:
           type: string
           minLength: 1
+          maxLength: 1024
           description: >-
             The fileKey returned by POST /v1/upload/presign for an uploaded selfie
             in your organization. Send only one selfie input.
@@ -6779,6 +6786,7 @@ components:
           description: Include the full number on the initial lookup response.
         external_id:
           type: string
+          maxLength: 256
           description: Your reference for the lookup. The response echoes it when supplied.
     IdentityLookupNumber:
       type: object
@@ -6830,6 +6838,8 @@ components:
         linked_ids:
           type: object
           description: Approved linked ID numbers.
+          additionalProperties:
+            type: string
           properties:
             nin:
               type: string
@@ -6837,6 +6847,7 @@ components:
         enrollment:
           type: object
           description: Approved registry enrollment details.
+          required: [bank, branch, registration_date, level_of_account, watch_listed]
           properties:
             bank:
               type: [string, "null"]
@@ -6903,7 +6914,7 @@ components:
           enum: [no_registry_photo, no_face_in_selfie]
     IdentityLookupResponse:
       type: object
-      required: [id, id_type, status, number, face_match, created_at]
+      required: [id, id_type, status, number, matches, face_match, created_at]
       properties:
         id:
           type: string
@@ -6931,6 +6942,7 @@ components:
             - type: "null"
         replayed:
           type: boolean
+          const: true
           description: True when the response replays a prior request using the same idempotency key.
         created_at:
           type: string
@@ -7510,6 +7522,9 @@ paths:
           description: Reuse with the same body to replay a lookup for up to 24 hours within your organization.
           schema:
             type: string
+            minLength: 1
+            maxLength: 128
+            pattern: '^[!-~]+$'
       requestBody:
         required: true
         content:
@@ -7518,20 +7533,19 @@ paths:
               $ref: "#/components/schemas/IdentityLookupRequest"
             examples:
               bvnWithSelfie:
-                summary: BVN with a selfie
-                description: Replace the example upload key with your uploaded selfie key.
+                summary: BVN sandbox fixture with a test selfie
                 value:
                   id_type: bvn-ng
                   number: "00000000001"
                   consent: true
                   first_name: Ada
-                  last_name: Obi
+                  last_name: Okafor
                   date_of_birth: "1990-01-01"
-                  selfie_upload_key: uploads/example-selfie.jpg
+                  selfie_base64: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK9sAAAAASUVORK5CYII=
                   face_match_threshold: 80
                   external_id: signup-example
               nin:
-                summary: NIN
+                summary: NIN sandbox fixture
                 value:
                   id_type: nin-ng
                   number: "00000000001"
@@ -7564,7 +7578,7 @@ paths:
                 $ref: "#/components/schemas/IdentityLookupResponse"
               examples:
                 bvnWithSelfie:
-                  summary: BVN with a completed face match
+                  summary: BVN sandbox fixture with a completed face match
                   value:
                     id: lookup_example_bvn
                     id_type: bvn-ng
@@ -7573,24 +7587,24 @@ paths:
                     number: { last4: "0001", verified: true }
                     record:
                       first_name: Ada
-                      middle_name: null
-                      last_name: Obi
+                      middle_name: Ngozi
+                      last_name: Okafor
                       date_of_birth: "1990-01-01"
                       gender: female
                       phone_numbers: ["+2348000000000", "+2348000000001"]
-                      address: { formatted: "12 Example Street, Lagos" }
+                      address: { formatted: Example address }
                       linked_ids: { nin: "00000000001" }
                       enrollment:
                         bank: Example Bank
                         branch: Example Branch
-                        registration_date: "2018-03-21"
+                        registration_date: "2020-01-01"
                         level_of_account: null
                         watch_listed: null
                     matches:
                       first_name: { result: exact, score: 1 }
                       last_name: { result: exact, score: 1 }
                       date_of_birth: { result: exact, score: 1 }
-                    face_match: { status: completed, match: true, similarity: 97.3, threshold: 80 }
+                    face_match: { status: completed, match: true, similarity: 98, threshold: 80 }
                     created_at: "2026-11-20T10:00:00Z"
                 nin:
                   summary: NIN with the full number requested
@@ -7599,7 +7613,7 @@ paths:
                     id_type: nin-ng
                     status: verified
                     number: { last4: "0001", verified: true, full: "00000000001" }
-                    record: { first_name: Ada, last_name: Obi }
+                    record: { first_name: Ada, last_name: Okafor }
                     matches: {}
                     face_match: null
                     created_at: "2026-11-20T10:00:00Z"
@@ -7659,7 +7673,7 @@ paths:
                       first_name: { result: exact, score: 1 }
                       last_name: { result: exact, score: 1 }
                       date_of_birth: { result: exact, score: 1 }
-                    face_match: { status: completed, match: true, similarity: 97.3, threshold: 80 }
+                    face_match: { status: completed, match: true, similarity: 98, threshold: 80 }
                     replayed: true
                     created_at: "2026-11-20T10:00:00Z"
         "400":

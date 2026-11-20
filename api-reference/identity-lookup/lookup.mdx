@@ -10,7 +10,7 @@ The reference examples use snake_case. The API also accepts camelCase equivalent
 
 ## Add a selfie
 
-Include either `selfie_base64` as raw base64 or an image data URI, or `selfie_upload_key` as a key from `POST /v1/upload/presign`. Upload the selfie to the presigned URL first and use the returned `fileKey` from the same organization. Replace the example upload key with your own before sending a request.
+Use a JPEG or PNG up to 5 MB. Send it as raw base64 or an image data URI in `selfie_base64`. For an uploaded selfie, call `POST /v1/upload/presign`, upload the image to the presigned URL, then pass the returned `fileKey` in `selfie_upload_key` using an API key for the same organization. Send one selfie input per request.
 
 Set `face_match_threshold` between 70 and 95 to override the default of 80. See [face match results](/api-reference/identity-lookup/results#face-match).
 

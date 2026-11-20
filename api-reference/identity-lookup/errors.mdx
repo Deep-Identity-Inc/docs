@@ -26,6 +26,6 @@ The response body identifies the limit reached, for example `org_per_second`. On
 
 ## Retry with an idempotency key
 
-Send an optional `Idempotency-Key` header to deduplicate retries within your organization for 24 hours. Retry with the same key and the same body. A replay returns the original lookup ID and outcome, including `number.last4`, `matches`, and `face_match`, plus `replayed: true`. Sensitive record fields are omitted from replays. A different request body with the same key returns `422`.
+Send an optional `Idempotency-Key` header containing 1–128 printable ASCII characters without spaces to deduplicate retries within your organization for 24 hours. Retry with the same key and body. A replay returns the original lookup ID and outcome, including `number.last4`, `matches`, and `face_match`, plus `replayed: true`. The replay omits `record`, `number.full`, and `number.verified`. A different request body with the same key returns `422`.
 
 Use a new key for a new lookup attempt, for example after the applicant corrects the BVN or submits a replacement selfie.

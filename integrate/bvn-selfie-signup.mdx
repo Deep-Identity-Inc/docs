@@ -11,7 +11,7 @@ Ask the applicant for the 11-digit BVN, the details you want to compare, a selfi
 
 ## 2. Send the lookup from your backend
 
-Create one idempotency key per sign-up attempt. The example uses a local JPEG, cURL, and jq. Set `DEEPIDV_SANDBOX_API_KEY` in your server environment and replace the example key with your own unique attempt ID.
+Create one idempotency key per sign-up attempt. The example uses a local test JPEG up to 5 MB, cURL, and jq. Set `DEEPIDV_SANDBOX_API_KEY` in your server environment and replace the example key with your own unique attempt ID.
 
 ```bash cURL
 LOOKUP_KEY="signup-example-01"
@@ -21,7 +21,7 @@ LOOKUP_BODY="$(
     number: "00000000001",
     consent: true,
     first_name: "Ada",
-    last_name: "Obi",
+    last_name: "Okafor",
     selfie_base64: .,
     external_id: "signup-example"
   }'
@@ -50,4 +50,4 @@ Treat a phone number returned by the registry as a contact candidate. Verify con
 
 On a `429`, wait for `Retry-After`. Retry the same attempt with the original body and idempotency key. Use a new key if the applicant changes the BVN, details, or selfie.
 
-A replay preserves the original lookup outcome and may omit fields you received in the initial response. See [results and matching](/api-reference/identity-lookup/results) and [errors and rate limits](/api-reference/identity-lookup/errors).
+A replay preserves the original lookup outcome and omits the registry record. See [results and matching](/api-reference/identity-lookup/results) and [errors and rate limits](/api-reference/identity-lookup/errors).
