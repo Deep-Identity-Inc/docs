@@ -1,0 +1,28 @@
+---
+title: Identity Lookup
+description: Look up a government ID number from your backend with the holder's consent
+---
+
+Use Identity Lookup when your app collects the ID number and consent. Your backend sends one JSON request and receives the registry result in the same call. You can compare the holder's names and date of birth with the record and submit a selfie for comparison when the registry supplies a portrait.
+
+Use [Government Database Lookup](/workflows/government-database-lookup) when deepidv collects the ID details and consent through your hosted verification workflow.
+
+## Access
+
+[Contact us](mailto:support@deepidv.com) to enable Identity Lookup for your organization and request the sensitive field groups you need. Send your organization API key in the `x-api-key` header from your backend. See [Authentication](/authentication) and [Sandbox test numbers](/api-reference/identity-lookup/sandbox).
+
+## Identity types and consent
+
+Collect consent from the ID holder for the registry check before sending `consent: true`. The same request field is required for each country.
+
+| Country | `id_type` | Registry | Record fields, when available | Registry portrait comparison |
+| --- | --- | --- | --- | --- |
+| Nigeria | `bvn-ng` | Nigeria Inter-Bank Settlement System (NIBSS) | Basic fields and approved phone numbers, address, photo, linked IDs, and enrollment | Available when a portrait is on file |
+| Nigeria | `nin-ng` | National Identity Management Commission (NIMC) | Basic fields and approved phone numbers, address, and photo | Available when a portrait is on file |
+| Ghana | `ghana-card-gh` | National Identification Authority (NIA) | Basic fields | Registry portrait unavailable |
+| Mexico | `curp-mx` | Registro Nacional de Población (RENAPO) | Basic fields | Registry portrait unavailable |
+| South Africa | `said-za` | Department of Home Affairs | Basic fields and approved photo when available | Available when a portrait is on file |
+
+Live requests support BVN and NIN. Ghana Card, CURP, and South African ID are defined in the API contract and currently return `403 id_type_not_enabled` in live requests. See [Errors and rate limits](/api-reference/identity-lookup/errors).
+
+Basic fields include, where the registry supplies them, first, middle, and last names, date of birth, gender, and nationality. The response includes sensitive groups your organization is approved to receive when those fields are available. See [Results and matching](/api-reference/identity-lookup/results#record-fields).

@@ -1,0 +1,19 @@
+---
+title: Lookup an identity
+description: Query a government registry and optionally compare a selfie with the registry portrait
+openapi: /assets/openapi.yaml POST /v1/identity/lookup
+---
+
+Send JSON with the ID type, number, and the holder's consent. Add names or date of birth for a field-by-field comparison. The request and response selector shows examples for each ID type, starting with BVN and a selfie. Ghana Card, CURP, and South African ID examples illustrate the contract. See [live availability](/api-reference/identity-lookup/overview#identity-types-and-consent).
+
+The reference examples use snake_case. The API also accepts camelCase equivalents such as `idType`, `dateOfBirth`, and `externalId`.
+
+## Add a selfie
+
+Use a JPEG or PNG up to 5 MB. Send it as raw base64 or an image data URI in `selfie_base64`. For an uploaded selfie, call `POST /v1/upload/presign`, upload the image to the presigned URL, then pass the returned `fileKey` in `selfie_upload_key` using an API key for the same organization. Send one selfie input per request.
+
+Set `face_match_threshold` between 70 and 95 to override the default of 80. See [face match results](/api-reference/identity-lookup/results#face-match).
+
+## Retry a lookup
+
+When your backend may retry the same lookup, send a unique `Idempotency-Key` for that attempt and keep it with the original JSON body. See [retry behavior](/api-reference/identity-lookup/errors#retry-with-an-idempotency-key).

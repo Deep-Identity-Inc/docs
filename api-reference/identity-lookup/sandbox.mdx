@@ -1,0 +1,18 @@
+---
+title: Sandbox test numbers
+description: Exercise Identity Lookup outcomes with a sandbox API key
+---
+
+Use a [sandbox API key](/sandbox) in the `x-api-key` header. Sandbox requests use fixed fixtures and make no live registry queries. Sandbox fixtures can return all sensitive field groups so you can test your response handling.
+
+Use these 11-digit numbers with `bvn-ng` or `nin-ng` and include `consent: true`. Keep the number as a JSON string to preserve its leading zeros.
+
+| Test number | Scenario | What to check |
+| --- | --- | --- |
+| `00000000001` | Record found | `status: "verified"` and the returned record. |
+| `00000000002` | Record missing | `status: "not_found"`. |
+| `00000000003` | Name mismatch | Send a different `last_name` as the only comparison field. Expect `status: "verified"` with a `mismatch` in `matches.last_name`. |
+| `00000000004` | No phone on file | `record.phone_numbers` is an empty array. |
+| `00000000005` | Selfie does not match | Include a selfie. Expect `face_match.status: "completed"` and `face_match.match: false`. |
+
+To test retries, send an `Idempotency-Key` with the example body, then resend the same key and body. See [retry behavior](/api-reference/identity-lookup/errors#retry-with-an-idempotency-key).

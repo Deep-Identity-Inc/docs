@@ -1,0 +1,53 @@
+---
+title: BVN + selfie sign-up from your backend
+description: Look up a BVN, compare a selfie, and handle the result in your own sign-up flow
+---
+
+Start with a [sandbox API key](/sandbox), a test selfie, and a [BVN fixture](/api-reference/identity-lookup/sandbox). For live sign-ups, [contact us to enable Identity Lookup](/api-reference/identity-lookup/overview#access) and request approval for the `phone_numbers` field group if your flow needs it.
+
+## 1. Collect the BVN, selfie, and consent
+
+Ask the applicant for the 11-digit BVN, the details you want to compare, a selfie, and consent to query the registry. Send the request only after they consent.
+
+## 2. Send the lookup from your backend
+
+Create one idempotency key per sign-up attempt. The example uses a local test JPEG up to 5 MB, cURL, and jq. Set `DEEPIDV_SANDBOX_API_KEY` in your server environment and replace the example key with your own unique attempt ID.
+
+```bash cURL
+LOOKUP_KEY="signup-example-01"
+LOOKUP_BODY="$(
+  base64 < selfie.jpg | tr -d '\r\n' | jq -Rs '{
+    id_type: "bvn-ng",
+    number: "00000000001",
+    consent: true,
+    first_name: "Ada",
+    last_name: "Okafor",
+    selfie_base64: .,
+    external_id: "signup-example"
+  }'
+)"
+
+printf '%s' "$LOOKUP_BODY" | curl --include --request POST 'https://api.deepidv.com/v1/identity/lookup' \
+  --header "x-api-key: $DEEPIDV_SANDBOX_API_KEY" \
+  --header 'Content-Type: application/json' \
+  --header "Idempotency-Key: $LOOKUP_KEY" \
+  --data-binary @-
+```
+
+## 3. Decide how to continue
+
+| Result | What to do |
+| --- | --- |
+| `status: "not_found"` | Ask the applicant to confirm their BVN or select a different verification method. |
+| `status: "verified"` | Evaluate names, face match, and phone availability under your sign-up policy. |
+| A `partial` name match | Follow your review rules. A name change or spelling variant can produce a partial match on a valid registry result. |
+| `record.phone_numbers: []` | Offer an alternate contact verification step if your flow requires a phone. If the field is omitted, check your field approval and whether the result is a replay. |
+| Face mismatch or unavailable result | Use the face result and reason to decide whether to request a replacement selfie or offer another verification method. |
+
+Treat a phone number returned by the registry as a contact candidate. Verify control of the phone independently if your policy requires it.
+
+## 4. Retry safely
+
+On a `429`, wait for `Retry-After`. Retry the same attempt with the original body and idempotency key. Use a new key if the applicant changes the BVN, details, or selfie.
+
+A replay preserves the original lookup outcome and omits the registry record. See [results and matching](/api-reference/identity-lookup/results) and [errors and rate limits](/api-reference/identity-lookup/errors).
