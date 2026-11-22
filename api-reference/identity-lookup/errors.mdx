@@ -6,9 +6,8 @@ description: Handle Identity Lookup errors, retry limits, and idempotent request
 | HTTP status | Meaning and next step |
 | --- | --- |
 | `400` | Correct the request. Check the ID format, consent, image, and threshold. Supply at most one selfie input. |
-| `401` | Check the `x-api-key` header and use a valid organization key. |
 | `402` | Check your organization's token balance before retrying. |
-| `403` | `identity_lookup_not_enabled` means your organization or region lacks access. `id_type_not_enabled` means live lookup is unavailable for that type. An upload key also needs to belong to your organization. |
+| `403` | A body of `{"message": "Forbidden"}` means the `x-api-key` header is missing or invalid; see [Authentication](/authentication). `identity_lookup_not_enabled` means your organization or region lacks access. `id_type_not_enabled` means live lookup is unavailable for that type. An upload key also needs to belong to your organization. |
 | `422` | You used the same `Idempotency-Key` with a different body. Restore the original body to retry or start a new attempt with a new key. |
 | `429` | A rate limit was reached. Wait for `Retry-After` before retrying. |
 | `502` | The provider returned an error or timed out. Retry with bounded backoff. |

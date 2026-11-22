@@ -20,8 +20,8 @@ The `record` contains the basic fields the registry supplies. These can include 
 
 | Group | Response data |
 | --- | --- |
-| `phone_numbers` | Array of phone numbers. An approved BVN response returns `[]` when no phone is on file. |
-| `address` | Address object. The registry determines which details are available. |
+| `phone_numbers` | Array of phone numbers. Nigerian mobile numbers use E.164 format, for example `+2348031234567`; other numbers are returned as on file. An approved BVN response returns `[]` when no phone is on file. |
+| `address` | Address object. `formatted` is always present as one line. `street`, `town`, `lga` (local government area), and `state` appear when the registry supplies them. |
 | `photo` | Registry portrait as an image data URI. |
 | `linked_ids` | Linked identifiers, for example `nin` on a BVN record. |
 | `enrollment` | Enrollment details such as `bank`, `branch`, `registration_date`, `level_of_account`, and `watch_listed`. Individual values can be null. |
@@ -32,7 +32,7 @@ The `record` contains the basic fields the registry supplies. These can include 
 
 | `result` | Meaning |
 | --- | --- |
-| `exact` | The normalized values match. For names, comparisons account for case, accents, punctuation, and word order. |
+| `exact` | The normalized values match. For names, comparisons account for case, accents, punctuation, and word order within the field. |
 | `partial` | The comparison found a supported variation or incomplete match. Use your review policy to decide how to handle it. |
 | `mismatch` | The values differ or the registry lacks the data needed for a match. |
 
@@ -42,6 +42,8 @@ The `record` contains the basic fields the registry supplies. These can include 
 | Middle name `A.` | Middle name `Ada` | `partial` on `middle_name` for an initial |
 | Middle name `Ada` | Middle name absent | `partial` on `middle_name` for a missing value |
 | `Ada Okafor` | `Ada Obi` | `exact` on `first_name` and `partial` on `last_name`, for example after a surname change |
+| First name `Seun` | First name `Oluwaseun` | `partial` on `first_name` for a common short form |
+| First name `Okafor`, last name `Ada` | `Ada Okafor` | `partial` on both fields for names entered in the other field |
 | DOB `1990-05-12` | DOB `1990-12-05` | `partial` on `date_of_birth` for a day and month swap |
 
 ## Face match

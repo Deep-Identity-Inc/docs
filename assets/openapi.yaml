@@ -6822,16 +6822,26 @@ components:
           type: [string, "null"]
         phone_numbers:
           type: array
-          description: Approved phone numbers. An empty array means no phone is on file.
+          description: Approved phone numbers. Nigerian mobile numbers use E.164 format (+234XXXXXXXXXX); other numbers are returned as on file. An empty array means no phone is on file.
           items:
             type: string
         address:
           type: object
-          description: Approved registry address details.
+          description: Approved registry address. `formatted` is always present; the other parts appear when the registry supplies them.
+          required: [formatted]
           properties:
             formatted:
               type: string
-              description: Formatted address supplied by the registry.
+              description: The address as one line.
+            street:
+              type: string
+            town:
+              type: string
+            lga:
+              type: string
+              description: Local government area (Nigeria).
+            state:
+              type: string
         photo:
           type: string
           description: Approved registry portrait as an image data URI.
@@ -7592,7 +7602,7 @@ paths:
                       date_of_birth: "1990-01-01"
                       gender: female
                       phone_numbers: ["+2348000000000", "+2348000000001"]
-                      address: { formatted: Example address }
+                      address: { formatted: "1 Example Street, Example Town, Lagos", street: 1 Example Street, town: Example Town, lga: Example Town, state: Lagos }
                       linked_ids: { nin: "00000000001" }
                       enrollment:
                         bank: Example Bank
@@ -7682,12 +7692,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: Missing or invalid API key.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
         "402":
           description: Insufficient token balance.
           content:
@@ -7695,7 +7699,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: The organization, region, or ID type lacks live lookup access, or the upload key belongs to another organization.
+          description: 'The x-api-key header is missing or invalid (the gateway returns {"message": "Forbidden"}), the organization, region, or ID type lacks live lookup access, or the upload key belongs to another organization.'
           content:
             application/json:
               schema:
@@ -7703,10 +7707,10 @@ paths:
               examples:
                 organizationAccess:
                   summary: Identity Lookup access required
-                  value: { error: Identity Lookup is unavailable for this organization., code: identity_lookup_not_enabled }
+                  value: { error: Identity lookup is not enabled, code: identity_lookup_not_enabled }
                 idTypeAccess:
                   summary: Live lookup unavailable for this ID type
-                  value: { error: Live lookup is unavailable for this ID type., code: id_type_not_enabled }
+                  value: { error: This identity type is not enabled, code: id_type_not_enabled }
         "422":
           description: The idempotency key was already used with a different request body.
           content:

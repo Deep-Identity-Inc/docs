@@ -44,10 +44,10 @@ printf '%s' "$LOOKUP_BODY" | curl --include --request POST 'https://api.deepidv.
 | `record.phone_numbers: []` | Offer an alternate contact verification step if your flow requires a phone. If the field is omitted, check your field approval and whether the result is a replay. |
 | Face mismatch or unavailable result | Use the face result and reason to decide whether to request a replacement selfie or offer another verification method. |
 
-Treat a phone number returned by the registry as a contact candidate. Verify control of the phone independently if your policy requires it.
+Nigerian mobile numbers are returned in E.164 format, for example `+2348031234567`. Treat a phone number returned by the registry as a contact candidate. Verify control of the phone independently if your policy requires it.
 
 ## 4. Retry safely
 
 On a `429`, wait for `Retry-After`. Retry the same attempt with the original body and idempotency key. Use a new key if the applicant changes the BVN, details, or selfie.
 
-A replay preserves the original lookup outcome and omits the registry record. See [results and matching](/api-reference/identity-lookup/results) and [errors and rate limits](/api-reference/identity-lookup/errors).
+A replay preserves the original lookup outcome and omits the registry record, including `phone_numbers`. Don't treat a replay as "no phone on file". If you still need the record, for example because your first response timed out before you stored it, send a new lookup with a new idempotency key. A new lookup is billed. See [results and matching](/api-reference/identity-lookup/results) and [errors and rate limits](/api-reference/identity-lookup/errors).
