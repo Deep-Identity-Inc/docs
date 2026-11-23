@@ -495,7 +495,7 @@ export const makeSaveDialog = ({ WB, utils, store, ui, mui }) => {
             </div>
             <div className="wb-sd-card">
               <div className="wb-sd-cardhead"><MuiChip label="Push" color="success" variant="soft" /><span className="wb-sd-semibold">Or receive webhooks</span> <a className="wb-sd-doclink" href="/webhooks/overview" target="_blank" rel="noopener noreferrer">Webhooks guide</a></div>
-              <p className="wb-sd-body2 wb-sd-muted">Register an HTTPS endpoint in the Admin Console. Each delivery is <code>{'{ "type": "...", "data": SessionRecord }'}</code> signed with the <code>deepidv-signature</code> header.</p>
+              <p className="wb-sd-body2 wb-sd-muted">Register an HTTPS endpoint in the Admin Console. Each delivery includes an event ID and is signed with the <code>deepidv-webhook-signature</code> header.</p>
               <FieldTable rows={[['session.created', 'event', 'A session was created (no analysis yet)'], ['session.status.submitted', 'event', 'Applicant finished; analysis_data is populated'], ['session.status.verified', 'event', 'Marked verified by rules or manual review'], ['session.status.rejected', 'event', 'Marked rejected by rules or manual review'], ['session.status.failed', 'event', 'Hit the workflow failed-attempt limit']]} />
               <CodeBlock lang="JSON" code={json({ type: 'session.status.submitted', data: { id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', external_id: 'user-12345', status: 'SUBMITTED', session_progress: 'COMPLETED', workflow_id: '<workflow.id>', workflow_steps: publicIds, submitted_at: '2026-09-14T14:35:00.000Z', analysis_data: { id_matches_selfie: true, faceliveness_score: 98.2 } } })} />
             </div>

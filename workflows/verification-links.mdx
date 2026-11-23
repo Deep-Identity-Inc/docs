@@ -53,7 +53,7 @@ export const FeatureCard = ({ icon, title, description }) => (
 
 A verification link is a unique, secure URL that takes your applicant directly into a verification flow hosted by deepidv. You configure the checks in a [workflow](/workflows/workflows), and deepidv handles everything the applicant sees — document capture, liveness prompts, data collection, and more.
 
-deepidv supports two types of links: **session links** (one-time, per-applicant) and **permalinks** (reusable, persistent).
+deepidv supports two types of links: **session links** for a single applicant and session, and **permalinks** that multiple applicants can reuse.
 
 ---
 
@@ -81,7 +81,9 @@ deepidv supports two types of links: **session links** (one-time, per-applicant)
 
 ## Session Links
 
-Every session created through the API or Admin Console generates a **unique, one-time verification link**. This link is tied to a single session and a single applicant.
+Every session created through the API or Admin Console generates a **unique verification link** for that session and applicant. The applicant can reopen it until the session is completed, voided, or expired.
+
+Set `expires_in_hours` when creating a session through the API to override the workflow's expiry setting. If you omit it, the workflow's session expiry applies when configured.
 
 When you create a session, the link is returned in the response:
 
@@ -176,7 +178,7 @@ The `session_url` in the response gives you the link to share however you prefer
 
 ## Permalinks
 
-Permalinks are **persistent, reusable verification links** tied to a specific workflow in your organization. Unlike session links, they don't expire after a single use — each time an applicant opens a permalink, a new session is created automatically.
+Permalinks are **persistent, reusable verification links** tied to a specific workflow in your organization. Each time an applicant opens a permalink, a new session is created automatically.
 
 ### When to use permalinks
 
