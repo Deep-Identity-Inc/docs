@@ -139,7 +139,7 @@ Existing endpoints that still have legacy signing enabled also receive `deepidv-
 Update your receiver to verify `deepidv-webhook-signature`, then disable the legacy header for that endpoint in the webhook settings. After you turn it off, deepidv removes `deepidv-signature` from subsequent deliveries to that endpoint.
 
 <Warning>
-The legacy header removal deadline is `<DEADLINE: 90 days from email send>`. If a legacy signing secret may be in your logs, reset it after migrating the endpoint.
+The legacy header will be removed in a future release. We'll announce the removal date in advance. If a legacy signing secret may be in your logs, reset it after migrating the endpoint.
 </Warning>
 
 ## Test your webhook
@@ -179,6 +179,10 @@ After each retryable failure, deepidv waits for the next delay in the schedule. 
 | 7 | 24 hours |
 
 The standard schedule allows up to eight total attempts over about 45 hours. On a `429` response, `Retry-After` can be a number of seconds or an HTTP date. The next attempt waits for the longer of the scheduled delay and `Retry-After`, capped at 24 hours. A missing or invalid `Retry-After` uses the standard delay.
+
+<Note>
+`session.status.submitted` events, and the `session.status.verified` or `session.status.rejected` event that immediately follows on instant-decision workflows, use a shorter retry path. Any non-`2xx` response other than `410 Gone`, including `4xx`, is retried about every 5 minutes, up to 5 attempts in total. `Retry-After` isn't used for these events. A `410 Gone` response stops delivery of that event to the endpoint.
+</Note>
 
 ## Best practices
 
