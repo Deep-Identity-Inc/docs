@@ -23,19 +23,21 @@ All three checks:
 
 Every check reports `NO_DATA` when the carrier holds no servable data for the number. This is the normal answer where the carrier route is not yet live, and it never counts against the applicant: Phone Trust does not trip, Carrier Age Gate does not fail, Phone Ownership does not mismatch.
 
-| Region | Coverage today |
-| --- | --- |
-| United Kingdom | Live data on all three checks |
-| United States, Canada | `NO_DATA` on all three checks |
+| Check | United States | Canada | United Kingdom |
+| --- | --- | --- | --- |
+| Phone Trust: SIM swap (`simSwappedRisk`) | Live | `NO_DATA` | Live |
+| Phone Trust: call forwarding (`forwardingRisk`) | `NO_DATA` | `NO_DATA` | Live |
+| Phone Ownership | Live | `NO_DATA` | Live |
+| Carrier Age Gate | `NO_DATA` | `NO_DATA` | Live |
 
-Treat `NO_DATA` as "no signal", not as a failure, and design your flow so it degrades gracefully.
+Coverage also varies by carrier within a country. Some carriers don't release data for every number, so expect some `NO_DATA` answers even where a check is live. Treat `NO_DATA` as "no signal", not as a failure, and design your flow so it degrades gracefully.
 
 Every check reports `ERROR` when the phone data provider rejected the request. The check did not run and is not billed. `ERROR` never counts against the applicant either: Phone Trust returns `tripped: false`, and `statusMessage` is `"Phone provider rejected the request"`. Treat it as "no signal".
 
 ## Billing
 
 - **Standalone** calls are billed once per successful call, per check.
-- **Session-attached** calls are billed once per successful call, per check, unless the session's workflow already contains the matching passive step. In that case the check was billed at session creation and the on-demand call is free.
+- **Session-attached** calls are billed once per successful call, per check, unless the session's workflow already contains the matching passive step. In that case the workflow step already billed for the session and the on-demand call is free.
 - A `503` from the carrier provider is never billed. Retry later.
 - A result with `ERROR` (the provider rejected the request) is never billed.
 
