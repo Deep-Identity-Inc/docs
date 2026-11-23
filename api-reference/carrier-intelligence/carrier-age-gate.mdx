@@ -11,7 +11,7 @@ POST /v1/screening/carrier-age-gate
 Asks the subscriber's mobile carrier whether the account holder of a phone number is over the legal age threshold and returns synchronously. The threshold is set by the carrier and is 18 on all current routes. The actual age is never disclosed.
 
 <Note>
-Carrier coverage varies by country. Where the carrier route is not live the outcome is `NO_DATA`. UK numbers return live data today; US and Canadian numbers return `NO_DATA`.
+Carrier coverage varies by country. Where the carrier route is not live the outcome is `NO_DATA`. UK numbers return live data today; US and Canadian numbers return `NO_DATA`. See [coverage](/api-reference/carrier-intelligence/overview#outcomes-and-coverage).
 </Note>
 
 If the phone data provider rejects the request, `outcome` and `ageVerified` are `ERROR`: the check did not run and is not billed. `ERROR` doesn't block the applicant; treat it as "no signal".
@@ -150,7 +150,7 @@ By default each call is filed as a completed **silent-screening** session for au
 - The result is written to that session's `analysis_data.phone_checks.age_gate`, visible on [Retrieve Session](/api-reference/sessions/retrieve-session) and in the console's Carrier Intelligence tab.
 - `phone` may be omitted; it defaults to the session applicant's phone.
 - A repeat call overwrites the previous result.
-- If the session's workflow already contains the Carrier Age Gate step, no second charge is taken because the passive step billed at session creation.
+- If the session's workflow already contains the Carrier Age Gate step, no second charge is taken because the workflow step already billed for this session.
 
 ## Related
 

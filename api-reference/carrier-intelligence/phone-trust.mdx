@@ -13,7 +13,7 @@ Asks the subscriber's mobile carrier for account-takeover signals on a phone num
 The check is passive. No SMS is sent to the subscriber, and the check never blocks anything on its own. Use `tripped` in your own flow, for example to require a step-up before a high-value action.
 
 <Note>
-Carrier coverage varies by country. Where the carrier route is not live, signals come back as `NO_DATA` and the check never trips. UK numbers return live data today; US and Canadian numbers return `NO_DATA`.
+Carrier coverage varies by country and by signal. Where the carrier route is not live, signals come back as `NO_DATA` and the check never trips. UK numbers return live data on both signals. US numbers return live SIM-swap data, but `forwardingRisk` is `NO_DATA`. Canadian numbers return `NO_DATA` on both. See [coverage](/api-reference/carrier-intelligence/overview#outcomes-and-coverage).
 </Note>
 
 ## Request
@@ -173,7 +173,7 @@ By default each call is filed as a completed **silent-screening** session for au
 - The result is written to that session's `analysis_data.phone_checks.trust`, visible on [Retrieve Session](/api-reference/sessions/retrieve-session) and in the console's Carrier Intelligence tab.
 - `phone` may be omitted; it defaults to the session applicant's phone.
 - A repeat call overwrites the previous result.
-- If the session's workflow already contains the Phone Trust Check step, no second charge is taken because the passive step billed at session creation.
+- If the session's workflow already contains the Phone Trust Check step, no second charge is taken because the workflow step already billed for this session.
 
 ## Related
 
