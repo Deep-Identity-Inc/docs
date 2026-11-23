@@ -13,7 +13,7 @@ Asks the subscriber's mobile carrier how well a name, and optionally an address 
 Only the **name score** decides the outcome. Address and date-of-birth scores are returned for information.
 
 <Note>
-Carrier coverage varies by country. Where the carrier route is not live the outcome is `NO_DATA`. UK numbers return live data today; US and Canadian numbers return `NO_DATA`.
+Carrier coverage varies by country. Where the carrier route is not live the outcome is `NO_DATA`. US and UK numbers return live data today; Canadian numbers return `NO_DATA`. See [coverage](/api-reference/carrier-intelligence/overview#outcomes-and-coverage).
 </Note>
 
 If the phone data provider rejects the request, `outcome` is `ERROR`: the check did not run and is not billed. `ERROR` doesn't block the applicant; treat it as "no signal".
@@ -186,14 +186,35 @@ Score meanings: `-1` the carrier holds no data, `0` held but no match, `1–99` 
 ```
 </ResponseExample>
 
+## As a workflow step
+
+When the **Phone Ownership Match** step is in a workflow, the check runs in the verification flow once the applicant reaches the phone consent screen. It sends the carrier the applicant's phone number and the `first_name` and `last_name` given when the session was created. It doesn't use the name read from the ID document.
+
+- **Name only.** The workflow step doesn't send an address or a date of birth. In workflow results `address_score` is `-1` and `dob_score` is absent. To have them scored, call this endpoint with `sessionId`, `address` and `dateOfBirth` (see [Attaching to a session](#attaching-to-a-session)).
+- **Names required at session creation.** If the session was created without a first and last name, the step usually records `NO_DATA`, because it runs before the ID document is read.
+- **Snake_case on the session.** The result is under `analysis_data.phone_checks.ownership` on [Retrieve Session](/api-reference/sessions/retrieve-session#carrier-intelligence-data), with snake_case keys (`name_score`, `address_score`, `trip_reasons`). This endpoint's own response uses camelCase.
+- **Doesn't block.** A `NO_MATCH` sets `tripped: true` with `trip_reasons: ["NAME_MISMATCH"]` but never changes the session status. Act on it in your own flow.
+
 ## Attaching to a session
 
 By default each call is filed as a completed **silent-screening** session for audit and billed on success. Pass `sessionId` to attach the result to one of your existing verification sessions instead:
 
 - The result is written to that session's `analysis_data.phone_checks.ownership`, visible on [Retrieve Session](/api-reference/sessions/retrieve-session) and in the console's Carrier Intelligence tab.
 - `phone`, `firstName` and `lastName` may be omitted; they default to the session applicant.
+- Pass `address` and `dateOfBirth` to score them. This is the way to get `address_score` and `dob_score` on a session that ran the workflow step, which only matches the name.
 - A repeat call overwrites the previous result.
-- If the session's workflow already contains the Phone Ownership Match step, no second charge is taken because the passive step billed at session creation.
+
+```bash
+curl -X POST https://api.deepidv.com/v1/screening/phone-ownership \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "sessionId": "YOUR_SESSION_ID",
+    "address": "123 Main St, Charlotte, NC 28203, US",
+    "dateOfBirth": "1990-01-15"
+  }'
+```
+- If the session's workflow already contains the Phone Ownership Match step, no second charge is taken because the workflow step already billed for this session.
 
 ## Related
 
