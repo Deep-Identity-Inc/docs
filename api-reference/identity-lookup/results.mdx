@@ -1,0 +1,57 @@
+---
+title: Results and matching
+description: Interpret registry status, returned fields, name and date matching, and selfie results
+---
+
+## Lookup status
+
+| `status` | Meaning |
+| --- | --- |
+| `verified` | The registry returned a record. Evaluate `matches` and `face_match` separately for your decision. |
+| `not_found` | The registry returned no record for the number. Ask the holder to check the number or continue with a different verification method. |
+
+Use `id` to identify the lookup and `created_at` for its timestamp. If you supplied `external_id`, the response echoes it so you can link the result to your own record.
+
+`number.last4` contains the last four characters, and `number.verified` indicates whether the registry found the number when that field is returned. If you need the full number, set `return_full_number: true` for the initial request. An [idempotent replay](/api-reference/identity-lookup/errors#retry-with-an-idempotency-key) sets `replayed: true` and omits the registry record.
+
+## Record fields
+
+The `record` contains the basic fields the registry supplies. These can include `first_name`, `middle_name`, `last_name`, `date_of_birth`, `gender`, and `nationality`. Optional sensitive groups appear only when your organization has the corresponding approval and the provider supports the group.
+
+| Group | Response data |
+| --- | --- |
+| `phone_numbers` | Array of phone numbers. Nigerian mobile numbers use E.164 format, for example `+2348031234567`; other numbers are returned as on file. An approved BVN response returns `[]` when no phone is on file. |
+| `address` | Address object. `formatted` is always present as one line. `street`, `town`, `lga` (local government area), and `state` appear when the registry supplies them. |
+| `photo` | Registry portrait as an image data URI. |
+| `linked_ids` | Linked identifiers, for example `nin` on a BVN record. |
+| `enrollment` | Enrollment details such as `bank`, `branch`, `registration_date`, `level_of_account`, and `watch_listed`. Individual values can be null. |
+
+## Compare names and dates of birth
+
+`matches` contains comparisons for the fields you supplied. Each comparison has a `result` and a `score` from 0 to 1. A comparison leaves the lookup's `status` unchanged.
+
+| `result` | Meaning |
+| --- | --- |
+| `exact` | The normalized values match. For names, comparisons account for case, accents, punctuation, and word order within the field. |
+| `partial` | The comparison found a supported variation or incomplete match. Use your review policy to decide how to handle it. |
+| `mismatch` | The values differ or the registry lacks the data needed for a match. |
+
+| You send | Registry record | Example result |
+| --- | --- | --- |
+| First name `MOHAMMED` | First name `Muhammad` | `partial` on `first_name` for a recognized spelling variant |
+| Middle name `A.` | Middle name `Ada` | `partial` on `middle_name` for an initial |
+| Middle name `Ada` | Middle name absent | `partial` on `middle_name` for a missing value |
+| `Ada Okafor` | `Ada Obi` | `exact` on `first_name` and `partial` on `last_name`, for example after a surname change |
+| First name `Seun` | First name `Oluwaseun` | `partial` on `first_name` for a common short form |
+| First name `Okafor`, last name `Ada` | `Ada Okafor` | `partial` on both fields for names entered in the other field |
+| DOB `1990-05-12` | DOB `1990-12-05` | `partial` on `date_of_birth` for a day and month swap |
+
+## Face match
+
+When you include a selfie, the service compares it against the registry portrait even when your organization lacks approval to receive the `photo` field.
+
+| `face_match` | What it tells you |
+| --- | --- |
+| `status: "completed"` | `similarity` is the best score from 0 to 100. `match` indicates whether the score met the `threshold`. The default is 80. |
+| `status: "unavailable"` | Check `reason` for `no_registry_photo` or `no_face_in_selfie`. Ask for another selfie when appropriate, or offer a different verification method. |
+| `null` | The request included no selfie. |
