@@ -143,6 +143,16 @@
             ]
           },
           {
+            "group": "Identity Lookup",
+            "pages": [
+              "api-reference/identity-lookup/overview",
+              "api-reference/identity-lookup/lookup",
+              "api-reference/identity-lookup/results",
+              "api-reference/identity-lookup/errors",
+              "api-reference/identity-lookup/sandbox"
+            ]
+          },
+          {
             "group": "iGaming Checks",
             "pages": [
               "api-reference/igaming/overview",
@@ -177,6 +187,7 @@
           {
             "group": "Guides",
             "pages": [
+              "integrate/bvn-selfie-signup",
               "integrate/ai-agent-integration",
               "integrate/verify-skill",
               "integrate/deepai-assistant-skill"
