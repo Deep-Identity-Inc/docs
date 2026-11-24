@@ -22,7 +22,7 @@ To start receiving webhook events in your app:
     Choose which event types you want to subscribe to.
   </Step>
   <Step title="Verify signatures">
-    Use your signing secret to verify that incoming requests are from deepidv.
+    [Verify each incoming request](#verifying-webhooks) using your signing secret.
   </Step>
 </Steps>
 
@@ -42,7 +42,7 @@ When creating a webhook, you'll provide:
 After creating a webhook, deepidv generates a **signing secret** (prefixed with `whsec_`). Store this secret securely — you'll use it to verify that incoming webhook requests are from deepidv.
 
 <Warning>
-Your signing secret is only shown once at creation time. If you lose it, you can reset it from the webhook settings, but this will invalidate the previous secret.
+Your signing secret is shown once after you create or reset it. If you lose it, reset it in the webhook settings. Resetting invalidates the previous secret.
 </Warning>
 
 ## Event types
@@ -55,134 +55,91 @@ deepidv sends the following event types:
 | `session.status.submitted` | An applicant has completed and submitted their verification session |
 | `session.status.verified` | A verification session has been marked as verified |
 | `session.status.rejected` | A verification session has been marked as rejected |
+| `session.status.expired` | A verification session has expired |
 | `session.status.failed` | A verification session has hit the configured failed-attempt limit and been auto-failed |
 
 You can subscribe to all events or only the ones relevant to your integration. See the [Event Object](/webhooks/event-object) reference for the full payload structure.
 
 ## Create a handler
 
-Set up an HTTP endpoint that accepts POST requests with a JSON body. Your handler should:
+Set up an HTTPS endpoint that accepts POST requests with a JSON body.
 
-1. Parse the JSON request body containing the [event object](/webhooks/event-object)
-2. Verify the `deepidv-signature` header using your signing secret
-3. Return a `200` status code as quickly as possible
-4. Process the event asynchronously (after responding)
+1. Read the raw request body and [verify the signature](#verifying-webhooks).
+2. Parse the JSON into an [event object](/webhooks/event-object). Use the event's top-level `id` to identify duplicate deliveries.
+3. Queue new events for processing and respond with a `2xx` status within 10 seconds.
 
-<Info>
-deepidv considers any `2xx` response a successful delivery. If your endpoint returns a non-`2xx` status or times out (after 10 seconds), deepidv will retry the delivery.
-</Info>
+<a id="verify-signatures" />
 
-### Example endpoint
+## Verifying webhooks
+
+Every delivery includes a `deepidv-webhook-signature` header in the format `t=<timestamp>,v1=<digest>`. The timestamp is Unix time in seconds. The digest is the hexadecimal HMAC-SHA256 of the timestamp, a period, and the raw request body. Use the full signing secret, including the `whsec_` prefix, as the HMAC key.
+
+Verify the raw body before parsing JSON. Reject the request if the signature is missing, invalid, or the timestamp differs from your server's current time by more than five minutes. A header can contain multiple `v1` values to support future secret rotation. Accept the delivery if any `v1` value matches the computed digest in constant time.
+
+In Express, use `express.raw({ type: "application/json" })` on the webhook route before JSON parsing. In Flask, pass the bytes from `request.get_data()` and the header from `request.headers.get("deepidv-webhook-signature")` to the verifier before calling `request.get_json()`.
 
 <CodeGroup>
-```javascript Node.js (Express)
-const express = require("express");
-const app = express();
 
-app.post("/webhooks/deepidv", express.json(), (req, res) => {
-  const signature = req.headers["deepidv-signature"];
-  const event = req.body;
+```javascript Node.js
+import crypto from "node:crypto";
 
-  // 1. Verify the signature
-  if (signature !== process.env.DEEPIDV_WEBHOOK_SECRET) {
-    return res.status(401).json({ error: "Invalid signature" });
+export function verifyDeepidvWebhook(rawBody, signatureHeader, secret, toleranceSeconds = 300) {
+  if (!signatureHeader) return false;
+  let timestamp = null;
+  const signatures = [];
+  for (const part of signatureHeader.split(",")) {
+    const [key, value] = part.trim().split("=");
+    if (key === "t") timestamp = Number(value);
+    if (key === "v1" && value) signatures.push(value);
   }
+  if (!Number.isInteger(timestamp) || signatures.length === 0) return false;
+  if (Math.abs(Math.floor(Date.now() / 1000) - timestamp) > toleranceSeconds) return false;
 
-  // 2. Return 200 immediately
-  res.status(200).json({ received: true });
-
-  // 3. Process the event asynchronously
-  switch (event.type) {
-    case "session.status.submitted":
-      // Applicant completed verification — trigger your review flow
-      console.log("Session submitted:", event.data.id);
-      break;
-    case "session.status.verified":
-      // Session verified — grant access, update records, etc.
-      console.log("Session verified:", event.data.id);
-      break;
-    case "session.status.rejected":
-      // Session rejected — notify applicant, flag for review, etc.
-      console.log("Session rejected:", event.data.id);
-      break;
-    case "session.status.failed":
-      // Session auto-failed after too many failed attempts —
-      // inspect event.data.meta_data.failureData.attempts for context
-      console.log("Session failed:", event.data.id);
-      break;
-    case "session.created":
-      // New session created
-      console.log("Session created:", event.data.id);
-      break;
-    default:
-      console.log("Unhandled event type:", event.type);
-  }
-});
-
-app.listen(4242, () => console.log("Webhook server running on port 4242"));
+  const expected = crypto.createHmac("sha256", secret).update(`${timestamp}.${rawBody}`).digest("hex");
+  const expectedBuf = Buffer.from(expected, "hex");
+  return signatures.some((sig) => {
+    const sigBuf = Buffer.from(sig, "hex");
+    return sigBuf.length === expectedBuf.length && crypto.timingSafeEqual(sigBuf, expectedBuf);
+  });
+}
+// Express: app.post("/webhooks/deepidv", express.raw({ type: "application/json" }), (req, res) => {
+//   if (!verifyDeepidvWebhook(req.body.toString("utf8"), req.get("deepidv-webhook-signature"), process.env.DEEPIDV_WEBHOOK_SECRET)) return res.sendStatus(400);
+//   const event = JSON.parse(req.body.toString("utf8")); /* dedupe on event.id */ res.sendStatus(200);
+// });
 ```
 
-```python Python (Flask)
-from flask import Flask, request, jsonify
-import os
+```python Python
+import hashlib, hmac, time
 
-app = Flask(__name__)
-
-@app.route("/webhooks/deepidv", methods=["POST"])
-def webhook():
-    signature = request.headers.get("deepidv-signature")
-    event = request.get_json()
-
-    # 1. Verify the signature
-    if signature != os.environ.get("DEEPIDV_WEBHOOK_SECRET"):
-        return jsonify(error="Invalid signature"), 401
-
-    # 2. Process the event
-    event_type = event.get("type")
-    data = event.get("data")
-
-    if event_type == "session.status.submitted":
-        # Applicant completed verification
-        print(f"Session submitted: {data['id']}")
-    elif event_type == "session.status.verified":
-        # Session verified
-        print(f"Session verified: {data['id']}")
-    elif event_type == "session.status.rejected":
-        # Session rejected
-        print(f"Session rejected: {data['id']}")
-    elif event_type == "session.status.failed":
-        # Session auto-failed after too many failed attempts —
-        # inspect data["meta_data"]["failureData"]["attempts"] for context
-        print(f"Session failed: {data['id']}")
-    elif event_type == "session.created":
-        # New session created
-        print(f"Session created: {data['id']}")
-    else:
-        print(f"Unhandled event type: {event_type}")
-
-    # 3. Return 200 immediately
-    return jsonify(received=True), 200
-
-if __name__ == "__main__":
-    app.run(port=4242)
+def verify_deepidv_webhook(raw_body: bytes, signature_header: str, secret: str, tolerance_seconds: int = 300) -> bool:
+    if not signature_header:
+        return False
+    timestamp, signatures = None, []
+    for part in signature_header.split(","):
+        key, _, value = part.strip().partition("=")
+        if key == "t" and value.isdigit():
+            timestamp = int(value)
+        elif key == "v1" and value:
+            signatures.append(value)
+    if timestamp is None or not signatures:
+        return False
+    if abs(int(time.time()) - timestamp) > tolerance_seconds:
+        return False
+    signed = f"{timestamp}.".encode() + raw_body
+    expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
+    return any(hmac.compare_digest(expected, sig) for sig in signatures)
 ```
+
 </CodeGroup>
 
-## Verify signatures
+### Legacy `deepidv-signature` header (deprecated)
 
-Every webhook request includes a `deepidv-signature` header containing your signing secret. Compare this value against the signing secret shown when you created the webhook to verify the request is from deepidv.
+Existing endpoints that still have legacy signing enabled also receive `deepidv-signature`. That header contains the signing secret itself. Use the v1 HMAC header to verify deliveries. New endpoints use v1 signing by default and can opt into legacy signing during migration.
 
-```javascript
-const signature = req.headers["deepidv-signature"];
-
-if (signature !== process.env.DEEPIDV_WEBHOOK_SECRET) {
-  // Request is not from deepidv — reject it
-  return res.status(401).json({ error: "Invalid signature" });
-}
-```
+Update your receiver to verify `deepidv-webhook-signature`, then disable the legacy header for that endpoint in the webhook settings. After you turn it off, deepidv removes `deepidv-signature` from subsequent deliveries to that endpoint.
 
 <Warning>
-Always verify the `deepidv-signature` header before processing any webhook event. Without verification, an attacker could send fake events to your endpoint to trigger unintended actions.
+The legacy header will be removed in a future release. We'll announce the removal date in advance. If a legacy signing secret may be in your logs, reset it after migrating the endpoint.
 </Warning>
 
 ## Test your webhook
@@ -199,14 +156,33 @@ The test event contains sample data that matches the structure of a real event, 
 
 ## Retry behavior
 
-If your endpoint doesn't return a `2xx` response or doesn't respond within **10 seconds**, deepidv will retry the delivery. Events are retried with exponential backoff.
+deepidv waits up to 10 seconds for your endpoint to respond. Automatic retries target the endpoint that failed and keep the same event `id` and `created_at`.
 
 | Scenario | Behavior |
 |----------|----------|
-| `2xx` response | Delivered successfully — no retry |
-| Non-`2xx` response | Retried with exponential backoff |
-| Timeout (10 seconds) | Logged as HTTP 408 — retried |
-| Endpoint unreachable | Retried with exponential backoff |
+| `2xx` response | Delivered successfully |
+| `3xx` response | No automatic retry |
+| `4xx` response other than `429` | No automatic retry |
+| `429 Too Many Requests` | Retried with backoff, honoring `Retry-After` |
+| `5xx` response, timeout, or unreachable endpoint | Retried with backoff. Timeouts are logged as HTTP 408 |
+
+After each retryable failure, deepidv waits for the next delay in the schedule. Delays are measured from the failed attempt.
+
+| Failed attempt | Delay before the next attempt |
+|----------------|-------------------------------|
+| 1 | 1 minute |
+| 2 | 5 minutes |
+| 3 | 30 minutes |
+| 4 | 2 hours |
+| 5 | 6 hours |
+| 6 | 12 hours |
+| 7 | 24 hours |
+
+The standard schedule allows up to eight total attempts over about 45 hours. On a `429` response, `Retry-After` can be a number of seconds or an HTTP date. The next attempt waits for the longer of the scheduled delay and `Retry-After`, capped at 24 hours. A missing or invalid `Retry-After` uses the standard delay.
+
+<Note>
+`session.status.submitted` events, and the `session.status.verified` or `session.status.rejected` event that immediately follows on instant-decision workflows, use a shorter retry path. Any non-`2xx` response other than `410 Gone`, including `4xx`, is retried about every 5 minutes, up to 5 attempts in total. `Retry-After` isn't used for these events. A `410 Gone` response stops delivery of that event to the endpoint.
+</Note>
 
 ## Best practices
 
@@ -216,7 +192,7 @@ Your endpoint should return a `200` response before performing any complex logic
 
 ### Handle duplicate events
 
-Your endpoint may occasionally receive the same event more than once. Guard against this by logging processed event IDs and skipping duplicates.
+Deduplicate deliveries using the top-level event `id`. Deliveries can arrive out of order. Use the event's `created_at` for event time.
 
 ### Only listen to events you need
 

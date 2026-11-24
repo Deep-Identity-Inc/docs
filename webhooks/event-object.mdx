@@ -7,21 +7,27 @@ When deepidv sends a webhook event to your endpoint, the request body contains a
 
 ## Event object structure
 
-Every webhook event follows this structure:
+Every webhook event has a top-level event ID, type, timestamp, and associated data. This example shows a session verification event.
 
 ```json
 {
+  "id": "evt_f6c2c918",
   "type": "session.status.verified",
+  "created_at": "2026-03-23T14:36:00.000Z",
   "data": {
-    // Session object — same structure as the Retrieve Session API response
+    "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "status": "VERIFIED"
   }
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `id` | string | Event identifier. Use it to deduplicate deliveries. The value is stable across retries |
 | `type` | string | The event type that triggered the webhook (e.g. `session.status.submitted`) |
-| `data` | object | The session object associated with the event. This is the same transformed session object returned by the [Retrieve Session](/api-reference/sessions/retrieve-session) API |
+| `created_at` | string | ISO 8601 timestamp when the event was created. The value is stable across retries |
+| `data` | object | Data associated with the event. For session events, this follows the session object structure of the [Retrieve Session](/api-reference/sessions/retrieve-session) API |
+| `user` | object | Applicant details, included for session events when available |
 
 ## Event types
 
@@ -31,6 +37,7 @@ Every webhook event follows this structure:
 | `session.status.submitted` | An applicant has completed and submitted their verification session |
 | `session.status.verified` | A verification session has been marked as verified (via manual review or automatic rules) |
 | `session.status.rejected` | A verification session has been marked as rejected (via manual review or automatic rules) |
+| `session.status.expired` | A verification session has expired |
 | `session.status.failed` | A verification session has hit the workflow's configured failed-attempt limit and been auto-failed |
 
 ## Headers
@@ -40,11 +47,15 @@ Every webhook request includes the following headers:
 | Header | Description |
 |--------|-------------|
 | `Content-Type` | `application/json` |
-| `deepidv-signature` | Your webhook's signing secret for verifying the request origin |
+| `User-Agent` | `deepidv-webhook/1.0` |
+| `deepidv-webhook-signature` | Timestamp and v1 HMAC used to [verify the raw request body](/webhooks/overview#verifying-webhooks) |
+| `deepidv-event-id` | The same event identifier as the top-level `id` field |
+
+Endpoints with legacy signing enabled also receive the [deprecated legacy header](/webhooks/overview#legacy-deepidv-signature-header-deprecated).
 
 ## The `data` object
 
-The `data` field contains the full session object. This is the same structure returned by the [Retrieve Session](/api-reference/sessions/retrieve-session) API endpoint. The key fields are outlined below.
+For session events, `data` follows the session object structure returned by the [Retrieve Session](/api-reference/sessions/retrieve-session) API. The nested `data.id` identifies the session. The top-level `id` identifies the event.
 
 ### Session fields
 
@@ -99,7 +110,9 @@ Sent when a new session is created. At this stage, the session has no analysis d
 
 ```json
 {
+  "id": "evt_5cd3a2c1",
   "type": "session.created",
+  "created_at": "2026-03-23T14:30:00.000Z",
   "data": {
     "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "organization_id": "org_123",
@@ -123,7 +136,9 @@ Sent when an applicant completes and submits their verification session. The `an
 
 ```json
 {
+  "id": "evt_e89d8a62",
   "type": "session.status.submitted",
+  "created_at": "2026-03-23T14:35:00.000Z",
   "data": {
     "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "organization_id": "org_123",
@@ -202,7 +217,9 @@ Sent when a session is marked as verified. The payload structure is the same as 
 
 ```json
 {
+  "id": "evt_f6c2c918",
   "type": "session.status.verified",
+  "created_at": "2026-03-23T14:36:00.000Z",
   "data": {
     "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "status": "VERIFIED",
@@ -217,7 +234,9 @@ Sent when a session is marked as rejected. The payload structure is the same as 
 
 ```json
 {
+  "id": "evt_521a3f22",
   "type": "session.status.rejected",
+  "created_at": "2026-03-23T14:36:00.000Z",
   "data": {
     "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "status": "REJECTED",
@@ -232,7 +251,9 @@ Sent when a session is auto-failed by the system after reaching the workflow's c
 
 ```json
 {
+  "id": "evt_198d2eb4",
   "type": "session.status.failed",
+  "created_at": "2026-03-23T14:33:08.000Z",
   "data": {
     "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "status": "FAILED",
@@ -263,4 +284,5 @@ See [`failureData`](/api-reference/sessions/retrieve-session#failure-data-object
 | `session.status.submitted` | Trigger your review workflow, notify reviewers, update applicant status in your system |
 | `session.status.verified` | Grant access, activate accounts, send confirmation emails, update CRM records |
 | `session.status.rejected` | Notify applicant, flag for manual review, trigger re-verification flow |
+| `session.status.expired` | Mark the session expired in your system and decide whether to create a new session |
 | `session.status.failed` | Notify applicant, surface a "contact support" path, and log `meta_data.failureData.attempts` for diagnostics |
