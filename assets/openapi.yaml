@@ -17,6 +17,316 @@ components:
       description: Per-organization API key. Issued via the deepidv dashboard. Send on
         every request.
   schemas:
+    IdentityLookupRequest:
+      type: object
+      properties:
+        id_type:
+          type: string
+          enum:
+            - bvn-ng
+            - nin-ng
+            - ghana-card-gh
+            - curp-mx
+            - said-za
+        number:
+          type: string
+          minLength: 1
+          maxLength: 128
+        consent:
+          type: boolean
+          enum:
+            - true
+        first_name:
+          type: string
+          maxLength: 256
+        middle_name:
+          type: string
+          maxLength: 256
+        last_name:
+          type: string
+          maxLength: 256
+        date_of_birth:
+          type: string
+          maxLength: 40
+        selfie_base64:
+          type: string
+          minLength: 1
+        selfie_upload_key:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        face_match_threshold:
+          type: number
+          minimum: 70
+          maximum: 95
+          default: 80
+        return_full_number:
+          type: boolean
+          default: false
+        external_id:
+          type: string
+          maxLength: 256
+      required:
+        - id_type
+        - number
+        - consent
+      additionalProperties: false
+      not:
+        required:
+          - selfie_base64
+          - selfie_upload_key
+    IdentityLookupResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        id_type:
+          type: string
+          enum:
+            - bvn-ng
+            - nin-ng
+            - ghana-card-gh
+            - curp-mx
+            - said-za
+        status:
+          type: string
+          enum:
+            - verified
+            - not_found
+        external_id:
+          type: string
+        number:
+          type: object
+          properties:
+            last4:
+              type: string
+              minLength: 4
+              maxLength: 4
+            verified:
+              type: boolean
+            full:
+              type: string
+          required:
+            - last4
+        record:
+          type:
+            - object
+            - "null"
+          properties:
+            first_name:
+              type:
+                - string
+                - "null"
+            middle_name:
+              type:
+                - string
+                - "null"
+            last_name:
+              type:
+                - string
+                - "null"
+            date_of_birth:
+              type:
+                - string
+                - "null"
+            gender:
+              type:
+                - string
+                - "null"
+            nationality:
+              type:
+                - string
+                - "null"
+            phone_numbers:
+              type: array
+              items:
+                type: string
+              description: Phone numbers on file. Nigerian mobile numbers are in E.164 format
+                (+234XXXXXXXXXX); other numbers are returned as on file. Empty
+                when no phone is on file.
+            address:
+              type: object
+              properties:
+                formatted:
+                  type: string
+                  description: The address as one line.
+                street:
+                  type: string
+                town:
+                  type: string
+                lga:
+                  type: string
+                  description: Local government area (Nigeria).
+                state:
+                  type: string
+              required:
+                - formatted
+              description: Address on file. Components appear when the registry supplies them.
+            photo:
+              type: string
+            linked_ids:
+              type: object
+              additionalProperties:
+                type: string
+            enrollment:
+              type: object
+              properties:
+                bank:
+                  type:
+                    - string
+                    - "null"
+                branch:
+                  type:
+                    - string
+                    - "null"
+                registration_date:
+                  type:
+                    - string
+                    - "null"
+                level_of_account:
+                  anyOf:
+                    - type: string
+                    - type: number
+                    - type: "null"
+                watch_listed:
+                  type:
+                    - boolean
+                    - "null"
+              required:
+                - bank
+                - branch
+                - registration_date
+                - level_of_account
+                - watch_listed
+        matches:
+          type: object
+          properties:
+            first_name:
+              type: object
+              properties:
+                result:
+                  type: string
+                  enum:
+                    - exact
+                    - partial
+                    - mismatch
+                score:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+              required:
+                - result
+                - score
+            middle_name:
+              type: object
+              properties:
+                result:
+                  type: string
+                  enum:
+                    - exact
+                    - partial
+                    - mismatch
+                score:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+              required:
+                - result
+                - score
+            last_name:
+              type: object
+              properties:
+                result:
+                  type: string
+                  enum:
+                    - exact
+                    - partial
+                    - mismatch
+                score:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+              required:
+                - result
+                - score
+            date_of_birth:
+              type: object
+              properties:
+                result:
+                  type: string
+                  enum:
+                    - exact
+                    - partial
+                    - mismatch
+                score:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+              required:
+                - result
+                - score
+        face_match:
+          anyOf:
+            - type: object
+              properties:
+                status:
+                  type: string
+                  enum:
+                    - completed
+                match:
+                  type: boolean
+                similarity:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                threshold:
+                  type: number
+                  minimum: 70
+                  maximum: 95
+              required:
+                - status
+                - match
+                - similarity
+                - threshold
+            - type: object
+              properties:
+                status:
+                  type: string
+                  enum:
+                    - unavailable
+                reason:
+                  type: string
+                  enum:
+                    - no_registry_photo
+                    - no_face_in_selfie
+              required:
+                - status
+                - reason
+            - type: "null"
+        replayed:
+          type: boolean
+          enum:
+            - true
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - id_type
+        - status
+        - number
+        - matches
+        - face_match
+        - created_at
+    IdentityLookupError:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+      required:
+        - error
     AdverseMediaResponse:
       type: object
       properties:
@@ -6720,256 +7030,308 @@ components:
         - failed_attempts
         - max_attempts
         - liveness
-    IdentityLookupIdType:
-      type: string
-      enum: [bvn-ng, nin-ng, ghana-card-gh, curp-mx, said-za]
-      description: Government ID type. BVN and NIN are enabled for live lookups.
-    IdentityLookupRequest:
-      type: object
-      required: [id_type, number, consent]
-      additionalProperties: false
-      not:
-        required: [selfie_base64, selfie_upload_key]
-      properties:
-        id_type:
-          $ref: "#/components/schemas/IdentityLookupIdType"
-        number:
-          type: string
-          minLength: 1
-          maxLength: 128
-          description: >-
-            Identity number as a string, including leading zeros.
-            BVN and NIN use 11 digits. Ghana Card uses GHA-#########-#.
-            CURP uses 18 characters and South African ID uses 13 digits.
-            The service validates the number for the selected registry.
-        consent:
-          type: boolean
-          const: true
-          description: The holder gave consent to query the registry.
-        first_name:
-          type: string
-          maxLength: 256
-          description: First name to compare with the registry record.
-        middle_name:
-          type: string
-          maxLength: 256
-          description: Middle name to compare with the registry record.
-        last_name:
-          type: string
-          maxLength: 256
-          description: Last name to compare with the registry record.
-        date_of_birth:
-          type: string
-          maxLength: 40
-          description: Date of birth to compare. Use YYYY-MM-DD.
-          example: "1990-01-01"
-        selfie_base64:
-          type: string
-          minLength: 1
-          description: JPEG or PNG selfie up to 5 MB as raw base64 or an image data URI. Send only one selfie input.
-        selfie_upload_key:
-          type: string
-          minLength: 1
-          maxLength: 1024
-          description: >-
-            The fileKey returned by POST /v1/upload/presign for an uploaded selfie
-            in your organization. Send only one selfie input.
-        face_match_threshold:
-          type: number
-          minimum: 70
-          maximum: 95
-          default: 80
-          description: Similarity threshold for a positive face match.
-        return_full_number:
-          type: boolean
-          default: false
-          description: Include the full number on the initial lookup response.
-        external_id:
-          type: string
-          maxLength: 256
-          description: Your reference for the lookup. The response echoes it when supplied.
-    IdentityLookupNumber:
-      type: object
-      required: [last4]
-      properties:
-        last4:
-          type: string
-          minLength: 4
-          maxLength: 4
-          description: Last four characters of the identity number.
-        verified:
-          type: boolean
-          description: Whether the registry found the number.
-        full:
-          type: string
-          description: Full identity number when requested on the initial lookup.
-    IdentityLookupRecord:
-      type: [object, "null"]
-      description: Registry fields available to this organization. Sensitive groups require approval.
-      properties:
-        first_name:
-          type: [string, "null"]
-        middle_name:
-          type: [string, "null"]
-        last_name:
-          type: [string, "null"]
-        date_of_birth:
-          type: [string, "null"]
-          description: Date of birth returned by the registry.
-        gender:
-          type: [string, "null"]
-        nationality:
-          type: [string, "null"]
-        phone_numbers:
-          type: array
-          description: Approved phone numbers. Nigerian mobile numbers use E.164 format (+234XXXXXXXXXX); other numbers are returned as on file. An empty array means no phone is on file.
-          items:
-            type: string
-        address:
-          type: object
-          description: Approved registry address. `formatted` is always present; the other parts appear when the registry supplies them.
-          required: [formatted]
-          properties:
-            formatted:
-              type: string
-              description: The address as one line.
-            street:
-              type: string
-            town:
-              type: string
-            lga:
-              type: string
-              description: Local government area (Nigeria).
-            state:
-              type: string
-        photo:
-          type: string
-          description: Approved registry portrait as an image data URI.
-        linked_ids:
-          type: object
-          description: Approved linked ID numbers.
-          additionalProperties:
-            type: string
-          properties:
-            nin:
-              type: string
-              description: NIN linked to a BVN record.
-        enrollment:
-          type: object
-          description: Approved registry enrollment details.
-          required: [bank, branch, registration_date, level_of_account, watch_listed]
-          properties:
-            bank:
-              type: [string, "null"]
-            branch:
-              type: [string, "null"]
-            registration_date:
-              type: [string, "null"]
-            level_of_account:
-              type: [string, number, "null"]
-            watch_listed:
-              type: [boolean, "null"]
-    IdentityLookupFieldMatch:
-      type: object
-      required: [result, score]
-      properties:
-        result:
-          type: string
-          enum: [exact, partial, mismatch]
-        score:
-          type: number
-          minimum: 0
-          maximum: 1
-    IdentityLookupMatches:
-      type: object
-      description: Comparisons for the fields supplied on the request.
-      properties:
-        first_name:
-          $ref: "#/components/schemas/IdentityLookupFieldMatch"
-        middle_name:
-          $ref: "#/components/schemas/IdentityLookupFieldMatch"
-        last_name:
-          $ref: "#/components/schemas/IdentityLookupFieldMatch"
-        date_of_birth:
-          $ref: "#/components/schemas/IdentityLookupFieldMatch"
-    IdentityLookupFaceMatchCompleted:
-      type: object
-      required: [status, match, similarity, threshold]
-      properties:
-        status:
-          type: string
-          const: completed
-        match:
-          type: boolean
-          description: Whether the score met the threshold.
-        similarity:
-          type: number
-          minimum: 0
-          maximum: 100
-          description: Best face similarity score.
-        threshold:
-          type: number
-          minimum: 70
-          maximum: 95
-          description: Threshold used for this comparison.
-    IdentityLookupFaceMatchUnavailable:
-      type: object
-      required: [status, reason]
-      properties:
-        status:
-          type: string
-          const: unavailable
-        reason:
-          type: string
-          enum: [no_registry_photo, no_face_in_selfie]
-    IdentityLookupResponse:
-      type: object
-      required: [id, id_type, status, number, matches, face_match, created_at]
-      properties:
-        id:
-          type: string
-          description: Unique lookup ID.
-        id_type:
-          $ref: "#/components/schemas/IdentityLookupIdType"
-        status:
-          type: string
-          enum: [verified, not_found]
-          description: Whether the registry returned a record. Field and face comparisons are separate.
-        external_id:
-          type: string
-          description: Your reference for the lookup, echoed when supplied.
-        number:
-          $ref: "#/components/schemas/IdentityLookupNumber"
-        record:
-          $ref: "#/components/schemas/IdentityLookupRecord"
-        matches:
-          $ref: "#/components/schemas/IdentityLookupMatches"
-        face_match:
-          description: Selfie comparison result. Null when the request did not include a selfie.
-          oneOf:
-            - $ref: "#/components/schemas/IdentityLookupFaceMatchCompleted"
-            - $ref: "#/components/schemas/IdentityLookupFaceMatchUnavailable"
-            - type: "null"
-        replayed:
-          type: boolean
-          const: true
-          description: True when the response replays a prior request using the same idempotency key.
-        created_at:
-          type: string
-          format: date-time
-          description: Lookup creation time.
-    IdentityLookupRateLimitError:
-      allOf:
-        - $ref: "#/components/schemas/SimpleErrorResponse"
-        - type: object
-          required: [limit]
-          properties:
-            limit:
-              type: string
-              description: Name of the limit reached.
-              example: org_per_second
   parameters: {}
 paths:
+  /v1/identity/lookup:
+    post:
+      tags:
+        - Identity Lookup
+      summary: Look up an identity
+      description: Query a registry with the holder's consent. Live BVN and NIN
+        lookups require organization approval. Ghana Card, CURP, and South
+        African ID examples illustrate the request and response formats. Use
+        snake_case or the corresponding camelCase field names.
+      security: &a3
+        - ApiKeyAuth: []
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[!-~]+$
+            description: Replay the same request for up to 24 hours within your
+              organization.
+          required: false
+          description: Replay the same request for up to 24 hours within your organization.
+          name: Idempotency-Key
+          in: header
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentityLookupRequest"
+            examples:
+              bvnWithSelfie:
+                summary: BVN sandbox fixture with a test selfie
+                value:
+                  id_type: bvn-ng
+                  number: "00000000001"
+                  consent: true
+                  first_name: Ada
+                  last_name: Okafor
+                  date_of_birth: 1990-01-01
+                  selfie_base64: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK9sAAAAASUVORK5CYII=
+                  face_match_threshold: 80
+                  external_id: signup-example
+              nin:
+                summary: NIN sandbox fixture
+                value:
+                  id_type: nin-ng
+                  number: "00000000001"
+                  consent: true
+                  return_full_number: true
+              ghanaCard:
+                summary: Ghana Card request format
+                value:
+                  id_type: ghana-card-gh
+                  number: GHA-000000000-0
+                  consent: true
+              curp:
+                summary: CURP request format
+                value:
+                  id_type: curp-mx
+                  number: XEXX010101HNEXXXA4
+                  consent: true
+              southAfricanId:
+                summary: South African ID request format
+                value:
+                  id_type: said-za
+                  number: "9001015009086"
+                  consent: true
+      responses:
+        "200":
+          description: The registry result, including a record where available. Replays
+            omit record, number.full, and number.verified.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityLookupResponse"
+              examples:
+                bvnWithSelfie:
+                  summary: BVN sandbox fixture with a completed face match
+                  value:
+                    id: lookup_example_bvn
+                    id_type: bvn-ng
+                    status: verified
+                    external_id: signup-example
+                    number:
+                      last4: "0001"
+                      verified: true
+                    record:
+                      first_name: Ada
+                      middle_name: Ngozi
+                      last_name: Okafor
+                      date_of_birth: 1990-01-01
+                      gender: female
+                      phone_numbers:
+                        - "+2348000000000"
+                        - "+2348000000001"
+                      address:
+                        formatted: 1 Example Street, Example Town, Lagos
+                        street: 1 Example Street
+                        town: Example Town
+                        lga: Example Town
+                        state: Lagos
+                      linked_ids:
+                        nin: "00000000001"
+                      enrollment:
+                        bank: Example Bank
+                        branch: Example Branch
+                        registration_date: 2020-01-01
+                        level_of_account: null
+                        watch_listed: null
+                    matches:
+                      first_name:
+                        result: exact
+                        score: 1
+                      last_name:
+                        result: exact
+                        score: 1
+                      date_of_birth:
+                        result: exact
+                        score: 1
+                    face_match:
+                      status: completed
+                      match: true
+                      similarity: 98
+                      threshold: 80
+                    created_at: 2026-11-20T10:00:00Z
+                nin:
+                  summary: NIN with the full number requested
+                  value:
+                    id: lookup_example_nin
+                    id_type: nin-ng
+                    status: verified
+                    number:
+                      last4: "0001"
+                      verified: true
+                      full: "00000000001"
+                    record:
+                      first_name: Ada
+                      last_name: Okafor
+                    matches: {}
+                    face_match: null
+                    created_at: 2026-11-20T10:00:00Z
+                ghanaCard:
+                  summary: Ghana Card response format
+                  value:
+                    id: lookup_example_ghana_card
+                    id_type: ghana-card-gh
+                    status: verified
+                    number:
+                      last4: 00-0
+                      verified: true
+                    record:
+                      first_name: Ama
+                      last_name: Mensah
+                    matches: {}
+                    face_match: null
+                    created_at: 2026-11-20T10:00:00Z
+                curp:
+                  summary: CURP response format
+                  value:
+                    id: lookup_example_curp
+                    id_type: curp-mx
+                    status: verified
+                    number:
+                      last4: XXA4
+                      verified: true
+                    record:
+                      first_name: Juan
+                      last_name: Perez
+                      nationality: Mexican
+                    matches: {}
+                    face_match: null
+                    created_at: 2026-11-20T10:00:00Z
+                southAfricanId:
+                  summary: South African ID response format
+                  value:
+                    id: lookup_example_said
+                    id_type: said-za
+                    status: verified
+                    number:
+                      last4: "9086"
+                      verified: true
+                    record:
+                      first_name: Thandi
+                      last_name: Dlamini
+                      nationality: South African
+                    matches: {}
+                    face_match: null
+                    created_at: 2026-11-20T10:00:00Z
+                notFound:
+                  summary: Registry record not found
+                  value:
+                    id: lookup_example_not_found
+                    id_type: bvn-ng
+                    status: not_found
+                    number:
+                      last4: "0002"
+                      verified: false
+                    record: null
+                    matches: {}
+                    face_match: null
+                    created_at: 2026-11-20T10:00:00Z
+                replay:
+                  summary: Replay with the same key and body
+                  value:
+                    id: lookup_example_bvn
+                    id_type: bvn-ng
+                    status: verified
+                    external_id: signup-example
+                    number:
+                      last4: "0001"
+                    matches:
+                      first_name:
+                        result: exact
+                        score: 1
+                      last_name:
+                        result: exact
+                        score: 1
+                      date_of_birth:
+                        result: exact
+                        score: 1
+                    face_match:
+                      status: completed
+                      match: true
+                      similarity: 98
+                      threshold: 80
+                    replayed: true
+                    created_at: 2026-11-20T10:00:00Z
+        "400":
+          description: Invalid lookup request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityLookupError"
+        "401":
+          description: Invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityLookupError"
+        "402":
+          description: Insufficient balance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityLookupError"
+        "403":
+          description: Lookup access, ID type, or upload key is unavailable to the
+            organization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityLookupError"
+              examples:
+                organizationAccess:
+                  summary: Identity Lookup access required
+                  value:
+                    error: Identity Lookup is unavailable for this organization.
+                    code: identity_lookup_not_enabled
+                idTypeAccess:
+                  summary: Live lookup unavailable for this ID type
+                  value:
+                    error: Live lookup is unavailable for this ID type.
+                    code: id_type_not_enabled
+        "422":
+          description: The idempotency key was used with a different request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityLookupError"
+        "429":
+          description: The named limit was exceeded.
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+                minimum: 1
+              description: Seconds to wait before retrying.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/IdentityLookupError"
+                  - type: object
+                    properties:
+                      limit:
+                        type: string
+                    required:
+                      - limit
+        "502":
+          description: The identity provider could not complete the lookup.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityLookupError"
+        "503":
+          description: Lookup is temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityLookupError"
   /v1/document/scan:
     post:
       tags:
@@ -6979,8 +7341,7 @@ paths:
         number, etc.) from a single document image via AWS Textract AnalyzeID.
         Accepts the image as a multipart upload, a base64/base64url-encoded JSON
         string, or an S3 object key from a previously presigned upload.
-      security: &a3
-        - ApiKeyAuth: []
+      security: *a3
       requestBody:
         required: true
         content:
@@ -7510,234 +7871,6 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "500":
           description: Unexpected server error.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /v1/identity/lookup:
-    post:
-      tags:
-        - Identity Lookup
-      summary: Lookup an identity
-      description: >-
-        Query a government registry using an identity number and the holder's consent.
-        Optionally compare names, date of birth, or a selfie. Use snake_case as
-        shown here or the corresponding camelCase field names.
-      security:
-        - ApiKeyAuth: []
-      parameters:
-        - name: Idempotency-Key
-          in: header
-          required: false
-          description: Reuse with the same body to replay a lookup for up to 24 hours within your organization.
-          schema:
-            type: string
-            minLength: 1
-            maxLength: 128
-            pattern: '^[!-~]+$'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/IdentityLookupRequest"
-            examples:
-              bvnWithSelfie:
-                summary: BVN sandbox fixture with a test selfie
-                value:
-                  id_type: bvn-ng
-                  number: "00000000001"
-                  consent: true
-                  first_name: Ada
-                  last_name: Okafor
-                  date_of_birth: "1990-01-01"
-                  selfie_base64: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK9sAAAAASUVORK5CYII=
-                  face_match_threshold: 80
-                  external_id: signup-example
-              nin:
-                summary: NIN sandbox fixture
-                value:
-                  id_type: nin-ng
-                  number: "00000000001"
-                  consent: true
-                  return_full_number: true
-              ghanaCard:
-                summary: Ghana Card request format
-                value:
-                  id_type: ghana-card-gh
-                  number: GHA-000000000-0
-                  consent: true
-              curp:
-                summary: CURP request format
-                value:
-                  id_type: curp-mx
-                  number: XEXX010101HNEXXXA4
-                  consent: true
-              southAfricanId:
-                summary: South African ID request format
-                value:
-                  id_type: said-za
-                  number: "9001015009086"
-                  consent: true
-      responses:
-        "200":
-          description: Lookup completed or replayed. Read status to determine whether the registry returned a record.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IdentityLookupResponse"
-              examples:
-                bvnWithSelfie:
-                  summary: BVN sandbox fixture with a completed face match
-                  value:
-                    id: lookup_example_bvn
-                    id_type: bvn-ng
-                    status: verified
-                    external_id: signup-example
-                    number: { last4: "0001", verified: true }
-                    record:
-                      first_name: Ada
-                      middle_name: Ngozi
-                      last_name: Okafor
-                      date_of_birth: "1990-01-01"
-                      gender: female
-                      phone_numbers: ["+2348000000000", "+2348000000001"]
-                      address: { formatted: "1 Example Street, Example Town, Lagos", street: 1 Example Street, town: Example Town, lga: Example Town, state: Lagos }
-                      linked_ids: { nin: "00000000001" }
-                      enrollment:
-                        bank: Example Bank
-                        branch: Example Branch
-                        registration_date: "2020-01-01"
-                        level_of_account: null
-                        watch_listed: null
-                    matches:
-                      first_name: { result: exact, score: 1 }
-                      last_name: { result: exact, score: 1 }
-                      date_of_birth: { result: exact, score: 1 }
-                    face_match: { status: completed, match: true, similarity: 98, threshold: 80 }
-                    created_at: "2026-11-20T10:00:00Z"
-                nin:
-                  summary: NIN with the full number requested
-                  value:
-                    id: lookup_example_nin
-                    id_type: nin-ng
-                    status: verified
-                    number: { last4: "0001", verified: true, full: "00000000001" }
-                    record: { first_name: Ada, last_name: Okafor }
-                    matches: {}
-                    face_match: null
-                    created_at: "2026-11-20T10:00:00Z"
-                ghanaCard:
-                  summary: Ghana Card response format
-                  value:
-                    id: lookup_example_ghana_card
-                    id_type: ghana-card-gh
-                    status: verified
-                    number: { last4: "00-0", verified: true }
-                    record: { first_name: Ama, last_name: Mensah }
-                    matches: {}
-                    face_match: null
-                    created_at: "2026-11-20T10:00:00Z"
-                curp:
-                  summary: CURP response format
-                  value:
-                    id: lookup_example_curp
-                    id_type: curp-mx
-                    status: verified
-                    number: { last4: XXA4, verified: true }
-                    record: { first_name: Juan, last_name: Perez, nationality: Mexican }
-                    matches: {}
-                    face_match: null
-                    created_at: "2026-11-20T10:00:00Z"
-                southAfricanId:
-                  summary: South African ID response format
-                  value:
-                    id: lookup_example_said
-                    id_type: said-za
-                    status: verified
-                    number: { last4: "9086", verified: true }
-                    record: { first_name: Thandi, last_name: Dlamini, nationality: South African }
-                    matches: {}
-                    face_match: null
-                    created_at: "2026-11-20T10:00:00Z"
-                notFound:
-                  summary: Registry record not found
-                  value:
-                    id: lookup_example_not_found
-                    id_type: bvn-ng
-                    status: not_found
-                    number: { last4: "0002", verified: false }
-                    record: null
-                    matches: {}
-                    face_match: null
-                    created_at: "2026-11-20T10:00:00Z"
-                replay:
-                  summary: Replay with the same key and body
-                  value:
-                    id: lookup_example_bvn
-                    id_type: bvn-ng
-                    status: verified
-                    external_id: signup-example
-                    number: { last4: "0001" }
-                    matches:
-                      first_name: { result: exact, score: 1 }
-                      last_name: { result: exact, score: 1 }
-                      date_of_birth: { result: exact, score: 1 }
-                    face_match: { status: completed, match: true, similarity: 98, threshold: 80 }
-                    replayed: true
-                    created_at: "2026-11-20T10:00:00Z"
-        "400":
-          description: Invalid number, consent, selfie input, threshold, or request body.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "402":
-          description: Insufficient token balance.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: 'The x-api-key header is missing or invalid (the gateway returns {"message": "Forbidden"}), the organization, region, or ID type lacks live lookup access, or the upload key belongs to another organization.'
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-              examples:
-                organizationAccess:
-                  summary: Identity Lookup access required
-                  value: { error: Identity lookup is not enabled, code: identity_lookup_not_enabled }
-                idTypeAccess:
-                  summary: Live lookup unavailable for this ID type
-                  value: { error: This identity type is not enabled, code: id_type_not_enabled }
-        "422":
-          description: The idempotency key was already used with a different request body.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "429":
-          description: A lookup rate limit was reached.
-          headers:
-            Retry-After:
-              description: Seconds to wait before retrying.
-              schema:
-                type: integer
-                minimum: 1
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IdentityLookupRateLimitError"
-              example: { error: Lookup rate limit reached., limit: org_per_second }
-        "502":
-          description: The registry provider returned an error or timed out.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "503":
-          description: Lookup is temporarily unavailable.
           content:
             application/json:
               schema:
