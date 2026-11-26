@@ -1,0 +1,53 @@
+---
+title: Retrieve Profile
+description: Fetch a single branding profile by ID
+api: GET /v1/profiles/:id
+---
+
+## GET /v1/profiles/:id
+
+Returns a single branding profile.
+
+### Request
+
+#### Headers
+
+| Header | Required | Description |
+|---|---|---|
+| `x-api-key` | Yes | Your API key |
+
+#### Path parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | Yes | The profile's ID |
+
+#### Example request
+
+curl -X GET https://api.deepidv.com/v1/profiles/a1b2c3d4-e5f6-7890-abcd-ef1234567890 \
+  -H "x-api-key: YOUR_API_KEY"
+
+### Response
+
+#### 200 — Success
+
+Returns a single profile object (same shape as Create Profile's response).
+
+Example response:
+
+{
+  "id": "uuid",
+  "organizationId": "uuid",
+  "name": "Acme Branding",
+  "logoUrl": "org-id/profiles/logos/uuid",
+  "createdAt": "2026-07-23T12:00:00.000Z",
+  "updatedAt": "2026-07-23T12:00:00.000Z"
+}
+
+### Error responses
+
+| Status | Description |
+|---|---|
+| 401 Unauthorized | Missing or invalid API key |
+| 403 Forbidden | The profile exists but belongs to a different organization |
+| 404 Not Found | No profile with that ID |
